@@ -392,15 +392,22 @@ async function owner() {
         <td class="num">${c.users}</td><td class="num">${c.properties}</td>
         <td class="num">${c.deals}</td><td class="num">${fmt(c.commission)}</td>
         <td>${(c.created_at || '').slice(0, 10)}</td>
-        <td>${c.status === 'active'
+        <td style="white-space:nowrap">${c.status === 'active'
         ? `<button class="small" onclick="setCompany(${c.id},{status:'suspended'})">Түр хаах</button>`
-        : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}</td></tr>`).join('')}</tbody>
+        : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}
+        ${c.id !== ME.company_id ? `<button class="small" onclick="delCompany(${c.id},'${esc(c.name).replace(/'/g, '')}')">Устгах</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
 }
 
 window.setCompany = async function (id, body) {
   const r = await api('/owner/company/' + id, { method: 'POST', body });
+  if (r.error) { alert(r.error); return; }
+  owner();
+};
+window.delCompany = async function (id, name) {
+  if (!confirm(`«${name}» компанийг бүх өгөгдөлтэй нь бүрмөсөн устгах уу? Энэ үйлдлийг буцаах боломжгүй.`)) return;
+  const r = await api('/owner/company/' + id, { method: 'DELETE' });
   if (r.error) { alert(r.error); return; }
   owner();
 };

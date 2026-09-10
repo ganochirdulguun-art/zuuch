@@ -61,7 +61,7 @@ app.post('/api/login', (req, res) => {
   }
   const token = newSession(user);
   const company = db.prepare('SELECT name FROM companies WHERE id=?').get(user.company_id);
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', is_owner: user.is_owner ? 1 : 0 } });
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0 } });
 });
 
 // ---- Компани + захирал бүртгэх (өөрөө онбординг) ----
@@ -98,7 +98,7 @@ app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res
 app.post('/api/logout', (req, res) => { sessions.delete(req.token); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => {
   const company = db.prepare('SELECT name FROM companies WHERE id=?').get(req.user.company_id);
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', is_owner: req.user.is_owner ? 1 : 0 });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0 });
 });
 
 // Нууц үг солих (нэвтэрсэн хэн ч өөрийнхөө)
@@ -161,6 +161,19 @@ app.post('/api/owner/company/:id', ownerOnly, (req, res) => {
   vals.push(id);
   const r = db.prepare(`UPDATE companies SET ${sets.join(',')} WHERE id=?`).run(...vals);
   res.json({ ok: r.changes > 0 });
+});
+
+// Компани устгах (эзэн) — өгөгдлийг нь бүрэн цэвэрлэнэ; эзний өөрийн компанийг устгахгүй
+app.delete('/api/owner/company/:id', ownerOnly, (req, res) => {
+  const id = Number(req.params.id);
+  if (id === req.user.company_id) return res.status(400).json({ error: 'Өөрийн харьяа компанийг устгах боломжгүй' });
+  const tx = db.prepare('BEGIN'); tx.run();
+  try {
+    for (const t of ['properties', 'clients', 'requests', 'deals', 'users']) db.prepare(`DELETE FROM ${t} WHERE company_id=?`).run(id);
+    db.prepare('DELETE FROM companies WHERE id=?').run(id);
+    db.prepare('COMMIT').run();
+  } catch (e) { db.prepare('ROLLBACK').run(); return res.status(500).json({ error: 'Устгах үед алдаа' }); }
+  res.json({ ok: true });
 });
 app.get('/api/users', (req, res) => {
   res.json(db.prepare('SELECT id, username, name, role, phone FROM users WHERE company_id=? ORDER BY role, name').all(req.user.company_id));
