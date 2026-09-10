@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Зууч — үл хөдлөхийн систем</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <style>
 :root{
   --ground:#F3F6FC; --surface:#FFFFFF; --surface-2:#EAEFF9;
@@ -21,7 +21,7 @@
   }
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font-family:"Golos Text","Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.55}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"Inter","Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.55}
 button{font-family:inherit;font-size:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:7px 14px;cursor:pointer}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -30,7 +30,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 input,select,textarea{font-family:inherit;font-size:14px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:100%}
 label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;letter-spacing:.03em}
 .field{margin-bottom:12px}
-h1,h2,h3{font-family:"Unbounded","Segoe UI",sans-serif;font-weight:500}
+h1,h2,h3{font-family:"Montserrat","Segoe UI",sans-serif;font-weight:500}
 [hidden]{display:none!important}
 
 /* Нэвтрэлт */
@@ -45,7 +45,7 @@ h1,h2,h3{font-family:"Unbounded","Segoe UI",sans-serif;font-weight:500}
 /* Апп бүтэц */
 #app-view{display:flex;min-height:100vh}
 aside{width:212px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:20px 0;display:flex;flex-direction:column}
-.brand{font-family:"Unbounded",sans-serif;font-weight:700;font-size:19px;padding:0 20px 18px;border-bottom:1px solid var(--line)}
+.brand{font-family:"Montserrat",sans-serif;font-weight:700;font-size:19px;padding:0 20px 18px;border-bottom:1px solid var(--line)}
 .brand span{color:var(--accent)}
 nav.menu{display:flex;flex-direction:column;padding:12px 10px;gap:2px;flex:1}
 nav.menu button{border:1px solid transparent;background:none;text-align:left;padding:9px 12px;border-radius:8px;font-size:14.5px;color:var(--muted);transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease}
@@ -62,10 +62,10 @@ main{flex:1;padding:26px 30px;min-width:0}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:20px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease}
 .tile:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:0 10px 26px color-mix(in srgb,var(--accent) 16%, transparent)}
-.tile .v{font-family:"Unbounded",sans-serif;font-weight:700;font-size:22px;font-variant-numeric:tabular-nums}
+.tile .v{font-family:"Montserrat",sans-serif;font-weight:700;font-size:22px;font-variant-numeric:tabular-nums}
 .tile .k{font-size:12px;color:var(--muted);margin-top:4px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:16px}
-.card h3{font-size:14px;margin:0 0 10px;font-family:"Golos Text",sans-serif;font-weight:700}
+.card h3{font-size:14px;margin:0 0 10px;font-family:"Inter",sans-serif;font-weight:700}
 .tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
 table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:640px}
 th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;white-space:nowrap}
