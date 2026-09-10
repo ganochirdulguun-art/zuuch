@@ -291,7 +291,12 @@ function ensureOwner() {
   if (u.length < 3 || p.length < 6) return;
   const existing = db.prepare('SELECT id FROM users WHERE username=?').get(u);
   if (existing) {
-    db.prepare('UPDATE users SET is_owner=1 WHERE id=?').run(existing.id); // нууц үгэнд хүрэхгүй (UI-аас сольсон нь хэвээр)
+    // ZUUCH_OWNER_RESET=1 үед л нууц үгийг env-ийн утгаар дахин тавина (сэргээх); бусад үед хүрэхгүй
+    if (String(process.env.ZUUCH_OWNER_RESET || '') === '1') {
+      db.prepare('UPDATE users SET is_owner=1, pass_hash=? WHERE id=?').run(hash(p), existing.id);
+    } else {
+      db.prepare('UPDATE users SET is_owner=1 WHERE id=?').run(existing.id); // нууц үгэнд хүрэхгүй (UI-аас сольсон нь хэвээр)
+    }
   } else {
     db.prepare("INSERT INTO users (company_id, username, pass_hash, name, role, is_owner) VALUES (1, ?, ?, ?, 'zahiral', 1)")
       .run(u, hash(p), 'Платформ эзэн');
