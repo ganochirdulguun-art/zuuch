@@ -383,16 +383,27 @@ async function owner() {
   </div>
   <div class="card"><h3>Компаниуд</h3>
     <div class="tablebox"><table>
-      <thead><tr><th>#</th><th>Компани</th><th>Багц</th><th>Төлөв</th><th class="num">Хэрэглэгч</th><th class="num">Объект</th><th class="num">Харилцагч</th><th class="num">Хэлцэл</th><th class="num">Шимтгэл</th><th>Бүртгэсэн</th></tr></thead>
+      <thead><tr><th>#</th><th>Компани</th><th>Багц</th><th>Төлөв</th><th class="num">Хэрэглэгч</th><th class="num">Объект</th><th class="num">Хэлцэл</th><th class="num">Шимтгэл</th><th>Бүртгэсэн</th><th>Удирдлага</th></tr></thead>
       <tbody>${d.companies.map((c) => `<tr>
-        <td>${c.id}</td><td><b>${esc(c.name)}</b></td><td>${PLAN_T[c.plan] || c.plan}</td>
-        <td>${badge(c.status === 'active' ? 'active' : 'closed')}</td>
-        <td class="num">${c.users}</td><td class="num">${c.properties}</td><td class="num">${c.clients}</td>
+        <td>${c.id}</td><td><b>${esc(c.name)}</b></td>
+        <td><select onchange="setCompany(${c.id},{plan:this.value})" style="width:auto;padding:3px 6px;font-size:12.5px">
+          ${['demo', 'trial', 'basic', 'pro'].map((p) => `<option value="${p}" ${c.plan === p ? 'selected' : ''}>${PLAN_T[p]}</option>`).join('')}</select></td>
+        <td>${c.status === 'active' ? '<span class="badge ok">Идэвхтэй</span>' : '<span class="badge warn">Хаагдсан</span>'}</td>
+        <td class="num">${c.users}</td><td class="num">${c.properties}</td>
         <td class="num">${c.deals}</td><td class="num">${fmt(c.commission)}</td>
-        <td>${(c.created_at || '').slice(0, 10)}</td></tr>`).join('')}</tbody>
+        <td>${(c.created_at || '').slice(0, 10)}</td>
+        <td>${c.status === 'active'
+        ? `<button class="small" onclick="setCompany(${c.id},{status:'suspended'})">Түр хаах</button>`
+        : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}</td></tr>`).join('')}</tbody>
     </table></div></div>
-  <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоон тоймыг харж байна. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
+  <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
 }
+
+window.setCompany = async function (id, body) {
+  const r = await api('/owner/company/' + id, { method: 'POST', body });
+  if (r.error) { alert(r.error); return; }
+  owner();
+};
 
 // ---------- Нууц үг солих ----------
 window.pwForm = function () {

@@ -54,6 +54,11 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Нэвтрэх нэр эсвэл нууц үг буруу байна' });
   }
   attempts.delete(ip);
+  // Түр хаагдсан компанийн хэрэглэгч нэвтрэхгүй (эзэн үл хамаарна)
+  if (!user.is_owner) {
+    const co = db.prepare('SELECT status FROM companies WHERE id=?').get(user.company_id);
+    if (co && co.status !== 'active') return res.status(403).json({ error: 'Таны компанийн хандалт түр хаагдсан. Платформын админтай холбогдоно уу.' });
+  }
   const token = newSession(user);
   const company = db.prepare('SELECT name FROM companies WHERE id=?').get(user.company_id);
   res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', is_owner: user.is_owner ? 1 : 0 } });
@@ -143,6 +148,19 @@ app.get('/api/owner/overview', ownerOnly, (req, res) => {
     marketListings: db.prepare('SELECT COUNT(*) c FROM market_listings WHERE active=1').get().c,
   };
   res.json({ companies, totals });
+});
+
+// Компанийн төлөв/багц өөрчлөх (эзэн)
+app.post('/api/owner/company/:id', ownerOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const sets = [], vals = [];
+  if (b.status && ['active', 'suspended'].includes(b.status)) { sets.push('status=?'); vals.push(b.status); }
+  if (b.plan && ['demo', 'trial', 'basic', 'pro'].includes(b.plan)) { sets.push('plan=?'); vals.push(b.plan); }
+  if (!sets.length) return res.json({ ok: false, error: 'Өөрчлөх утга алга' });
+  vals.push(id);
+  const r = db.prepare(`UPDATE companies SET ${sets.join(',')} WHERE id=?`).run(...vals);
+  res.json({ ok: r.changes > 0 });
 });
 app.get('/api/users', (req, res) => {
   res.json(db.prepare('SELECT id, username, name, role, phone FROM users WHERE company_id=? ORDER BY role, name').all(req.user.company_id));
