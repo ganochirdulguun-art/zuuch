@@ -1,0 +1,19 @@
+{
+  "name": "zuuch",
+  "version": "1.0.0",
+  "description": "Зууч — үл хөдлөх хөрөнгийн ухаалаг платформ (CRM + зах зээл мониторинг)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": ["real-estate", "crm", "mongolia", "proptech"],
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

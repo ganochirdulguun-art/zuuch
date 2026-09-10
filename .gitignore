@@ -1,0 +1,7 @@
+node_modules/
+zuuch.db
+zuuch.db-wal
+zuuch.db-shm
+*.log
+.env
+.DS_Store

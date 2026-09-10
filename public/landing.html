@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Зууч — Үл хөдлөх хөрөнгийн ухаалаг систем</title>
+<meta name="description" content="Монголын үл хөдлөх хөрөнгийн агентлагуудад зориулсан CRM, зах зээлийн AI мониторинг, байршлын шинжилгээ, referral сүлжээ — нэг платформ дээр.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Golos+Text:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg0:#05100C; --bg1:#081A15; --bg2:#0A241C;
+  --ink:#EAF3EE; --muted:#8FA89C;
+  --accent:#2FD8A8; --accent-soft:#57BBA0; --accent-deep:#1F6E5C;
+  --line:rgba(120,190,165,.16); --card:rgba(12,30,25,.62);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 800px at 72% 6%, rgba(47,216,168,.14), transparent 58%),
+    radial-gradient(1000px 700px at 12% 30%, rgba(31,110,92,.18), transparent 55%),
+    linear-gradient(160deg, var(--bg0), var(--bg1) 55%, var(--bg2));
+  color:var(--ink); font-family:"Golos Text","Segoe UI",system-ui,sans-serif;
+  min-height:100vh; overflow-x:hidden;
+}
+#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block}
+.shell{position:relative;z-index:2;max-width:1120px;margin:0 auto;padding:0 24px}
+
+nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+.brand{font-family:"Unbounded",sans-serif;font-weight:700;font-size:22px}
+.brand .d{color:var(--accent)}
+.nav-cta{display:flex;gap:10px;align-items:center}
+a.btn{display:inline-block;text-decoration:none;font-weight:600;font-size:14.5px;padding:10px 18px;border-radius:9px;transition:.16s}
+a.btn.ghost{color:var(--ink);border:1px solid var(--line)}
+a.btn.ghost:hover{border-color:var(--accent-soft);color:#fff}
+a.btn.solid{background:linear-gradient(135deg,var(--accent),var(--accent-deep));color:#04120D;box-shadow:0 6px 24px rgba(47,216,168,.28)}
+a.btn.solid:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(47,216,168,.4)}
+a.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hero{padding:70px 0 30px;max-width:560px}
+.tag{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-soft);border:1px solid var(--line);border-radius:99px;padding:6px 14px;margin-bottom:24px;background:rgba(47,216,168,.05);backdrop-filter:blur(4px)}
+.tag .pulse{width:7px;height:7px;border-radius:99px;background:var(--accent);animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,216,168,.5)}70%{box-shadow:0 0 0 9px rgba(47,216,168,0)}100%{box-shadow:0 0 0 0 rgba(47,216,168,0)}}
+h1{font-family:"Unbounded",sans-serif;font-weight:700;font-size:clamp(34px,5.5vw,58px);line-height:1.06;margin:0 0 20px;letter-spacing:-.01em}
+h1 .g{background:linear-gradient(120deg,var(--accent),var(--accent-soft));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{font-size:clamp(16px,2vw,19px);color:var(--muted);line-height:1.6;margin:0 0 30px}
+.hero-cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.hero-cta .note{font-size:13px;color:var(--muted)}
+
+/* Globe-ийн хажуугийн хөвөгч LIVE картууд */
+.gcards{position:fixed;inset:0;z-index:1;pointer-events:none}
+.gcard{position:absolute;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:11px 15px;backdrop-filter:blur(9px);box-shadow:0 8px 30px rgba(0,0,0,.35);animation:floaty 6s ease-in-out infinite}
+.gcard .v{font-family:"Unbounded",sans-serif;font-weight:700;font-size:19px;line-height:1.1}
+.gcard .v small{font-size:12px;color:var(--accent-soft);font-weight:600}
+.gcard .k{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.gcard .live{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--accent)}
+.gcard .live b{width:6px;height:6px;border-radius:99px;background:var(--accent);animation:pulse 2s infinite}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.c1{top:20%;left:46%;animation-delay:0s}
+.c2{top:14%;right:5%;animation-delay:-1.2s}
+.c3{top:45%;right:2%;animation-delay:-2.4s}
+.c4{top:66%;left:48%;animation-delay:-3.1s}
+.c5{top:72%;right:12%;animation-delay:-4.3s}
+@media(max-width:900px){ .gcards{display:none} #bg{opacity:.5} }
+
+.stats{display:flex;gap:34px;flex-wrap:wrap;margin:110px 0 10px;padding:22px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stat .v{font-family:"Unbounded",sans-serif;font-weight:700;font-size:26px;color:#fff}
+.stat .v small{color:var(--accent);font-size:15px}
+.stat .k{font-size:13px;color:var(--muted);margin-top:2px}
+
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:52px 0}
+.feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;backdrop-filter:blur(6px);transition:.18s}
+.feat:hover{transform:translateY(-4px);border-color:var(--accent-soft);box-shadow:0 14px 40px rgba(47,216,168,.14)}
+.feat .ic{font-size:22px;margin-bottom:12px;display:inline-grid;place-items:center;width:44px;height:44px;border-radius:11px;background:rgba(47,216,168,.12);border:1px solid var(--line)}
+.feat h3{font-family:"Unbounded",sans-serif;font-weight:600;font-size:16px;margin:0 0 8px}
+.feat p{font-size:14px;color:var(--muted);line-height:1.55;margin:0}
+
+.band{margin:40px 0 60px;background:linear-gradient(135deg,rgba(47,216,168,.10),rgba(31,110,92,.06));border:1px solid var(--line);border-radius:18px;padding:40px 32px;text-align:center;backdrop-filter:blur(6px)}
+.band h2{font-family:"Unbounded",sans-serif;font-weight:600;font-size:clamp(20px,3vw,28px);margin:0 0 10px}
+.band p{color:var(--muted);max-width:56ch;margin:0 auto 22px}
+
+footer{border-top:1px solid var(--line);padding:26px 0 40px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+footer b{color:var(--ink)}
+@media(max-width:560px){ .hero{padding:44px 0 20px} .stats{margin:40px 0 10px;gap:22px} }
+@media (prefers-reduced-motion: reduce){ .tag .pulse,.gcard,.gcard .live b{animation:none} }
+</style>
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+
+<div class="gcards" aria-hidden="true">
+  <div class="gcard c1"><span class="live"><b></b>LIVE</span><div class="v" id="live-count">3,340</div><div class="k">идэвхтэй зар хянагдаж байна</div></div>
+  <div class="gcard c2"><div class="v">281</div><div class="k">лицензтэй компани</div></div>
+  <div class="gcard c3"><div class="v">4.76<small> сая ₮/м²</small></div><div class="k">Сүхбаатар дүүрэг</div></div>
+  <div class="gcard c4"><div class="v">24/7</div><div class="k">зах зээл мониторинг</div></div>
+  <div class="gcard c5"><div class="v">8<small> алгоритм</small></div><div class="k">үнэлгээ · тохирол · байршил</div></div>
+</div>
+
+<div class="shell">
+  <nav>
+    <div class="brand">Зууч<span class="d">.</span>mn</div>
+    <div class="nav-cta">
+      <a class="btn ghost" href="/app">Нэвтрэх</a>
+      <a class="btn solid" href="/app">Үнэгүй эхлэх</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="tag"><span class="pulse"></span>Зах зээлийг өдөр шөнөгүй ажигладаг</span>
+    <h1>Үл хөдлөх хөрөнгийн <span class="g">ухаалаг платформ</span></h1>
+    <p class="lead">Агентлагийн бүх ажлыг нэг дор — объект, харилцагч, гэрээ. Зах зээлийг AI-аар мониторинг хийж, үнэ, боломж, байршлыг автоматаар шинжилж, брокеруудыг нэгтгэсэн төвлөрсөн дата бааз дээр ажиллуулна.</p>
+    <div class="hero-cta">
+      <a class="btn solid" href="/app">Системд нэвтрэх →</a>
+      <a class="btn ghost" href="#features">Боломжуудтай танилцах</a>
+      <span class="note">Туршилт: <b style="color:var(--ink)">zahiral / zuuch2026</b></span>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Зах зээлийн үзүүлэлт">
+    <div class="stat"><div class="v">281</div><div class="k">СЗХ-ны лицензтэй компани</div></div>
+    <div class="stat"><div class="v">2.25<small> их наяд ₮</small></div><div class="k">Салбарын жилийн борлуулалт</div></div>
+    <div class="stat"><div class="v">24/7</div><div class="k">Зах зээл ажиглах цуглуулагч</div></div>
+    <div class="stat"><div class="v">8<small> алгоритм</small></div><div class="k">Үнэлгээ · тохирол · байршил</div></div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="feat"><div class="ic">🏢</div><h3>Дотоод CRM</h3><p>Объект, харилцагч, хүсэлт, гэрээг нэг дор. Агент бүрийн ажил, гэрээний хугацаа, сануулга автоматаар.</p></div>
+    <div class="feat"><div class="ic">📈</div><h3>Зах зээлийн AI мониторинг</h3><p>Зарын сувгуудыг ажиглаж үнийн индекс, боломжит хямд байр, үнэ буурсан заруудыг автоматаар илрүүлнэ.</p></div>
+    <div class="feat"><div class="ic">📍</div><h3>Байршлын шинжилгээ</h3><p>Сургууль, тээвэр, дэд бүтэц, ирээдүйн төслөөр байр бүрийн байршлын оноо, өсөх үнэ цэнийг тооцно.</p></div>
+    <div class="feat"><div class="ic">🎯</div><h3>Ухаалаг тохирол</h3><p>Худалдан авагчийн хүсэлтийг бүх зартай жинтэй оноогоор тулгаж, тохирох байрыг агентад шууд өгнө.</p></div>
+    <div class="feat"><div class="ic">🤝</div><h3>Брокерын сүлжээ</h3><p>Компани хоорондын нэгдсэн листинг, referral хуваалт — зах зээлийг эдийн засгийн эргэлтэд хурдан оруулна.</p></div>
+    <div class="feat"><div class="ic">🛡️</div><h3>Найдвартай, хуульд нийцсэн</h3><p>Олон компанийн өгөгдөл бүрэн тусгаарлагдсан, зөвхөн ажиглах горим, хувийн мэдээллийг хамгаалсан.</p></div>
+  </section>
+
+  <section class="band">
+    <h2>Зах зээлийг хамгийн түрүүнд хардаг агент хождог</h2>
+    <p>«Зууч» нь мэдээллийн төвлөрсөн дата бааз дээр ажиллаж, шинэ боломж, тохирлыг бусдаас түрүүлж танд хүргэнэ.</p>
+    <a class="btn solid" href="/app">Одоо эхлэх — үнэгүй туршаарай</a>
+  </section>
+
+  <footer>
+    <div>© 2026 <b>Зууч.mn</b> — Үл хөдлөх хөрөнгийн ухаалаг систем</div>
+    <div>Улаанбаатар, Монгол Улс</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const cv = document.getElementById('bg'), ctx = cv.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const GA = Math.PI * (3 - Math.sqrt(5)), PERSP = 2.4, TILT = -0.32;
+  let W, H, DPR, cx, cy, R, rot = 0, t = 0, mx = 0.5, my = 0.5;
+  let nodes = [], edges = [], stars = [], rings = [];
+
+  function makeGlobe() {
+    const N = 150; nodes = [];
+    for (let i = 0; i < N; i++) {
+      const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * GA;
+      nodes.push({ x: Math.cos(th) * r, y, z: Math.sin(th) * r, hot: Math.random() < 0.13 });
+    }
+    edges = []; const seen = new Set();
+    for (let i = 0; i < N; i++) {
+      const d = [];
+      for (let j = 0; j < N; j++) if (j !== i) {
+        const a = nodes[i], b = nodes[j];
+        d.push([(a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2, j]);
+      }
+      d.sort((p, q) => p[0] - q[0]);
+      for (let k = 0; k < 3; k++) {
+        const j = d[k][1], key = Math.min(i, j) + '-' + Math.max(i, j);
+        if (!seen.has(key)) { seen.add(key); edges.push([i, j]); }
+      }
+    }
+  }
+  function makeRings() {
+    rings = [
+      { rad: 1.30, tilt: 0.55, yaw: 0.2, parts: [0, 0.5] },
+      { rad: 1.52, tilt: -0.75, yaw: 1.1, parts: [0.3] },
+      { rad: 1.16, tilt: 1.25, yaw: -0.5, parts: [0.7] },
+    ];
+  }
+  function makeStars() { stars = []; const n = Math.round(W * H / (11000 * DPR)); for (let i = 0; i < n; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.3 * DPR + 0.3, ph: Math.random() * 6 }); }
+  function size() {
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = cv.width = innerWidth * DPR; H = cv.height = innerHeight * DPR;
+    cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+    const wide = innerWidth > 900;
+    cx = W * (wide ? 0.67 : 0.5); cy = H * (wide ? 0.44 : 0.40); R = Math.min(W, H) * (wide ? 0.25 : 0.34);
+    makeStars();
+  }
+  function rot3(p, a, tlt) {
+    const x = p.x * Math.cos(a) + p.z * Math.sin(a), z = -p.x * Math.sin(a) + p.z * Math.cos(a), y = p.y;
+    return { x, y: y * Math.cos(tlt) - z * Math.sin(tlt), z: y * Math.sin(tlt) + z * Math.cos(tlt) };
+  }
+  function ringPt(rg, a) {
+    let p = { x: Math.cos(a) * rg.rad, y: 0, z: Math.sin(a) * rg.rad };
+    p = { x: p.x, y: p.y * Math.cos(rg.tilt) - p.z * Math.sin(rg.tilt), z: p.y * Math.sin(rg.tilt) + p.z * Math.cos(rg.tilt) };
+    p = { x: p.x * Math.cos(rg.yaw) + p.z * Math.sin(rg.yaw), y: p.y, z: -p.x * Math.sin(rg.yaw) + p.z * Math.cos(rg.yaw) };
+    return rot3(p, rot, TILT);
+  }
+
+  function frame() {
+    t++; rot += reduce ? 0 : 0.0016;
+    ctx.clearRect(0, 0, W, H);
+    for (const s of stars) { const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 0.02 + s.ph)); ctx.fillStyle = 'rgba(170,215,205,' + (tw * 0.5).toFixed(3) + ')'; ctx.fillRect(s.x, s.y, s.r, s.r); }
+    const CX = cx + (mx - 0.5) * 30 * DPR, CY = cy + (my - 0.5) * 20 * DPR;
+
+    const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 1.15);
+    g.addColorStop(0, 'rgba(120,255,220,0.18)'); g.addColorStop(0.42, 'rgba(47,216,168,0.09)'); g.addColorStop(1, 'rgba(47,216,168,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX, CY, R * 1.15, 0, 7); ctx.fill();
+
+    const pr = nodes.map((n) => { const r = rot3(n, rot, TILT); const f = PERSP / (PERSP - r.z); return { sx: CX + r.x * R * f, sy: CY + r.y * R * f, f, z: r.z, hot: n.hot }; });
+
+    ctx.lineWidth = DPR * 0.8;
+    for (const [a, b] of edges) { const pa = pr[a], pb = pr[b]; const depth = (pa.z + pb.z) / 2; ctx.strokeStyle = 'rgba(87,187,160,' + (0.05 + (depth + 1) / 2 * 0.16).toFixed(3) + ')'; ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke(); }
+
+    for (const rg of rings) {
+      ctx.beginPath();
+      for (let i = 0; i <= 64; i++) { const r = ringPt(rg, i / 64 * Math.PI * 2); const f = PERSP / (PERSP - r.z); const sx = CX + r.x * R * f, sy = CY + r.y * R * f; i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }
+      ctx.strokeStyle = 'rgba(90,200,255,0.15)'; ctx.lineWidth = DPR; ctx.stroke();
+      for (const off of rg.parts) { const r = ringPt(rg, (t * 0.004 + off * Math.PI * 2) % (Math.PI * 2)); const f = PERSP / (PERSP - r.z); ctx.fillStyle = 'rgba(120,255,225,' + (0.45 + (r.z + 1) / 2 * 0.5).toFixed(2) + ')'; ctx.beginPath(); ctx.arc(CX + r.x * R * f, CY + r.y * R * f, 2.4 * DPR * f, 0, 7); ctx.fill(); }
+    }
+
+    const order = pr.map((_, i) => i).sort((a, b) => pr[a].z - pr[b].z);
+    for (const i of order) {
+      const p = pr[i], bright = (p.z + 1) / 2, al = 0.2 + bright * 0.8, rad = (p.hot ? 2.2 : 1.3) * DPR * p.f;
+      if (p.hot) { ctx.fillStyle = 'rgba(120,255,225,' + al.toFixed(3) + ')'; ctx.shadowColor = 'rgba(47,216,168,0.9)'; ctx.shadowBlur = 8 * DPR * bright; }
+      else { ctx.fillStyle = 'rgba(120,210,190,' + (al * 0.8).toFixed(3) + ')'; ctx.shadowBlur = 0; }
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, rad, 0, 7); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    const cg = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.16);
+    cg.addColorStop(0, 'rgba(230,255,248,0.95)'); cg.addColorStop(1, 'rgba(120,255,220,0.1)');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(CX, CY, R * 0.14, 0, 7); ctx.fill();
+
+    if (!reduce) requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', size, { passive: true });
+  addEventListener('mousemove', (e) => { mx = e.clientX / innerWidth; my = e.clientY / innerHeight; }, { passive: true });
+  makeGlobe(); makeRings(); size();
+  if (reduce) frame(); else requestAnimationFrame(frame);
+
+  // LIVE тоолуур — «амьд» мэдрэмж
+  if (!reduce) {
+    const el = document.getElementById('live-count'); let n = 3340;
+    setInterval(() => { n += Math.floor(Math.random() * 4); el.textContent = n.toLocaleString('en-US'); }, 2600);
+  }
+})();
+</script>
+</body>
+</html>
