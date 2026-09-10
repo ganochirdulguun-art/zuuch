@@ -9,17 +9,17 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Golos+Text:wght@400;500;600;700&display=swap">
 <style>
 :root{
-  --bg0:#05100C; --bg1:#081A15; --bg2:#0A241C;
-  --ink:#EAF3EE; --muted:#8FA89C;
-  --accent:#2FD8A8; --accent-soft:#57BBA0; --accent-deep:#1F6E5C;
-  --line:rgba(120,190,165,.16); --card:rgba(12,30,25,.62);
+  --bg0:#050B18; --bg1:#081428; --bg2:#0A1E3C;
+  --ink:#EAF1FB; --muted:#93A6C4;
+  --accent:#38BDF8; --accent-soft:#7DD3FC; --accent-deep:#2563EB;
+  --line:rgba(130,175,235,.18); --card:rgba(14,26,50,.62);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
   background:
-    radial-gradient(1200px 800px at 72% 6%, rgba(47,216,168,.14), transparent 58%),
-    radial-gradient(1000px 700px at 12% 30%, rgba(31,110,92,.18), transparent 55%),
+    radial-gradient(1200px 800px at 72% 6%, rgba(56,189,248,.16), transparent 58%),
+    radial-gradient(1000px 700px at 12% 30%, rgba(37,99,235,.20), transparent 55%),
     linear-gradient(160deg, var(--bg0), var(--bg1) 55%, var(--bg2));
   color:var(--ink); font-family:"Golos Text","Segoe UI",system-ui,sans-serif;
   min-height:100vh; overflow-x:hidden;
@@ -34,16 +34,16 @@ nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0
 a.btn{display:inline-block;text-decoration:none;font-weight:600;font-size:14.5px;padding:10px 18px;border-radius:9px;transition:.16s}
 a.btn.ghost{color:var(--ink);border:1px solid var(--line)}
 a.btn.ghost:hover{border-color:var(--accent-soft);color:#fff}
-a.btn.solid{background:linear-gradient(135deg,var(--accent),var(--accent-deep));color:#04120D;box-shadow:0 6px 24px rgba(47,216,168,.28)}
-a.btn.solid:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(47,216,168,.4)}
+a.btn.solid{background:linear-gradient(135deg,var(--accent),var(--accent-deep));color:#04122A;box-shadow:0 6px 24px rgba(56,189,248,.30)}
+a.btn.solid:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(56,189,248,.42)}
 a.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .hero{padding:70px 0 30px;max-width:560px}
-.tag{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-soft);border:1px solid var(--line);border-radius:99px;padding:6px 14px;margin-bottom:24px;background:rgba(47,216,168,.05);backdrop-filter:blur(4px)}
+.tag{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-soft);border:1px solid var(--line);border-radius:99px;padding:6px 14px;margin-bottom:24px;background:rgba(56,189,248,.06);backdrop-filter:blur(4px)}
 .tag .pulse{width:7px;height:7px;border-radius:99px;background:var(--accent);animation:pulse 2.4s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,216,168,.5)}70%{box-shadow:0 0 0 9px rgba(47,216,168,0)}100%{box-shadow:0 0 0 0 rgba(47,216,168,0)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(56,189,248,.5)}70%{box-shadow:0 0 0 9px rgba(56,189,248,0)}100%{box-shadow:0 0 0 0 rgba(56,189,248,0)}}
 h1{font-family:"Unbounded",sans-serif;font-weight:700;font-size:clamp(34px,5.5vw,58px);line-height:1.06;margin:0 0 20px;letter-spacing:-.01em}
-h1 .g{background:linear-gradient(120deg,var(--accent),var(--accent-soft));-webkit-background-clip:text;background-clip:text;color:transparent}
+h1 .g{background:linear-gradient(120deg,#38BDF8,#EAF4FF);-webkit-background-clip:text;background-clip:text;color:transparent}
 .lead{font-size:clamp(16px,2vw,19px);color:var(--muted);line-height:1.6;margin:0 0 30px}
 .hero-cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .hero-cta .note{font-size:13px;color:var(--muted)}
@@ -71,12 +71,12 @@ h1 .g{background:linear-gradient(120deg,var(--accent),var(--accent-soft));-webki
 
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:52px 0}
 .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;backdrop-filter:blur(6px);transition:.18s}
-.feat:hover{transform:translateY(-4px);border-color:var(--accent-soft);box-shadow:0 14px 40px rgba(47,216,168,.14)}
+.feat:hover{transform:translateY(-4px);border-color:var(--accent-soft);box-shadow:0 14px 40px rgba(56,189,248,.16)}
 .feat .ic{font-size:22px;margin-bottom:12px;display:inline-grid;place-items:center;width:44px;height:44px;border-radius:11px;background:rgba(47,216,168,.12);border:1px solid var(--line)}
 .feat h3{font-family:"Unbounded",sans-serif;font-weight:600;font-size:16px;margin:0 0 8px}
 .feat p{font-size:14px;color:var(--muted);line-height:1.55;margin:0}
 
-.band{margin:40px 0 60px;background:linear-gradient(135deg,rgba(47,216,168,.10),rgba(31,110,92,.06));border:1px solid var(--line);border-radius:18px;padding:40px 32px;text-align:center;backdrop-filter:blur(6px)}
+.band{margin:40px 0 60px;background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(37,99,235,.07));border:1px solid var(--line);border-radius:18px;padding:40px 32px;text-align:center;backdrop-filter:blur(6px)}
 .band h2{font-family:"Unbounded",sans-serif;font-weight:600;font-size:clamp(20px,3vw,28px);margin:0 0 10px}
 .band p{color:var(--muted);max-width:56ch;margin:0 auto 22px}
 
@@ -203,35 +203,35 @@ footer b{color:var(--ink)}
   function frame() {
     t++; rot += reduce ? 0 : 0.0016;
     ctx.clearRect(0, 0, W, H);
-    for (const s of stars) { const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 0.02 + s.ph)); ctx.fillStyle = 'rgba(170,215,205,' + (tw * 0.5).toFixed(3) + ')'; ctx.fillRect(s.x, s.y, s.r, s.r); }
+    for (const s of stars) { const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 0.02 + s.ph)); ctx.fillStyle = 'rgba(195,220,255,' + (tw * 0.5).toFixed(3) + ')'; ctx.fillRect(s.x, s.y, s.r, s.r); }
     const CX = cx + (mx - 0.5) * 30 * DPR, CY = cy + (my - 0.5) * 20 * DPR;
 
     const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 1.15);
-    g.addColorStop(0, 'rgba(120,255,220,0.18)'); g.addColorStop(0.42, 'rgba(47,216,168,0.09)'); g.addColorStop(1, 'rgba(47,216,168,0)');
+    g.addColorStop(0, 'rgba(160,220,255,0.20)'); g.addColorStop(0.42, 'rgba(56,189,248,0.10)'); g.addColorStop(1, 'rgba(56,189,248,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX, CY, R * 1.15, 0, 7); ctx.fill();
 
     const pr = nodes.map((n) => { const r = rot3(n, rot, TILT); const f = PERSP / (PERSP - r.z); return { sx: CX + r.x * R * f, sy: CY + r.y * R * f, f, z: r.z, hot: n.hot }; });
 
     ctx.lineWidth = DPR * 0.8;
-    for (const [a, b] of edges) { const pa = pr[a], pb = pr[b]; const depth = (pa.z + pb.z) / 2; ctx.strokeStyle = 'rgba(87,187,160,' + (0.05 + (depth + 1) / 2 * 0.16).toFixed(3) + ')'; ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke(); }
+    for (const [a, b] of edges) { const pa = pr[a], pb = pr[b]; const depth = (pa.z + pb.z) / 2; ctx.strokeStyle = 'rgba(120,180,240,' + (0.05 + (depth + 1) / 2 * 0.18).toFixed(3) + ')'; ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke(); }
 
     for (const rg of rings) {
       ctx.beginPath();
       for (let i = 0; i <= 64; i++) { const r = ringPt(rg, i / 64 * Math.PI * 2); const f = PERSP / (PERSP - r.z); const sx = CX + r.x * R * f, sy = CY + r.y * R * f; i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }
-      ctx.strokeStyle = 'rgba(90,200,255,0.15)'; ctx.lineWidth = DPR; ctx.stroke();
-      for (const off of rg.parts) { const r = ringPt(rg, (t * 0.004 + off * Math.PI * 2) % (Math.PI * 2)); const f = PERSP / (PERSP - r.z); ctx.fillStyle = 'rgba(120,255,225,' + (0.45 + (r.z + 1) / 2 * 0.5).toFixed(2) + ')'; ctx.beginPath(); ctx.arc(CX + r.x * R * f, CY + r.y * R * f, 2.4 * DPR * f, 0, 7); ctx.fill(); }
+      ctx.strokeStyle = 'rgba(110,175,255,0.17)'; ctx.lineWidth = DPR; ctx.stroke();
+      for (const off of rg.parts) { const r = ringPt(rg, (t * 0.004 + off * Math.PI * 2) % (Math.PI * 2)); const f = PERSP / (PERSP - r.z); ctx.fillStyle = 'rgba(170,225,255,' + (0.45 + (r.z + 1) / 2 * 0.5).toFixed(2) + ')'; ctx.beginPath(); ctx.arc(CX + r.x * R * f, CY + r.y * R * f, 2.4 * DPR * f, 0, 7); ctx.fill(); }
     }
 
     const order = pr.map((_, i) => i).sort((a, b) => pr[a].z - pr[b].z);
     for (const i of order) {
       const p = pr[i], bright = (p.z + 1) / 2, al = 0.2 + bright * 0.8, rad = (p.hot ? 2.2 : 1.3) * DPR * p.f;
-      if (p.hot) { ctx.fillStyle = 'rgba(120,255,225,' + al.toFixed(3) + ')'; ctx.shadowColor = 'rgba(47,216,168,0.9)'; ctx.shadowBlur = 8 * DPR * bright; }
-      else { ctx.fillStyle = 'rgba(120,210,190,' + (al * 0.8).toFixed(3) + ')'; ctx.shadowBlur = 0; }
+      if (p.hot) { ctx.fillStyle = 'rgba(185,225,255,' + al.toFixed(3) + ')'; ctx.shadowColor = 'rgba(56,189,248,0.9)'; ctx.shadowBlur = 8 * DPR * bright; }
+      else { ctx.fillStyle = 'rgba(135,175,235,' + (al * 0.8).toFixed(3) + ')'; ctx.shadowBlur = 0; }
       ctx.beginPath(); ctx.arc(p.sx, p.sy, rad, 0, 7); ctx.fill();
     }
     ctx.shadowBlur = 0;
     const cg = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.16);
-    cg.addColorStop(0, 'rgba(230,255,248,0.95)'); cg.addColorStop(1, 'rgba(120,255,220,0.1)');
+    cg.addColorStop(0, 'rgba(240,250,255,0.96)'); cg.addColorStop(1, 'rgba(160,220,255,0.12)');
     ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(CX, CY, R * 0.14, 0, 7); ctx.fill();
 
     if (!reduce) requestAnimationFrame(frame);
