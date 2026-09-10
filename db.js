@@ -149,6 +149,9 @@ CREATE TABLE IF NOT EXISTS takedown (
 // tier багана (эх сурвалжийн бодлогын шатлал: green|yellow|red)
 try { db.exec("ALTER TABLE sources ADD COLUMN tier TEXT DEFAULT 'yellow'"); } catch { /* байвал алгасна */ }
 
+// Платформын эзэн (super-admin) — бүх компанийг хардаг
+try { db.exec("ALTER TABLE users ADD COLUMN is_owner INTEGER DEFAULT 0"); } catch { /* байвал алгасна */ }
+
 // ---- Миграци: market_listings-д цуглуулагчийн багана нэмэх (хуучин sqlite.db дээр) ----
 for (const col of [
   'fit_score REAL', 'dedup_group TEXT', 'collected_at TEXT', 'contact_hash TEXT', 'title TEXT', 'images INTEGER DEFAULT 1',
@@ -280,5 +283,20 @@ function ensureTiers() {
   for (const [name, t] of Object.entries(tiers)) upd.run(t, name);
 }
 ensureTiers();
+
+// Платформын эзний бүртгэл — ЗӨВХӨН env-ээс (repo public тул кодод нууц үг бичихгүй)
+function ensureOwner() {
+  const u = String(process.env.ZUUCH_OWNER_USER || '').trim().toLowerCase();
+  const p = String(process.env.ZUUCH_OWNER_PASS || '');
+  if (u.length < 3 || p.length < 6) return;
+  const existing = db.prepare('SELECT id FROM users WHERE username=?').get(u);
+  if (existing) {
+    db.prepare('UPDATE users SET is_owner=1 WHERE id=?').run(existing.id); // нууц үгэнд хүрэхгүй (UI-аас сольсон нь хэвээр)
+  } else {
+    db.prepare("INSERT INTO users (company_id, username, pass_hash, name, role, is_owner) VALUES (1, ?, ?, ?, 'zahiral', 1)")
+      .run(u, hash(p), 'Платформ эзэн');
+  }
+}
+ensureOwner();
 
 module.exports = { db, hash, verify };

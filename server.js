@@ -27,7 +27,7 @@ const sessions = new Map();
 const SESSION_TTL = 12 * 3600 * 1000;
 function newSession(user) {
   const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { id: user.id, role: user.role, name: user.name, company_id: user.company_id, exp: Date.now() + SESSION_TTL });
+  sessions.set(token, { id: user.id, role: user.role, name: user.name, company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, exp: Date.now() + SESSION_TTL });
   return token;
 }
 
@@ -56,7 +56,7 @@ app.post('/api/login', (req, res) => {
   attempts.delete(ip);
   const token = newSession(user);
   const company = db.prepare('SELECT name FROM companies WHERE id=?').get(user.company_id);
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '' } });
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', is_owner: user.is_owner ? 1 : 0 } });
 });
 
 // ---- Компани + захирал бүртгэх (өөрөө онбординг) ----
@@ -93,7 +93,17 @@ app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res
 app.post('/api/logout', (req, res) => { sessions.delete(req.token); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => {
   const company = db.prepare('SELECT name FROM companies WHERE id=?').get(req.user.company_id);
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '' });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', is_owner: req.user.is_owner ? 1 : 0 });
+});
+
+// Нууц үг солих (нэвтэрсэн хэн ч өөрийнхөө)
+app.post('/api/me/password', (req, res) => {
+  const { current, next } = req.body || {};
+  const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  if (!u || !verify(String(current || ''), u.pass_hash)) return res.status(401).json({ error: 'Одоогийн нууц үг буруу' });
+  if (String(next || '').length < 6) return res.status(400).json({ error: 'Шинэ нууц үг 6+ тэмдэгт байх ёстой' });
+  db.prepare('UPDATE users SET pass_hash=? WHERE id=?').run(hash(String(next)), req.user.id);
+  res.json({ ok: true });
 });
 
 // ---- Лавлагаа (компанид хамаарах) ----
@@ -109,6 +119,31 @@ function zahiralOnly(req, res, next) {
   if (req.user.role !== 'zahiral') return res.status(403).json({ error: 'Зөвхөн захирал энэ үйлдлийг хийнэ' });
   next();
 }
+function ownerOnly(req, res, next) {
+  if (!req.user.is_owner) return res.status(403).json({ error: 'Зөвхөн платформын эзэн' });
+  next();
+}
+
+// ---- Эзэн самбар (бүх компанийн тойм) ----
+app.get('/api/owner/overview', ownerOnly, (req, res) => {
+  const companies = db.prepare(`
+    SELECT c.id, c.name, c.plan, c.status, c.created_at,
+      (SELECT COUNT(*) FROM users u WHERE u.company_id=c.id) AS users,
+      (SELECT COUNT(*) FROM properties p WHERE p.company_id=c.id) AS properties,
+      (SELECT COUNT(*) FROM clients cl WHERE cl.company_id=c.id) AS clients,
+      (SELECT COUNT(*) FROM deals d WHERE d.company_id=c.id) AS deals,
+      (SELECT COALESCE(SUM(commission),0) FROM deals d WHERE d.company_id=c.id) AS commission
+    FROM companies c ORDER BY c.id`).all();
+  const totals = {
+    companies: companies.length,
+    users: db.prepare('SELECT COUNT(*) c FROM users').get().c,
+    properties: db.prepare('SELECT COUNT(*) c FROM properties').get().c,
+    deals: db.prepare('SELECT COUNT(*) c FROM deals').get().c,
+    commission: db.prepare('SELECT COALESCE(SUM(commission),0) s FROM deals').get().s,
+    marketListings: db.prepare('SELECT COUNT(*) c FROM market_listings WHERE active=1').get().c,
+  };
+  res.json({ companies, totals });
+});
 app.get('/api/users', (req, res) => {
   res.json(db.prepare('SELECT id, username, name, role, phone FROM users WHERE company_id=? ORDER BY role, name').all(req.user.company_id));
 });

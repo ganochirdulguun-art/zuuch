@@ -57,6 +57,7 @@ async function enterApp() {
   $('#user-name').textContent = ME.name;
   $('#user-role').textContent = ME.role === 'zahiral' ? 'Захирал' : 'Агент';
   $('#menu-team').hidden = ME.role !== 'zahiral';
+  $('#menu-owner').hidden = !ME.is_owner;
   show('dashboard');
 }
 
@@ -79,7 +80,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests, deals, market, collector, team }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests, deals, market, collector, team, owner }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -364,6 +365,52 @@ async function market() {
         <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')}</td></tr>`).join('')}</tbody>
     </table></div></div>`;
 }
+
+// ---------- Эзэн самбар (зөвхөн платформын эзэн) ----------
+const PLAN_T = { demo: 'Демо', trial: 'Туршилт', basic: 'Суурь', pro: 'Про' };
+async function owner() {
+  const d = await api('/owner/overview');
+  if (d.error) { $('#main').innerHTML = `<div class="page-head"><h2>👑 Эзэн самбар</h2></div><p style="color:var(--accent-2)">${esc(d.error)}</p>`; return; }
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>👑 Эзэн самбар</h2><span class="demo-note">Платформын нийт тойм — бүх компани</span></div>
+  <div class="tiles">
+    <div class="tile"><div class="v">${d.totals.companies}</div><div class="k">Бүртгэлтэй компани</div></div>
+    <div class="tile"><div class="v">${d.totals.users}</div><div class="k">Нийт хэрэглэгч</div></div>
+    <div class="tile"><div class="v">${d.totals.properties}</div><div class="k">Нийт объект</div></div>
+    <div class="tile"><div class="v">${d.totals.deals}</div><div class="k">Нийт хэлцэл</div></div>
+    <div class="tile"><div class="v">${fmt(d.totals.commission)}<small style="font-size:12px"> сая ₮</small></div><div class="k">Нийт шимтгэл</div></div>
+    <div class="tile"><div class="v">${d.totals.marketListings}</div><div class="k">Зах зээлийн зар (нийтлэг)</div></div>
+  </div>
+  <div class="card"><h3>Компаниуд</h3>
+    <div class="tablebox"><table>
+      <thead><tr><th>#</th><th>Компани</th><th>Багц</th><th>Төлөв</th><th class="num">Хэрэглэгч</th><th class="num">Объект</th><th class="num">Харилцагч</th><th class="num">Хэлцэл</th><th class="num">Шимтгэл</th><th>Бүртгэсэн</th></tr></thead>
+      <tbody>${d.companies.map((c) => `<tr>
+        <td>${c.id}</td><td><b>${esc(c.name)}</b></td><td>${PLAN_T[c.plan] || c.plan}</td>
+        <td>${badge(c.status === 'active' ? 'active' : 'closed')}</td>
+        <td class="num">${c.users}</td><td class="num">${c.properties}</td><td class="num">${c.clients}</td>
+        <td class="num">${c.deals}</td><td class="num">${fmt(c.commission)}</td>
+        <td>${(c.created_at || '').slice(0, 10)}</td></tr>`).join('')}</tbody>
+    </table></div></div>
+  <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоон тоймыг харж байна. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
+}
+
+// ---------- Нууц үг солих ----------
+window.pwForm = function () {
+  modal(`
+  <h3>Нууц үг солих</h3>
+  <form id="f" class="form-grid">
+    <div class="field wide"><label>Одоогийн нууц үг</label><input name="current" type="password" autocomplete="current-password" required></div>
+    <div class="field wide"><label>Шинэ нууц үг (6+ тэмдэгт)</label><input name="next" type="password" autocomplete="new-password" required></div>
+    <div class="err wide" id="pw-err"></div>
+    <div class="modal-actions wide"><button type="button" onclick="closeModal()">Болих</button><button class="primary">Солих</button></div>
+  </form>`);
+  $('#f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await api('/me/password', { method: 'POST', body: Object.fromEntries(new FormData($('#f'))) });
+    if (r.error) { $('#pw-err').textContent = r.error; return; }
+    closeModal(); alert('Нууц үг амжилттай солигдлоо');
+  });
+};
 
 // ---------- Баг (зөвхөн захирал) ----------
 const ROLE_T = { zahiral: 'Захирал', agent: 'Агент' };
