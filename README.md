@@ -1,6 +1,6 @@
 # «Зууч» — Үл хөдлөх хөрөнгийн ухаалаг платформ
 
-Монголын үл хөдлөх хөрөнгийн зуучлалын компаниудад зориулсан **multi-tenant SaaS**: CRM + зах зээлийн AI мониторинг + байршлын шинжилгээ. Домэйн: **zuuch.mn** (төлөвлөгдсөн).
+Монголын үл хөдлөх хөрөнгийн зуучлалын компаниудад зориулсан **multi-tenant SaaS**: CRM + зах зээлийн AI мониторинг + байршлын шинжилгээ + **Листингийн AI студи**. Домэйн: **zuuch.mn** (төлөвлөгдсөн).
 
 **🌐 Амьд:** https://zuuch-production.up.railway.app — `main` салбарт push хийхэд Railway автоматаар deploy хийнэ.
 
@@ -8,51 +8,50 @@
 
 ```bash
 npm install
+cp .env.example .env   # DATABASE_URL заавал (PostgreSQL)
 npm start
 ```
 
-- Нүүр хуудас (landing): http://localhost:3300/
-- Систем (апп): http://localhost:3300/app
-
-**Туршилтын эрх** (Демо агентлаг ХХК, нууц үг `zuuch2026`): `zahiral` (захирал) · `agent1`, `agent2` (агент).
-Эсвэл нүүр хуудсаас **өөрийн компаниа бүртгүүлээд** шууд эхэлж болно.
+- Нүүр хуудас: http://localhost:3300/ · Систем: http://localhost:3300/app
+- Туршилтын эрх (Демо агентлаг, нууц үг `zuuch2026`): `zahiral` · `agent1` · `agent2`
 
 ## Боломжууд
 
-- **Нүүр хуудас** — эргэлдэх AI сүлжээний бөмбөрцөг + LIVE статистиктай хөдөлгөөнт background, бүртгэл/нэвтрэлт.
-- **Multi-tenant** — компани бүрийн өгөгдөл `company_id`-ээр **бүрэн тусгаарлагдсан**; зах зээлийн мэдээлэл (индекс, зар) нийтлэг.
-- **CRM** — объект, харилцагч, хүсэлт, хэлцэл; ролийн систем (захирал/агент); багийн удирдлага.
+- **Multi-tenant** — компани бүрийн өгөгдөл тусгаарлагдсан; зах зээлийн мэдээлэл нийтлэг. Эзэн (super-admin) › Захирал › Агент.
+- **CRM** — объект, харилцагч, хүсэлт, хэлцэл; өөрөө бүртгүүлэх; багийн удирдлага; нууц үг солих.
 - **Алгоритмууд** — А2 үнийн индекс, А3 үнэлгээ, А4 тохирол, А5 боломж, А6 сануулга, А8 байршлын оноо.
-- **Цуглуулах хөдөлгүүр** — 10 worker, итгэлцүүрийн шүүлт, ажиглах горимын хамгаалалтууд (tier, retention, takedown, нөхцөлт татах). Демо (симуляц эх сурвалж); бодит хувилбарт Python адаптер.
-- **Аюулгүй байдал** — scrypt нууц үг, сессийн хугацаа, нэвтрэлтийн rate-limit, CSP толгойнууд.
-
-## Railway-д байрлуулах (түр хаяг)
-
-1. GitHub repo үүсгэж push хийх (`.gitignore` бэлэн — `node_modules`, `zuuch.db` орохгүй).
-2. Railway → New Project → Deploy from GitHub repo.
-3. **Persistent Volume** нэмж `/data`-д mount хийх (өгөгдөл restart-д алдагдахгүй).
-4. Орчны хувьсагчид (`.env.example`-ийг хар):
-   - `ZUUCH_DB=/data/zuuch.db`
-   - `ZUUCH_SALT=<урт random мөр>`
-   - (`PORT`-ыг Railway өөрөө өгнө)
-5. Deploy → `https://<project>.up.railway.app` хаягтай болно.
-6. **Домэйн** (zuuch.mn) авсны дараа: Railway → Settings → Custom Domain дээр `zuuch.mn` нэмж, Datacom/mmnic дээрх DNS-д Railway-ийн CNAME-ийг зааж холбоно.
+- **🎨 Листингийн AI студи (Ш3а)** — объектын зургуудыг оруулахад: зураг бүрийн өрөө/чанар/wow оноо + эрэмбэ (эхний зураг = хамгийн wow) + «дахин ав» зөвлөмж; зарын текст ×3 суваг (unegui/Facebook/сайт, Монголоор); орчны давуу тал (А8); үнийн 3 стратеги (А3); 30 хоногийн борлуулалтын төлөвлөгөө. `ANTHROPIC_API_KEY` байхгүй бол загвар горим.
+- **Цуглуулах хөдөлгүүр (демо)** — 10 worker (Postgres `FOR UPDATE SKIP LOCKED` queue), итгэлцүүрийн шүүлт, ажиглах горимын хамгаалалтууд.
+- **Аюулгүй байдал** — scrypt нууц үг, сессийн хугацаа, rate-limit, CSP.
 
 ## Технологи
 
-Node.js 22+ · Express 5 · `node:sqlite` (native dep-гүй) · vanilla JS фронтенд. Гадны хамаарал: зөвхөн `express`.
+Node.js 22+ · Express 5 · **PostgreSQL** (`pg`) · multer (зураг) · `@anthropic-ai/sdk` (Claude) · vanilla JS фронтенд.
+
+## Railway тохиргоо
+
+| Хувьсагч | Утга |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Postgres service reference) |
+| `ZUUCH_UPLOADS` | `/data/uploads` (persistent volume) |
+| `ZUUCH_SALT` | урт random мөр |
+| `ZUUCH_OWNER_USER` / `ZUUCH_OWNER_PASS` | платформын эзэн (зөвхөн env-ээс үүснэ; `ZUUCH_OWNER_RESET=1` = нууц үг сэргээх) |
+| `ANTHROPIC_API_KEY` | Claude API түлхүүр — студийн бодит AI |
+| `ZUUCH_AI_MODEL` | анхдагч `claude-sonnet-5` |
+
+Домэйн (zuuch.mn) авсны дараа: Railway → Settings → Custom Domain → DNS CNAME.
 
 ## Файл бүтэц
 
 ```
-server.js        — API, нэвтрэлт, multi-tenant, аюулгүй байдал
-db.js            — схем + миграци + демо өгөгдөл (companies, users, CRM, зах зээл)
-algorithms.js    — А3/А4/А5/А8
-collector.js     — цуглуулах хөдөлгүүр + ажиглах горимын хамгаалалтууд
-public/landing.html — нүүр хуудас (хөдөлгөөнт background)
-public/index.html + app.js — систем (SPA)
+server.js       — API, нэвтрэлт, multi-tenant, студийн API, аюулгүй байдал
+db.js           — PostgreSQL pool, схем, seed, эзэн
+algorithms.js   — А3/А4/А5/А8 (async)
+collector.js    — цуглуулах хөдөлгүүр (async, SKIP LOCKED queue)
+studio.js       — Листингийн AI студи (зургийн шинжилгээ, текст, давуу тал, үнэ, төлөвлөгөө)
+public/landing.html — нүүр хуудас · public/index.html + app.js — систем (SPA)
 ```
 
 ## Анхаар
 
-Зах зээлийн зар, индекс, байршлын оноо нь одоогоор **жишиг (демо) өгөгдөл**. Бодит болгохын тулд `collector.js`-ийн `generateRaw`-г unegui.mn HTML адаптераар (Python) солино — «Ажиглах горим» цувралын (№5) хамгаалалтуудыг мөрдөнө.
+Зах зээлийн зар, индекс, байршлын оноо одоогоор **жишиг (демо)** — бодит болгоход `collector.js`-ийн `generateRaw`-г unegui.mn адаптераар (Python) солино («Ажиглах горим» цувралын хамгаалалтуудыг мөрдөж).
