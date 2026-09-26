@@ -124,7 +124,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td><button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -365,6 +365,73 @@ async function market() {
         <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')}</td></tr>`).join('')}</tbody>
     </table></div></div>`;
 }
+
+// ---------- Ш3а: Листингийн AI студи ----------
+window.studioView = async function (pid) {
+  if (POLL) { clearInterval(POLL); POLL = null; }
+  document.querySelectorAll('#menu button').forEach((x) => x.classList.remove('active'));
+  const d = await api('/studio/' + pid);
+  if (d.error) { alert(d.error); return; }
+  renderStudio(d);
+};
+function renderStudio(d) {
+  const p = d.property, dr = d.draft || {};
+  const texts = dr.texts || {}, adv = dr.advantages || [], price = dr.price || null, plan = dr.plan || [], notes = dr.photo_notes || [];
+  const img = (a) => `/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}`;
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🎨 Студи · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая ₮</h2>
+    <div style="display:flex;gap:8px"><button onclick="properties()">← Объектууд</button></div></div>
+  ${!d.ai ? '<div class="demo-note" style="margin-bottom:12px">⚠️ ANTHROPIC_API_KEY тохируулаагүй — зургийн шинжилгээ, зарын текст загвар горимоор (AI-гүй) ажиллана. Түлхүүр тавимагц бодит AI.</div>' : ''}
+  <div class="card"><h3>1 · Зураг оруулах (${d.assets.length}; зорилт 22–27)</h3>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input type="file" id="st-files" accept="image/jpeg,image/png,image/webp" multiple style="width:auto">
+      <button class="primary" onclick="studioUpload(${p.id})">⬆ Оруулах</button>
+      <button class="primary" onclick="studioAnalyze(${p.id})" ${d.assets.length ? '' : 'disabled'}>🤖 AI шинжилгээ хийх</button>
+      <span id="st-status" style="color:var(--muted);font-size:13px"></span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:14px">
+      ${d.assets.map((a) => `<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)">
+        <div style="position:relative"><img src="${img(a)}" style="width:100%;height:110px;object-fit:cover;display:block" loading="lazy">
+          ${a.rank ? `<span class="badge ${a.rank === 1 ? 'ok' : 'mut'}" style="position:absolute;top:6px;left:6px">${a.rank === 1 ? '★ 1' : '#' + a.rank}</span>` : ''}</div>
+        <div style="padding:6px 8px;font-size:12px">
+          <div><b>${esc(a.room || '—')}</b> ${a.quality != null ? `· чанар ${a.quality} · wow ${a.wow}` : ''}</div>
+          ${a.issues ? `<div style="color:var(--accent-2)">${esc(a.issues)}</div>` : ''}
+          <button class="small" style="margin-top:4px" onclick="studioDel(${a.id},${p.id})">Устгах</button></div></div>`).join('') || '<span style="color:var(--muted)">Зураг байхгүй — утсаараа авсан зургуудаа оруулна уу</span>'}
+    </div></div>
+  ${dr.id ? `
+  <div class="card"><h3>2 · Зургийн зөвлөмж</h3>${notes.length ? '<ul style="margin:0;padding-left:20px">' + notes.map((n) => `<li>${esc(n)}</li>`).join('') + '</ul>' : '<span style="color:var(--muted)">Зөвлөмжгүй — зургууд сайн байна</span>'}</div>
+  <div class="card"><h3>3 · Зарын текст <span class="badge mut">${esc(dr.model || '')}</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">${['unegui', 'facebook', 'site'].map((k, i) => `<button class="small ${i === 0 ? 'primary' : ''}" data-t="${k}" onclick="studioTab(this)">${{ unegui: 'Unegui', facebook: 'Facebook', site: 'Сайт/PDF' }[k]}</button>`).join('')}
+      <button class="small" onclick="navigator.clipboard.writeText(document.getElementById('st-text').value);this.textContent='✓ Хуулав'">📋 Хуулах</button></div>
+    <textarea id="st-text" rows="9" style="width:100%">${esc(texts.unegui || '')}</textarea>
+    <script type="application/json" id="st-texts">${JSON.stringify(texts).replace(/</g, '\\u003c')}</script></div>
+  <div class="card"><h3>4 · Давуу тал (орчны шинжилгээ А8 + баримт)</h3><ul style="margin:0;padding-left:20px">${adv.map((a) => `<li>${esc(a)}</li>`).join('') || '<li style="color:var(--muted)">—</li>'}</ul></div>
+  ${price ? `<div class="card"><h3>5 · Үнийн стратеги (А3) — одоогийн үнэ ${fmt(price.current)} сая ${price.position != null ? `(үнэлгээнээс ${price.position > 0 ? '+' : ''}${price.position}%)` : ''} · итгэлцэл ${price.confidence}%</h3>
+    <div class="tiles">${price.options.map((o) => `<div class="tile"><div class="v">${fmt(o.price)}<small style="font-size:12px"> сая</small></div><div class="k"><b>${o.label}</b> · ${o.days}<br>${esc(o.note)}</div></div>`).join('')}</div></div>` : ''}
+  <div class="card"><h3>6 · 30 хоногийн борлуулалтын төлөвлөгөө</h3>
+    <div class="tablebox"><table><thead><tr><th class="num">Өдөр</th><th>Ажил</th></tr></thead><tbody>${plan.map((s) => `<tr><td class="num">${s.day}</td><td>${esc(s.task)}</td></tr>`).join('')}</tbody></table></div></div>`
+  : '<div class="card" style="color:var(--muted)">Зургуудаа оруулаад «🤖 AI шинжилгээ хийх» дарахад: зургийн эрэмбэ/чанар, зарын текст ×3, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө үүснэ.</div>'}`;
+}
+window.studioTab = function (btn) {
+  document.querySelectorAll('[data-t]').forEach((b) => b.classList.remove('primary')); btn.classList.add('primary');
+  const t = JSON.parse(document.getElementById('st-texts').textContent || '{}');
+  document.getElementById('st-text').value = t[btn.dataset.t] || '';
+};
+window.studioUpload = async function (pid) {
+  const files = document.getElementById('st-files').files;
+  if (!files.length) { alert('Зураг сонгоно уу'); return; }
+  const fd = new FormData(); for (const f of files) fd.append('photos', f);
+  $('#st-status').textContent = 'Оруулж байна…';
+  const r = await fetch('/api/studio/' + pid + '/photos', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then((x) => x.json());
+  if (r.error) { alert(r.error); return; }
+  studioView(pid);
+};
+window.studioDel = async function (id, pid) { await api('/studio/asset/' + id, { method: 'DELETE' }); studioView(pid); };
+window.studioAnalyze = async function (pid) {
+  $('#st-status').textContent = '🤖 Шинжилж байна (30–60 сек)…';
+  const r = await api('/studio/' + pid + '/analyze', { method: 'POST' });
+  if (r.error) { alert(r.error); $('#st-status').textContent = ''; return; }
+  renderStudio(r);
+};
 
 // ---------- Эзэн самбар (зөвхөн платформын эзэн) ----------
 const PLAN_T = { demo: 'Демо', trial: 'Туршилт', basic: 'Суурь', pro: 'Про' };

@@ -5,3 +5,4 @@ zuuch.db-shm
 *.log
 .env
 .DS_Store
+uploads/
