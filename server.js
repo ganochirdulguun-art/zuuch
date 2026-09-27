@@ -384,7 +384,8 @@ app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
     content.push({ type: 'image', source: { type: 'base64', media_type: rows[i].mime || 'image/jpeg', data: buf.toString('base64') } });
   }
   content.push({ type: 'text', text: `Дээрх зургууд нь Улаанбаатар дахь нэг орон сууцны бодит зургууд (${prop.rooms} өрөө, ${prop.area} м², ${prop.floor || '?'}/${prop.total_floors || '?'} давхар). Барилгын хэмжээсийг стандарт лавлагаагаар (хаалга ≈2.0–2.1 м, хавтан 0.6 м, цонхны тавцан 0.8–0.9 м, сандал 0.45 м) тооцоолж, 3D дахин бүтээхэд шаардлагатай параметрүүдийг ТААМАГЛА. Тодорхойгүй бол ердийн УБ-ын орон сууцны утга.
-ЗӨВХӨН JSON: {"ceiling_m":2.7,"door_h":2.05,"window_sill":0.85,"window_top":2.2,"threshold_cm":2,"beams":[{"room":"зочны","note":"тааз дагуу 0.3 м дам нуруу"}],"floor":"parquet|laminate|tile|carpet","wall_color":"#e3d9cb","ceiling_cove":false,"window_style":"vacuum|wood","condition":"шинэ|сайн|дунд|засвар шаардлагатай","notes":["богино тэмдэглэл"]}` });
+Дам нуруу зөвхөн зурагт ТОДОРХОЙ харагдаж байвал л бич (өрөөний нэр + тэмдэглэл), үгүй бол beams хоосон.
+ЗӨВХӨН JSON: {"ceiling_m":2.7,"door_h":2.05,"window_sill":0.85,"window_top":2.2,"threshold_cm":2,"beams":[],"floor":"parquet|laminate|tile|carpet","wall_color":"#e3d9cb","ceiling_cove":false,"window_style":"vacuum|wood","condition":"шинэ|сайн|дунд|засвар шаардлагатай","notes":["богино тэмдэглэл"]}` });
   const r = await ai.messages.create({ model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5', max_tokens: 4000, messages: [{ role: 'user', content }] });
   const txt = (r.content || []).map((c) => c.text || '').join('');
   let j = null; try { const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/\{[\s\S]*\}/); j = JSON.parse(m ? (m[1] || m[0]) : txt); } catch { return res.status(502).json({ error: 'AI JSON буцаасангүй — дахин оролдоно уу' }); }
