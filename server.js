@@ -241,7 +241,7 @@ app.get('/api/leads', wrap(async (req, res) => {
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
     FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
-    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.category IN ('apartment','house') AND l.listed_at >= (CURRENT_DATE - ?::int)
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.category IN ('apartment','house') AND l.listed_at::date >= (CURRENT_DATE - ?::int)
     ORDER BY (ld.status IS NULL) DESC, l.listed_at DESC, l.id DESC LIMIT 200`, req.user.company_id, days);
   const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
   const idxMap = new Map(idxRows.map((i) => [i.district + '|' + i.is_new, i]));
