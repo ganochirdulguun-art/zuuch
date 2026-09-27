@@ -464,10 +464,10 @@ const LEAD_ST = { new: 'Шинэ', working: 'Ажиллаж байна', contact
 const posterUrl = (key) => { const m = /^unegui-user-(\d+)$/.exec(key || ''); return m ? `https://www.unegui.mn/items/author/${m[1]}/` : ''; };
 const phoneBtn = (url) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"><button class="small" title="Эх зарын хуудас нээгдэнэ — «Дугаар харах» товчийг дарна">☎ Дугаар харах ↗</button></a>` : '';
 const CAT_MN = { apartment: '🏢 Орон сууц', house: '🏡 Хаус / хашаа байшин', office: '🏬 Оффис', commercial: '🛍 Худалдаа үйлчилгээ', object: '🏭 Объект', warehouse: '📦 Агуулах / гараж', land: '🌍 Газар' };
-const LEAD_F = Object.assign({ days: 14, category: '', deal: '', district: '', sort: 'score' }, (() => { try { return JSON.parse(localStorage.getItem('zuuch_lead_f') || '{}'); } catch { return {}; } })());
-window.leadF = (k, v) => { LEAD_F[k] = v; try { localStorage.setItem('zuuch_lead_f', JSON.stringify(LEAD_F)); } catch {} leads(); };
+const LEAD_F = Object.assign({ days: 14, category: '', deal: '', city: '', district: '', khoroolol: '', sort: 'score' }, (() => { try { return JSON.parse(localStorage.getItem('zuuch_lead_f') || '{}'); } catch { return {}; } })());
+window.leadF = (k, v) => { LEAD_F[k] = v; if (k === 'city') { LEAD_F.district = ''; LEAD_F.khoroolol = ''; } if (k === 'district') LEAD_F.khoroolol = ''; try { localStorage.setItem('zuuch_lead_f', JSON.stringify(LEAD_F)); } catch {} leads(); };
 async function leads() {
-  const q = new URLSearchParams({ days: LEAD_F.days, category: LEAD_F.category, deal: LEAD_F.deal, district: LEAD_F.district });
+  const q = new URLSearchParams({ days: LEAD_F.days, category: LEAD_F.category, deal: LEAD_F.deal, city: LEAD_F.city, district: LEAD_F.district, khoroolol: LEAD_F.khoroolol });
   const d = await api('/leads?' + q.toString());
   let rows = d.leads || [];
   if (LEAD_F.sort === 'price') rows = [...rows].sort((a, b) => b.price - a.price); else if (LEAD_F.sort === 'price_asc') rows = [...rows].sort((a, b) => a.price - b.price); else if (LEAD_F.sort === 'new') rows = [...rows].sort((a, b) => a.age - b.age);
@@ -478,10 +478,18 @@ async function leads() {
   <div class="card" style="padding:10px 14px;margin-bottom:12px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end">
     <div><label>Төрөл</label>${sel('category', [['', `Бүгд (${cnt.all || 0})`], ...Object.entries(CAT_MN).map(([k, l]) => [k, `${l} (${cnt[k] || 0})`])], LEAD_F.category)}</div>
     <div><label>Хэлцэл</label>${sel('deal', [['', 'Бүгд'], ['sale', `Зарна (${cnt['deal:sale'] || 0})`], ['rent', `Түрээс (${cnt['deal:rent'] || 0})`]], LEAD_F.deal)}</div>
-    <div><label>Дүүрэг</label>${sel('district', [['', 'Бүгд'], ...(META.districts || []).map((x) => [x, x])], LEAD_F.district)}</div>
+    ${(() => {
+      // Байршлын мод: хот/аймаг → дүүрэг/сум → хороо/хороолол (тоо = тухайн түвшний зарын тоо)
+      const L = d.locations || []; const sum = (arr, key) => { const m = {}; for (const x of arr) { const k = x[key] || ''; if (!k) continue; m[k] = (m[k] || 0) + x.n; } return Object.entries(m).sort((a, b) => b[1] - a[1]); };
+      const cities = sum(L, 'city'); const dists = sum(L.filter((x) => !LEAD_F.city || x.city === LEAD_F.city), 'district'); const khs = sum(L.filter((x) => (!LEAD_F.city || x.city === LEAD_F.city) && (!LEAD_F.district || x.district === LEAD_F.district)), 'khoroolol');
+      const lab = LEAD_F.city && LEAD_F.city !== 'Улаанбаатар' ? ['Аймаг', 'Сум', 'Баг/байршил'] : ['Хот / аймаг', 'Дүүрэг', 'Хороо / хороолол'];
+      return `<div><label>${lab[0]}</label>${sel('city', [['', 'Бүгд'], ...cities.map(([k, n]) => [k, `${k} (${n})`])], LEAD_F.city)}</div>
+      <div><label>${lab[1]}</label>${sel('district', [['', 'Бүгд'], ...dists.map(([k, n]) => [k, `${k} (${n})`])], LEAD_F.district)}</div>
+      <div><label>${lab[2]}</label>${sel('khoroolol', [['', 'Бүгд'], ...khs.slice(0, 80).map(([k, n]) => [k, `${k} (${n})`])], LEAD_F.khoroolol)}</div>`;
+    })()}
     <div><label>Сүүлийн</label>${sel('days', [[7, '7 хоног'], [14, '14 хоног'], [30, '30 хоног'], [60, '60 хоног']], LEAD_F.days)}</div>
     <div><label>Эрэмбэ</label>${sel('sort', [['score', 'Оноо'], ['new', 'Хамгийн шинэ'], ['price', 'Үнэ ↓'], ['price_asc', 'Үнэ ↑']], LEAD_F.sort)}</div>
-    <button class="small" onclick="leadF('category','');leadF('deal','');leadF('district','')">Цэвэрлэх</button>
+    <button class="small" onclick="LEAD_F.category='';LEAD_F.deal='';LEAD_F.city='';LEAD_F.district='';LEAD_F.khoroolol='';leadF('sort','score')">Цэвэрлэх</button>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(CAT_MN).map(([k, l]) => `<button class="small ${LEAD_F.category === k ? 'primary' : ''}" onclick="leadF('category','${LEAD_F.category === k ? '' : k}')">${l} <b>${cnt[k] || 0}</b></button>`).join('')}</div></div>
   <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «☎ Дугаар харах ↗»-аар агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>

@@ -326,6 +326,8 @@ ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS ad_type TEXT;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS is_business INTEGER DEFAULT 0;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'apartment';
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS poster_key TEXT;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS city TEXT DEFAULT 'Улаанбаатар';
+CREATE INDEX IF NOT EXISTS market_listings_loc ON market_listings(city, district, khoroolol);
 -- Нийтлэгчийн бүртгэл (нийтэд ил профайлын баримт: нэр, бизнес эсэх, зарын тоо; утас ХАДГАЛАХГҮЙ)
 CREATE TABLE IF NOT EXISTS posters (
   key TEXT PRIMARY KEY,

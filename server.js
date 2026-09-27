@@ -254,10 +254,17 @@ app.get('/api/leads', wrap(async (req, res) => {
   const cat = CATS.includes(req.query.category) ? req.query.category : null;
   const deal = ['sale', 'rent'].includes(req.query.deal) ? req.query.deal : null;
   const district = String(req.query.district || '').slice(0, 40) || null;
+  const city = String(req.query.city || '').slice(0, 40) || null;
+  const khoroolol = String(req.query.khoroolol || '').slice(0, 60) || null;
   const params = [req.user.company_id, days]; let where = '';
   if (cat) { where += ' AND l.category=?'; params.push(cat); } else where += " AND l.category IN ('apartment','house','office','commercial','object','warehouse','land')";
   if (deal) { where += ' AND l.deal_type=?'; params.push(deal); }
+  if (city) { where += " AND COALESCE(l.city,'Улаанбаатар')=?"; params.push(city); }
   if (district) { where += ' AND l.district=?'; params.push(district); }
+  if (khoroolol) { where += ' AND l.khoroolol ILIKE ?'; params.push('%' + khoroolol + '%'); }
+  // Байршлын мод (хот/аймаг → дүүрэг/сум → хороо/хороолол) — шүүлтүүрийн сонголтуудад
+  const locations = await db.all(`SELECT COALESCE(l.city,'Улаанбаатар') city, l.district, COALESCE(l.khoroolol,'') khoroolol, COUNT(*)::int n FROM market_listings l JOIN posters p ON p.key=l.poster_key
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) GROUP BY 1,2,3 ORDER BY 1,2,3`, days);
   const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen, l.poster_key,
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
@@ -276,7 +283,7 @@ app.get('/api/leads', wrap(async (req, res) => {
     let score = 50 + (r.deal_type === 'sale' ? 15 : 5) + Math.max(0, 15 - age) + (r.images <= 3 ? 10 : 0) + (vs != null && vs >= 5 ? 8 : 0) + (r.prev_price && r.prev_price > r.price ? 6 : 0) + (r.poster_listings === 1 ? 5 : 0);
     return { ...r, m2, vsIndex: vs, age, score: Math.min(99, score) };
   }).sort((a, b) => (a.lead_status ? 1 : 0) - (b.lead_status ? 1 : 0) || b.score - a.score);
-  res.json({ leads: out, days, counts, filters: { category: cat, deal, district } });
+  res.json({ leads: out, days, counts, locations, filters: { category: cat, deal, city, district, khoroolol } });
 }));
 app.post('/api/leads/:lid/claim', wrap(async (req, res) => {
   const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.lid);

@@ -87,7 +87,9 @@ function normalize(raw) {
   return {
     source: raw.source, source_id: raw.source_id, title: raw.title, category: raw.category || 'apartment', is_new: raw.is_new ? 1 : 0,
     deal_type: raw.deal_type === 'rent' ? 'rent' : 'sale',
-    district: DISTRICTS.includes(raw.districtText) ? raw.districtText : null, khoroolol: raw.khoroolol || '',
+    // Байршил: УБ-ын дүүрэг эсвэл аймаг/сум — бүгдийг хадгална (индекс/үнэлгээ зөвхөн УБ-ын 6 дүүрэгт)
+    city: (raw.cityText || 'Улаанбаатар').slice(0, 40), district: (raw.districtText || '').slice(0, 40) || null, khoroolol: (raw.khoroolol || '').slice(0, 60),
+    isUB: DISTRICTS.includes(raw.districtText),
     rooms: num(raw.roomsText), area: num(raw.areaText), price: num(raw.priceText),
     floor: raw.floor || null, total_floors: raw.total_floors || null,
     prev_price: raw.prev_price, images: raw.images | 0,
@@ -195,10 +197,10 @@ async function process1(raw, source) {
   if (r.collect) {
     const group = l._group || 'g' + crypto.randomBytes(4).toString('hex');
     const ins = await db.one(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
-        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category,poster_key)
-      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
+        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category,poster_key,city)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
       l.prev_price, l.is_new, l.listed_at, r.score, group, new Date().toISOString(), l.contactHash, l.title, l.images,
-      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business, l.category, l.contactKey || null);
+      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business, l.category, l.contactKey || null, l.city);
     state.stats.collected++;
     await upsertPoster(l).catch((e) => console.error('[poster]', e.message));
     await db.run('UPDATE sources SET collected=collected+1 WHERE name=?', source.name);

@@ -156,7 +156,7 @@ function parseList(html, catKey = 'sale') {
       source: 'unegui', source_id: String(a.id), deal_type: dealType, cat: catKey,
       title: String(a.title || '').trim(),
       category,
-      districtText: loc[1] || '', khoroolol: loc[2] || '',
+      cityText: loc[0] || '', districtText: loc[1] || '', khoroolol: loc[2] || '', // «Улаанбаатар — Дүүрэг — Хороолол» эсвэл «Аймаг — Сум — …»
       roomsText: rooms ? String(rooms) : '',
       areaText: areaFromTitle(a.title) != null ? String(areaFromTitle(a.title)) : '',
       priceText: a.price_without_currency ? String(Number(a.price_without_currency) / 1e6) : '',
