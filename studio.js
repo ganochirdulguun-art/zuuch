@@ -11,11 +11,16 @@ function client() {
   if (!Anthropic || !process.env.ANTHROPIC_API_KEY) return null;
   return new Anthropic();
 }
+// Загварын хариунаас JSON-ыг сугална: ```json ... ``` хашилт, өмнөх/дараах тайлбар текстийг үл тоож; олдохгүй бол null
 function extractJSON(text) {
-  const m = String(text || '').match(/[\[{][\s\S]*[\]}]/);
-  if (!m) throw new Error('JSON олдсонгүй');
-  return JSON.parse(m[0]);
+  const s = String(text || '');
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const cands = [fence && fence[1], s.match(/\[[\s\S]*\]/)?.[0], s.match(/\{[\s\S]*\}/)?.[0]].filter(Boolean);
+  for (const c of cands) { try { return JSON.parse(c); } catch { /* дараагийнхыг үзнэ */ } }
+  console.warn('[studio] JSON олдсонгүй, хариу:', s.slice(0, 200).replace(/\s+/g, ' '));
+  return null;
 }
+const textOf = res => (res.content || []).map(c => c.text || '').join('');
 
 // ---- 1. Зургийн шинжилгээ (өрөө, чанар, wow, асуудал) ----
 async function analyzePhotos(assets) {
@@ -36,7 +41,9 @@ async function analyzePhotos(assets) {
 - issues: Монголоор богино асуудлууд (ж: "бүдэг", "ташуу", "эмх цэгцгүй", "хүн харагдсан", "бичиг баримт харагдсан"), байхгүй бол []
 ЗӨВХӨН JSON массив буцаа: [{"i":1,"room":"...","quality":80,"wow":70,"issues":[]}, ...]` });
   const res = await ai.messages.create({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content }] });
-  const arr = extractJSON(res.content.map(c => c.text || '').join(''));
+  const parsed = extractJSON(textOf(res));
+  // JSON ирээгүй (ж: зураг танигдахгүй) бол студи унахгүй — анхдагч утгаар үргэлжилнэ
+  const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.photos) ? parsed.photos : []);
   return assets.map((a, i) => {
     const r = arr.find(x => Number(x.i) === i + 1) || {};
     return { id: a.id, room: ROOM_ORDER.includes(r.room) ? r.room : 'бусад', quality: clamp(r.quality, 60), wow: clamp(r.wow, 50), issues: Array.isArray(r.issues) ? r.issues.slice(0, 4) : [] };
@@ -135,7 +142,8 @@ ${val ? `ЗАХ ЗЭЭЛИЙН ҮНЭЛГЭЭ (лавлагаа, зард бич
 3) site — албан, 120–160 үг, брэндийн өнгө аястай
 ЗӨВХӨН JSON: {"unegui":"...","facebook":"...","site":"..."}`;
   const res = await ai.messages.create({ model: MODEL, max_tokens: 1800, messages: [{ role: 'user', content: prompt }] });
-  const j = extractJSON(res.content.map(c => c.text || '').join(''));
+  const j = extractJSON(textOf(res));
+  if (!j) throw new Error('AI зарын текстийг JSON хэлбэрээр буцаасангүй — дахин оролдоно уу');
   return { unegui: String(j.unegui || ''), facebook: String(j.facebook || ''), site: String(j.site || ''), model: MODEL };
 }
 
