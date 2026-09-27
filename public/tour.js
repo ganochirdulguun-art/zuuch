@@ -128,10 +128,19 @@ function doorSide(r) {
   }
   return 'S';
 }
+// Гол хана (ТВ, орны толгой, тавцан): хаалганы эсрэг тал, гэхдээ цонхтой бол цонх/хаалгагүй ханыг сонгоно
+function mainSide(r) {
+  const ds = doorSide(r); const opp = { S: 'N', N: 'S', W: 'E', E: 'W' }[ds];
+  const winSides = new Set(plan.windows.filter((w) => w.room === r.id).map((w) => w.side));
+  const doorSides = new Set(); for (const d of plan.doors) { if (d.a !== r.id && d.b !== r.id) continue; if (Math.abs(d.y1 - r.y) < 0.07 && Math.abs(d.y2 - r.y) < 0.07) doorSides.add('N'); else if (Math.abs(d.y1 - (r.y + r.h)) < 0.07) doorSides.add('S'); else if (Math.abs(d.x1 - r.x) < 0.07) doorSides.add('W'); else doorSides.add('E'); }
+  if (!winSides.has(opp)) return opp;
+  const free = ['W', 'E', 'N', 'S'].filter((s) => !winSides.has(s) && !doorSides.has(s) && s !== ds);
+  return free[0] || opp;
+}
 function furnish(r, g) {
-  const side = doorSide(r);
+  const side = { N: 'S', S: 'N', W: 'E', E: 'W' }[mainSide(r)]; // «хаалганы тал» = гол ханын эсрэг
   const cx = r.x + r.w / 2, cz = r.y + r.h / 2;
-  // локал: u = баруун (хаалганаас харахад), v = урагш (хаалганы эсрэг хана руу); халф хэмжээ
+  // локал: u = баруун, v = урагш (гол хана руу); халф хэмжээ
   const fwd = { S: [0, -1], N: [0, 1], W: [1, 0], E: [-1, 0] }[side];
   const rgt = [-fwd[1], fwd[0]];
   const depth = (side === 'N' || side === 'S') ? r.h : r.w, width = (side === 'N' || side === 'S') ? r.w : r.h;
@@ -142,7 +151,7 @@ function furnish(r, g) {
   if (T === 'living') {
     const sofa = new THREE.Group(); sofa.add(box(1.9, 0.42, 0.9, mats.fabric).translateY(0.21)); const bk = box(1.9, 0.5, 0.25, mats.fabric); bk.position.set(0, 0.6, 0.33); sofa.add(bk);
     for (const s of [-1, 1]) { const arm = box(0.2, 0.58, 0.9, mats.fabric); arm.position.set(s * 0.95, 0.29, 0); sofa.add(arm); }
-    place(sofa, 0, -depth / 2 + 0.9, 0, Math.PI);
+    place(sofa, 0, Math.min(-0.3, -depth / 2 + 1.4), 0, Math.PI); // хаалга/явах зам хаахгүй
     const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.8), mats.rug); rug.rotation.x = -Math.PI / 2; place(rug, 0, 0.1, 0.005);
     place(box(1.1, 0.4, 0.6, mats.wood), 0, 0.2, 0.2);
     place(box(1.6, 0.45, 0.42, mats.white), 0, backV, 0.225);
@@ -235,6 +244,14 @@ function buildTour() {
 
 // ---------- Камер, удирдлага ----------
 const cam = { x: 0, z: 0, yaw: 0, pitch: 0 };
+// Өрөөнд орох: хаалганы талын хананаас 0.8 м дотогш, гол хана руу харна
+function enterRoom(r) {
+  const ds = doorSide(r); const cx = r.x + r.w / 2, cz = r.y + r.h / 2;
+  const back = { S: [0, 1], N: [0, -1], W: [-1, 0], E: [1, 0] }[ds]; const half = (ds === 'N' || ds === 'S') ? r.h / 2 : r.w / 2;
+  const d = Math.max(0.3, half - 0.8);
+  cam.x = cx + back[0] * d; cam.z = cz + back[1] * d; cam.pitch = -0.03;
+  cam.yaw = { S: 0, N: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 }[ds];
+}
 const keys = {};
 let mode = 'auto', tourPts = [], tourI = 0, pauseT = 0, sweep = 0;
 function setMode(m) { mode = m; $('#bAuto').classList.toggle('on', m === 'auto'); $('#bFree').classList.toggle('on', m === 'free'); }
@@ -274,7 +291,7 @@ function bindControls() {
     const rect = e.currentTarget.getBoundingClientRect(); const mx = (e.clientX - rect.left) / rect.width * 440, my = (e.clientY - rect.top) / rect.height * 340;
     const { sc, ox, oy } = mapXform(); const px = (mx - ox) / sc + plan.bounds.x, pz = (my - oy) / sc + plan.bounds.y;
     const r = roomAt(px, pz); if (!r) return;
-    const fade = $('#fade'); fade.style.opacity = 1; setTimeout(() => { cam.x = r.x + r.w / 2; cam.z = r.y + r.h / 2; setMode('free'); fade.style.opacity = 0; }, 360);
+    const fade = $('#fade'); fade.style.opacity = 1; setTimeout(() => { enterRoom(r); setMode('free'); fade.style.opacity = 0; }, 360);
   });
 }
 
@@ -348,7 +365,7 @@ async function main() {
   tourPts = buildTour(); tourI = 0; pauseT = 2.5; sweep = 0; if (tourPts[0]) tourPts[0].yaw0 = cam.yaw;
   // ?start=<өрөө id>&yaw=<рад> — тодорхой өрөөнөөс эхлэх (хуваалцах, зураг авах)
   const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
-  if (sr) { cam.x = sr.x + sr.w / 2; cam.z = sr.y + sr.h / 2; const ds = doorSide(sr); cam.yaw = { S: 0, N: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 }[ds] || 0; if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
+  if (sr) { enterRoom(sr); if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
   bindControls();
   const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }; addEventListener('resize', resize); resize();
   $('#load').style.display = 'none';
