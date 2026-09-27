@@ -124,7 +124,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV Tour</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -365,6 +365,95 @@ async function market() {
         <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')}</td></tr>`).join('')}</tbody>
     </table></div></div>`;
 }
+
+// ---------- Ш3д: Virtual POV Tour — план засварлагч ----------
+let TOUR = null; // { pid, plan, types, token, sel, drag }
+function toast(msg) {
+  let el = $('#toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:opacity .3s'; document.body.appendChild(el); }
+  el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = 0; }, 2200);
+}
+window.tourView = async function (pid) {
+  if (POLL) { clearInterval(POLL); POLL = null; }
+  document.querySelectorAll('#menu button').forEach((x) => x.classList.remove('active'));
+  const d = await api('/tour/' + pid);
+  if (d.error) { alert(d.error); return; }
+  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null };
+  renderTour();
+};
+function renderTour() {
+  const t = TOUR, p = t.property, plan = t.plan;
+  const shareUrl = location.origin + '/tour/' + t.token;
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🎥 Virtual POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
+    <div style="display:flex;gap:8px"><button onclick="properties()">← Объектууд</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
+  <div class="demo-note" style="margin-bottom:12px">MVP: планыг объектын баримтаас автоматаар зохиож, 3D POV аялал үүсгэнэ. Агент өрөөнүүдийн хэмжээг (метр) бодитоор засаж, планд чирж байрлуулна; хаалга, цонх, тавилга автомат. Студид оруулсан зургууд өрөө бүрийн хананд жаазлагдана (360° панорам бол бүтэн эргэлт).</div>
+  <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px" class="col-grid">
+    <div class="card"><h3>Өрөөнүүд (${plan.rooms.length}) · нийт ${plan.totalArea} м²</h3>
+      <div class="tablebox"><table><thead><tr><th>Нэр</th><th>Төрөл</th><th class="num">Өргөн</th><th class="num">Урт</th><th></th></tr></thead><tbody>
+      ${plan.rooms.map((r, i) => `<tr style="${t.sel === r.id ? 'background:color-mix(in srgb,var(--accent) 12%,var(--surface))' : ''}" onclick="tourSel('${r.id}')">
+        <td><input value="${esc(r.name)}" style="width:110px" onchange="tourEdit(${i},'name',this.value)"></td>
+        <td><select onchange="tourEdit(${i},'type',this.value)">${Object.entries(t.types).map(([k, v]) => `<option value="${k}" ${r.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td class="num"><input type="number" step="0.1" min="1" max="20" value="${r.w}" style="width:62px" onchange="tourEdit(${i},'w',this.value)"></td>
+        <td class="num"><input type="number" step="0.1" min="1" max="20" value="${r.h}" style="width:62px" onchange="tourEdit(${i},'h',this.value)"></td>
+        <td><button class="small" onclick="tourDelRoom(${i});event.stopPropagation()">✕</button></td></tr>`).join('')}</tbody></table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="small" onclick="tourAddRoom()">+ Өрөө</button>
+        <button class="small" onclick="tourAuto()">✨ Автомат план</button>
+        <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
+      </div>
+      <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · таазны өндөр ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length}</div>
+      <div style="margin-top:12px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):<br>
+        <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
+        <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))">📋 Хуулах</button></div></div>
+    </div>
+    <div class="card"><h3>2D план (чирж байрлуулна, 0.5 м алхам)</h3>
+      <canvas id="tour-plan" width="900" height="620" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:grab;touch-action:none"></canvas>
+      <h3 style="margin-top:14px">3D урьдчилан харах</h3>
+      <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
+    </div>
+  </div>`;
+  drawTourPlan(); bindTourCanvas();
+}
+function tourXform() {
+  const plan = TOUR.plan; const minX = Math.min(...plan.rooms.map((r) => r.x), 0), minY = Math.min(...plan.rooms.map((r) => r.y), 0);
+  const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 4), maxY = Math.max(...plan.rooms.map((r) => r.y + r.h), 4);
+  const sc = Math.min(820 / (maxX - minX + 2), 560 / (maxY - minY + 2));
+  return { sc, ox: 40 - minX * sc + sc, oy: 30 - minY * sc + sc };
+}
+function drawTourPlan() {
+  const c = $('#tour-plan'); if (!c) return; const g = c.getContext('2d'); const plan = TOUR.plan; const { sc, ox, oy } = tourXform();
+  g.clearRect(0, 0, c.width, c.height);
+  const FILL = { living: '#93c5fd', kitchen: '#fde68a', bedroom: '#c4b5fd', bath: '#a5f3fc', hall: '#e2e8f0', balcony: '#bbf7d0', office: '#fdba74', other: '#e5e7eb' };
+  // тор
+  g.strokeStyle = 'rgba(100,116,139,.15)'; g.lineWidth = 1;
+  for (let m = -2; m < 40; m++) { g.beginPath(); g.moveTo(ox + m * sc, 0); g.lineTo(ox + m * sc, c.height); g.stroke(); g.beginPath(); g.moveTo(0, oy + m * sc); g.lineTo(c.width, oy + m * sc); g.stroke(); }
+  for (const r of plan.rooms) {
+    g.fillStyle = FILL[r.type] || '#e5e7eb'; g.fillRect(ox + r.x * sc, oy + r.y * sc, r.w * sc, r.h * sc);
+    g.strokeStyle = TOUR.sel === r.id ? '#2563eb' : '#1e293b'; g.lineWidth = TOUR.sel === r.id ? 4 : 2.5; g.strokeRect(ox + r.x * sc, oy + r.y * sc, r.w * sc, r.h * sc);
+    g.fillStyle = '#0f172a'; g.font = '600 14px Inter,sans-serif'; g.textAlign = 'center'; g.fillText(r.name, ox + (r.x + r.w / 2) * sc, oy + (r.y + r.h / 2) * sc);
+    g.font = '12px Inter,sans-serif'; g.fillStyle = '#334155'; g.fillText(`${r.w}×${r.h} м · ${(r.w * r.h).toFixed(1)} м²`, ox + (r.x + r.w / 2) * sc, oy + (r.y + r.h / 2) * sc + 16);
+  }
+  for (const d of plan.doors || []) { g.strokeStyle = d.b === 'out' ? '#dc2626' : '#ffffff'; g.lineWidth = 6; g.beginPath(); g.moveTo(ox + d.x1 * sc, oy + d.y1 * sc); g.lineTo(ox + d.x2 * sc, oy + d.y2 * sc); g.stroke(); }
+  for (const w of plan.windows || []) { g.strokeStyle = '#2563eb'; g.lineWidth = 6; g.beginPath(); g.moveTo(ox + w.x1 * sc, oy + w.y1 * sc); g.lineTo(ox + w.x2 * sc, oy + w.y2 * sc); g.stroke(); }
+  g.fillStyle = '#64748b'; g.font = '12px Inter,sans-serif'; g.textAlign = 'left'; g.fillText('🔴 орц · ⬜ хаалга · 🔵 цонх (автомат) · дээд тал = хойд зүг', 10, c.height - 10);
+}
+function bindTourCanvas() {
+  const c = $('#tour-plan'); if (!c) return;
+  const pt = (e) => { const r = c.getBoundingClientRect(); const { sc, ox, oy } = tourXform(); return { x: ((e.clientX - r.left) / r.width * c.width - ox) / sc, y: ((e.clientY - r.top) / r.height * c.height - oy) / sc }; };
+  c.addEventListener('pointerdown', (e) => { const p = pt(e); const r = [...TOUR.plan.rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h); TOUR.sel = r ? r.id : null; TOUR.drag = r ? { id: r.id, dx: p.x - r.x, dy: p.y - r.y } : null; c.setPointerCapture(e.pointerId); drawTourPlan(); });
+  c.addEventListener('pointermove', (e) => { if (!TOUR.drag) return; const p = pt(e); const r = TOUR.plan.rooms.find((r) => r.id === TOUR.drag.id); r.x = Math.round((p.x - TOUR.drag.dx) * 2) / 2; r.y = Math.round((p.y - TOUR.drag.dy) * 2) / 2; drawTourPlan(); });
+  c.addEventListener('pointerup', () => { TOUR.drag = null; });
+}
+window.tourSel = (id) => { TOUR.sel = id; drawTourPlan(); };
+window.tourEdit = (i, k, v) => { const r = TOUR.plan.rooms[i]; if (k === 'w' || k === 'h') r[k] = Math.max(1, Math.min(20, Math.round(Number(v) * 10) / 10)); else r[k] = v; drawTourPlan(); };
+window.tourAddRoom = () => { const plan = TOUR.plan; const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 0); plan.rooms.push({ id: 'r' + Date.now().toString(36), type: 'bedroom', name: 'Шинэ өрөө', x: maxX, y: 0, w: 3, h: 3 }); renderTour(); };
+window.tourDelRoom = (i) => { TOUR.plan.rooms.splice(i, 1); renderTour(); };
+window.tourAuto = async () => { const d = await api('/tour/' + TOUR.pid + '/auto', { method: 'POST' }); if (d.error) return alert(d.error); TOUR.plan = d.tour.plan; toast('Автомат план үүслээ'); renderTour(); };
+window.tourSave = async () => {
+  const d = await api('/tour/' + TOUR.pid, { method: 'PUT', body: { plan: TOUR.plan } });
+  if (d.error) return alert(d.error);
+  TOUR.plan = d.tour.plan; toast('Хадгалагдлаа — 3D шинэчлэгдэж байна'); renderTour();
+};
 
 // ---------- Ш3а: Листингийн AI студи ----------
 window.studioView = async function (pid) {

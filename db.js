@@ -327,6 +327,17 @@ DELETE FROM market_listings a USING market_listings b
   WHERE a.id < b.id AND a.source = b.source AND a.source_id = b.source_id AND a.source_id <> '' AND a.collected_at IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source, source_id) WHERE source_id <> '';
 CREATE INDEX IF NOT EXISTS market_listings_seen ON market_listings(source, active, last_seen);
+-- Ш3д: Virtual POV Tour (объект бүрд нэг план + нийтийн хуваалцах token)
+CREATE TABLE IF NOT EXISTS tours (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  property_id INTEGER NOT NULL,
+  token TEXT UNIQUE NOT NULL,
+  plan JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (company_id, property_id)
+);
 `;
 
 async function init() {

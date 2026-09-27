@@ -304,6 +304,60 @@ app.post('/api/studio/:pid/analyze', wrap(async (req, res) => {
 }));
 
 // ---- Хуудсууд ----
+// ---- Ш3д: Virtual POV Tour ----
+const tourLib = require('./tour');
+const ROOM_TYPE_OF = { 'зочны': 'living', 'гал тогоо': 'kitchen', 'унтлагын': 'bedroom', 'угаалгын': 'bath', 'коридор': 'hall', 'тагт': 'balcony' };
+async function tourProp(req, res) {
+  const prop = await db.one('SELECT * FROM properties WHERE id=? AND company_id=?', req.params.pid, req.user.company_id);
+  if (!prop) { res.status(404).json({ error: 'Объект олдсонгүй' }); return null; }
+  return prop;
+}
+async function saveTour(companyId, propId, plan) {
+  const existing = await db.one('SELECT id, token FROM tours WHERE company_id=? AND property_id=?', companyId, propId);
+  if (existing) { await db.run('UPDATE tours SET plan=?, updated_at=NOW() WHERE id=?', JSON.stringify(plan), existing.id); }
+  else await db.run('INSERT INTO tours (company_id, property_id, token, plan) VALUES (?,?,?,?)', companyId, propId, tourLib.newToken(), JSON.stringify(plan));
+  return db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', companyId, propId);
+}
+async function tourAssets(companyId, propId) {
+  const rows = await db.all('SELECT id, room, rank, quality FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', companyId, propId);
+  return rows.map((a) => ({ id: a.id, room: a.room || '', type: ROOM_TYPE_OF[a.room] || 'other', rank: a.rank }));
+}
+app.get('/api/tour/:pid', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  let t = await db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+  res.json({ tour: t, property: prop, assets: await tourAssets(req.user.company_id, prop.id), types: tourLib.TYPES });
+}));
+app.post('/api/tour/:pid/auto', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+  res.json({ tour: t });
+}));
+app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const plan = tourLib.finalize(req.body && req.body.plan ? req.body.plan : {});
+  if (!plan.rooms.length) return res.status(400).json({ error: 'Дор хаяж нэг өрөө хэрэгтэй' });
+  const t = await saveTour(req.user.company_id, prop.id, plan);
+  res.json({ tour: t });
+}));
+// Нийтийн үзэгч (худалдан авагчид хуваалцах холбоос — нэвтрэлт шаардахгүй, зөвхөн план + зургууд)
+app.get('/tour/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tour.html')));
+app.get('/api/tour-public/:token', wrap(async (req, res) => {
+  const t = await db.one('SELECT * FROM tours WHERE token=?', req.params.token);
+  if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
+  const p = await db.one('SELECT district, khoroolol, rooms, area, floor, total_floors, is_new, deal_type, price FROM properties WHERE id=?', t.property_id);
+  const c = await db.one('SELECT name FROM companies WHERE id=?', t.company_id);
+  res.json({ plan: t.plan, property: p, company: c ? c.name : '', assets: await tourAssets(t.company_id, t.property_id) });
+}));
+app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
+  const t = await db.one('SELECT company_id, property_id FROM tours WHERE token=?', req.params.token);
+  if (!t) return res.status(404).end();
+  const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=? AND property_id=?', req.params.id, t.company_id, t.property_id);
+  if (!a) return res.status(404).end();
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
+}));
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/healthz', (req, res) => res.json({ ok: true }));
