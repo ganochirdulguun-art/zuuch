@@ -370,6 +370,37 @@ app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
   const t = await saveTour(req.user.company_id, prop.id, plan);
   res.json({ tour: t });
 }));
+// AI зургийн шинжилгээ → бодит орон зайн параметр (таазны өндөр, хаалга/цонх/довжоо, дам нуруу, шал, ханын өнгө) → plan.style
+app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY тохируулаагүй' });
+  const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id LIMIT 12", req.user.company_id, prop.id);
+  if (!rows.length) return res.status(400).json({ error: 'Эхлээд Студид өрөөнүүдийн зургийг оруулна уу' });
+  const Anthropic = require('@anthropic-ai/sdk'); const ai = new Anthropic();
+  const content = [];
+  for (let i = 0; i < rows.length; i++) {
+    const buf = await fs.promises.readFile(assetPath(rows[i])).catch(() => null); if (!buf) continue;
+    content.push({ type: 'text', text: `Зураг #${i + 1}${rows[i].room ? ' (' + rows[i].room + ')' : ''}` });
+    content.push({ type: 'image', source: { type: 'base64', media_type: rows[i].mime || 'image/jpeg', data: buf.toString('base64') } });
+  }
+  content.push({ type: 'text', text: `Дээрх зургууд нь Улаанбаатар дахь нэг орон сууцны бодит зургууд (${prop.rooms} өрөө, ${prop.area} м², ${prop.floor || '?'}/${prop.total_floors || '?'} давхар). Барилгын хэмжээсийг стандарт лавлагаагаар (хаалга ≈2.0–2.1 м, хавтан 0.6 м, цонхны тавцан 0.8–0.9 м, сандал 0.45 м) тооцоолж, 3D дахин бүтээхэд шаардлагатай параметрүүдийг ТААМАГЛА. Тодорхойгүй бол ердийн УБ-ын орон сууцны утга.
+ЗӨВХӨН JSON: {"ceiling_m":2.7,"door_h":2.05,"window_sill":0.85,"window_top":2.2,"threshold_cm":2,"beams":[{"room":"зочны","note":"тааз дагуу 0.3 м дам нуруу"}],"floor":"parquet|laminate|tile|carpet","wall_color":"#e3d9cb","ceiling_cove":false,"window_style":"vacuum|wood","condition":"шинэ|сайн|дунд|засвар шаардлагатай","notes":["богино тэмдэглэл"]}` });
+  const r = await ai.messages.create({ model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5', max_tokens: 4000, messages: [{ role: 'user', content }] });
+  const txt = (r.content || []).map((c) => c.text || '').join('');
+  let j = null; try { const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/\{[\s\S]*\}/); j = JSON.parse(m ? (m[1] || m[0]) : txt); } catch { return res.status(502).json({ error: 'AI JSON буцаасангүй — дахин оролдоно уу' }); }
+  const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+  const style = {
+    ceiling_m: num(j.ceiling_m, 2.3, 4, 2.7), door_h: num(j.door_h, 1.9, 2.4, 2.05), window_sill: num(j.window_sill, 0.3, 1.3, 0.85), window_top: num(j.window_top, 1.8, 2.6, 2.2),
+    threshold_cm: num(j.threshold_cm, 0, 15, 0), beams: Array.isArray(j.beams) ? j.beams.slice(0, 6) : [], floor: ['parquet', 'laminate', 'tile', 'carpet'].includes(j.floor) ? j.floor : 'laminate',
+    wall_color: /^#[0-9a-f]{6}$/i.test(String(j.wall_color || '')) ? j.wall_color : '#e3d9cb', ceiling_cove: !!j.ceiling_cove, window_style: j.window_style || 'vacuum', condition: String(j.condition || ''), notes: Array.isArray(j.notes) ? j.notes.slice(0, 8) : [],
+    analyzed_at: new Date().toISOString(), photos: rows.length, model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5',
+  };
+  const t = await db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  const plan = tourLib.finalize({ ...(t ? t.plan : tourLib.autoPlan(prop)), ceiling: style.ceiling_m, style });
+  const saved = await saveTour(req.user.company_id, prop.id, plan);
+  res.json({ tour: saved, style });
+}));
+
 // Нийтийн үзэгч (худалдан авагчид хуваалцах холбоос — нэвтрэлт шаардахгүй, зөвхөн план + зургууд)
 app.get('/tour/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tour.html')));
 app.get('/tour-data/:token', wrap(async (req, res) => {

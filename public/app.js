@@ -399,8 +399,12 @@ function renderTour() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="small" onclick="tourAddRoom()">+ Өрөө</button>
         <button class="small" onclick="tourAuto()">✨ Автомат план</button>
+        <button class="small" onclick="tourAnalyze()" title="Студийн зургуудаас таазны өндөр, хаалга/цонх, дам нуруу, шал, ханын өнгийг AI таамаглаж 3D-д тусгана">🔍 AI зургаас шинжлэх</button>
         <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
       </div>
+      ${plan.style ? `<div style="margin-top:10px;background:var(--surface-2);border-radius:6px;padding:8px 10px;font-size:12.5px">
+        <b>🔍 AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
+        ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Студид бодит зураг оруулсан бол «AI зургаас шинжлэх» — таазны өндөр, цонх/хаалга, шал, ханын өнгө бодит зурагтай ойртоно.</div>'}
       <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · таазны өндөр ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length}</div>
       <h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
@@ -457,6 +461,12 @@ window.tourEdit = (i, k, v) => { const r = TOUR.plan.rooms[i]; if (k === 'w' || 
 window.tourAddRoom = () => { const plan = TOUR.plan; const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 0); plan.rooms.push({ id: 'r' + Date.now().toString(36), type: 'bedroom', name: 'Шинэ өрөө', x: maxX, y: 0, w: 3, h: 3 }); renderTour(); };
 window.tourDelRoom = (i) => { TOUR.plan.rooms.splice(i, 1); renderTour(); };
 window.tourAuto = async () => { const d = await api('/tour/' + TOUR.pid + '/auto', { method: 'POST' }); if (d.error) return alert(d.error); TOUR.plan = d.tour.plan; toast('Автомат план үүслээ'); renderTour(); };
+window.tourAnalyze = async () => {
+  toast('AI зургуудыг шинжилж байна (30–90 сек)…');
+  const d = await api('/tour/' + TOUR.pid + '/analyze', { method: 'POST' });
+  if (d.error) return alert(d.error);
+  TOUR.plan = d.tour.plan; toast('Шинжилгээ дууслаа — 3D шинэчлэгдэв'); renderTour();
+};
 window.tourPanoUpload = async (roomId, input) => {
   const f = input.files && input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('room', roomId); fd.append('pano', f);

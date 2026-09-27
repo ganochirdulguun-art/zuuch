@@ -120,8 +120,10 @@ function finalize(plan) {
   }
   const minX = Math.min(...rooms.map((r) => r.x), 0), minY = Math.min(...rooms.map((r) => r.y), 0);
   const maxX = Math.max(...rooms.map((r) => r.x + r.w), 1), maxY = Math.max(...rooms.map((r) => r.y + r.h), 1);
+  // style = AI зургийн шинжилгээний үр дүн (таазны өндөр, хаалга/цонх, дам нуруу, шал, ханын өнгө) — хэвээр дамжина
+  const style = plan.style && typeof plan.style === 'object' ? plan.style : null;
   return {
-    unit: 'm', ceiling: Math.max(2.3, Math.min(4, Number(plan.ceiling) || 2.7)), entry, rooms, doors, windows,
+    unit: 'm', ceiling: Math.max(2.3, Math.min(4, Number(plan.ceiling) || (style && style.ceiling_m) || 2.7)), entry, rooms, doors, windows, style,
     tourOrder: order, bounds: { x: minX, y: minY, w: round(maxX - minX), h: round(maxY - minY) },
     totalArea: round(rooms.reduce((s, r) => s + r.w * r.h, 0)),
   };
