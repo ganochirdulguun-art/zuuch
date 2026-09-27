@@ -197,7 +197,7 @@ function outdoors() {
     const m = box(w, h, w, new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.58, 0.08, rnd(0.55, 0.8)), roughness: 0.9 }));
     m.position.set(b.x + b.w / 2 + Math.cos(ang) * dist, h / 2 - 0.5, b.y + b.h / 2 + Math.sin(ang) * dist); m.castShadow = false; scene.add(m);
   }
-  const hemi = new THREE.HemisphereLight(0xdbeafe, 0x9fc38a, 0.9); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xdbeafe, 0xd6d3d1, 0.9); scene.add(hemi); // доод өнгө саарал — тааз ногоон туяатай болохгүй
   const sun = new THREE.DirectionalLight(0xfff5e0, 2.2); sun.position.set(b.x + b.w / 2 + 12, 18, b.y + b.h / 2 - 14); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
   const s = Math.max(b.w, b.h) + 4; Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 60 }); sun.target.position.set(b.x + b.w / 2, 0, b.y + b.h / 2); scene.add(sun, sun.target);
   scene.add(new THREE.AmbientLight(0xffffff, 0.35));
@@ -346,6 +346,9 @@ async function main() {
   const e = byId[plan.entry] || rooms[0]; cam.x = e.x + e.w / 2; cam.z = e.y + e.h / 2;
   const ent = plan.doors.find((d) => d.b === 'out'); if (ent) { const dx = (ent.x1 + ent.x2) / 2 - cam.x, dz = (ent.y1 + ent.y2) / 2 - cam.z; cam.yaw = Math.atan2(-dx, -dz) + Math.PI; }
   tourPts = buildTour(); tourI = 0; pauseT = 2.5; sweep = 0; if (tourPts[0]) tourPts[0].yaw0 = cam.yaw;
+  // ?start=<өрөө id>&yaw=<рад> — тодорхой өрөөнөөс эхлэх (хуваалцах, зураг авах)
+  const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
+  if (sr) { cam.x = sr.x + sr.w / 2; cam.z = sr.y + sr.h / 2; const ds = doorSide(sr); cam.yaw = { S: 0, N: Math.PI, W: -Math.PI / 2, E: Math.PI / 2 }[ds] || 0; if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
   bindControls();
   const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }; addEventListener('resize', resize); resize();
   $('#load').style.display = 'none';
