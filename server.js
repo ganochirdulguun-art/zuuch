@@ -342,7 +342,7 @@ app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
 }));
 // Нийтийн үзэгч (худалдан авагчид хуваалцах холбоос — нэвтрэлт шаардахгүй, зөвхөн план + зургууд)
 app.get('/tour/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'tour.html')));
-app.get('/api/tour-public/:token', wrap(async (req, res) => {
+app.get('/tour-data/:token', wrap(async (req, res) => {
   const t = await db.one('SELECT * FROM tours WHERE token=?', req.params.token);
   if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
   const p = await db.one('SELECT district, khoroolol, rooms, area, floor, total_floors, is_new, deal_type, price FROM properties WHERE id=?', t.property_id);

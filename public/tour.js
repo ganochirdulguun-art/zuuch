@@ -328,7 +328,7 @@ function togglePano() {
 
 // ---------- Эхлэл ----------
 async function main() {
-  const res = await fetch(`/api/tour-public/${token}`); if (!res.ok) { $('#load').textContent = 'Аялал олдсонгүй'; return; }
+  const res = await fetch(`/tour-data/${token}`); if (!res.ok) { $('#load').textContent = 'Аялал олдсонгүй'; return; }
   data = await res.json(); plan = data.plan; rooms = plan.rooms; byId = Object.fromEntries(rooms.map((r) => [r.id, r]));
   for (const d of plan.doors) { if (d.b === 'out') continue; (doorGraph[d.a] ||= []).push(d.b); (doorGraph[d.b] ||= []).push(d.a); }
   for (const a of data.assets) (assetsByType[a.type] ||= []).push(a);
