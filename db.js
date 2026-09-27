@@ -298,6 +298,7 @@ async function seedSources() {
 async function ensureTiers() {
   const tiers = { remax: 'green', orgil: 'green', unegui: 'yellow', barilga: 'yellow', fb_group: 'red' };
   for (const [name, t] of Object.entries(tiers)) await db.run('UPDATE sources SET tier=? WHERE name=?', t, name);
+  await db.run("UPDATE sources SET max_concurrency=6 WHERE name='unegui' AND max_concurrency<6"); // ангилал бүр тусдаа бот — 6 зэрэг
 }
 // Платформын эзэн — ЗӨВХӨН env-ээс (repo public тул кодод нууц үг бичихгүй)
 async function ensureOwner() {
@@ -324,6 +325,36 @@ ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS total_floors INTEGER;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS ad_type TEXT;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS is_business INTEGER DEFAULT 0;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'apartment';
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS poster_key TEXT;
+-- Нийтлэгчийн бүртгэл (нийтэд ил профайлын баримт: нэр, бизнес эсэх, зарын тоо; утас ХАДГАЛАХГҮЙ)
+CREATE TABLE IF NOT EXISTS posters (
+  key TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  is_business INTEGER DEFAULT 0,
+  verified INTEGER DEFAULT 0,
+  listings INTEGER DEFAULT 0,
+  active_listings INTEGER DEFAULT 0,
+  categories JSONB DEFAULT '{}'::jsonb,
+  districts JSONB DEFAULT '{}'::jsonb,
+  kind TEXT DEFAULT 'unknown',
+  company_guess TEXT DEFAULT '',
+  first_seen TIMESTAMPTZ DEFAULT NOW(),
+  last_seen TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS market_listings_poster ON market_listings(poster_key);
+-- Гэрээний боломж (lead): компани бүр өөрийн ажиллаж буй зараа тэмдэглэнэ
+CREATE TABLE IF NOT EXISTS leads (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  listing_id INTEGER NOT NULL,
+  status TEXT DEFAULT 'new',
+  agent_id INTEGER,
+  client_id INTEGER,
+  note TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (company_id, listing_id)
+);
 DELETE FROM market_listings a USING market_listings b
   WHERE a.id < b.id AND a.source = b.source AND a.source_id = b.source_id AND a.source_id <> '' AND a.collected_at IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source, source_id) WHERE source_id <> '';

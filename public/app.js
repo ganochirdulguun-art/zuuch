@@ -80,7 +80,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, team, owner }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, leads, team, owner }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -358,6 +358,9 @@ window.marketDetail = async function (id) {
   ${v ? `<div class="card" style="margin-bottom:12px"><h3>📊 Үнэлгээ (А3)</h3><div style="font-size:13.5px">Зах зээлийн бодит үнэ: <b>${fmt(v.low)} – ${fmt(v.high)}</b> сая ₮ (төв <b>${fmt(v.estimate)}</b>) · эх сурвалж: ${esc(v.source || 'индекс')} · итгэлцүүр ${v.confidence || '—'}</div>
     <div style="font-size:12.5px;color:var(--muted);margin-top:4px">Зар ${l.price < v.low ? '<b style="color:var(--accent)">интервалаас доогуур — боломж</b>' : l.price > v.high ? '<b style="color:var(--accent-2)">интервалаас дээгүүр</b>' : 'интервал дотор'}${d.index ? ` · дүүргийн индекс ${fmt(d.index.median_m2)} сая/м² (${d.index.month})` : ''}</div></div>` : ''}
   ${d.location ? `<div class="card" style="margin-bottom:12px"><h3>📍 Байршил (А8)</h3><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px">${['education', 'transport', 'commerce', 'health', 'parking', 'green'].map((k) => d.location[k] != null ? `<span class="badge ${d.location[k] >= 75 ? 'ok' : 'mut'}">${{ education: 'Сургууль', transport: 'Тээвэр', commerce: 'Худалдаа', health: 'Эмнэлэг', parking: 'Зогсоол', green: 'Ногоон' }[k]} ${d.location[k]}</span>` : '').join('')}${d.location.growth ? ` <span class="badge warn">өсөлт: ${esc(d.location.growth)}</span>` : ''}</div>${d.location.growth_note ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(d.location.growth_note)}</div>` : ''}</div>` : ''}
+  ${d.poster ? `<div class="card" style="margin-bottom:12px"><h3>👤 Нийтлэгч</h3><div style="font-size:13px"><span class="badge ${POSTER_KIND[d.poster.kind][1]}">${POSTER_KIND[d.poster.kind][0]}</span> <b>${esc(d.poster.name || 'нэргүй')}</b>${d.poster.verified ? ' ✔' : ''} · зар ${d.poster.listings} (идэвхтэй ${d.poster.active_listings})${d.poster.company_guess ? ' · компани: <b>' + esc(d.poster.company_guess) + '</b>' : ''} <button class="small" onclick="posterView('${esc(d.poster.key)}')">бүх зар</button></div>
+    ${d.posterListings.length ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">Бусад зар: ${d.posterListings.slice(0, 5).map((x) => `<a href="#" onclick="marketDetail(${x.id});return false">${esc((x.title || '').slice(0, 30))}</a>`).join(' · ')}${d.posterListings.length > 5 ? ' …' : ''}</div>` : ''}
+    ${d.poster.kind === 'owner' ? `<div style="margin-top:8px">${d.lead ? `<span class="badge ok">Lead: ${LEAD_ST[d.lead.status] || d.lead.status}</span>` : `<button class="small primary" onclick="leadClaim(${l.id});closeModal()">✋ Гэрээний боломж — авч ажиллах</button>`} <span style="font-size:11.5px;color:var(--muted)">утас — эх зарын «Дугаар харах»-аар, зөвшөөрөлтэйгээр</span></div>` : ''}</div>` : ''}
   <div class="card" style="margin-bottom:12px"><h3>🏘 Ижил төстэй зарууд (${d.similar.length})</h3>
     ${d.similar.length ? `<div class="tablebox"><table><thead><tr><th>Зар</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Огноо</th></tr></thead><tbody>
     ${d.similar.map((s) => `<tr style="cursor:pointer" onclick="marketDetail(${s.id})"><td>${esc((s.title || '').slice(0, 50))}${s.khoroolol ? ' <span style="color:var(--muted)">' + esc(s.khoroolol) + '</span>' : ''}</td><td class="num">${s.area}</td><td class="num">${fmt(s.price)}${s.prev_price ? ` <small style="color:var(--muted)">(${fmt(s.prev_price)})</small>` : ''}</td><td class="num">${s.area ? fmt(s.price / s.area) : '—'}</td><td>${s.listed_at || ''}</td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Ижил төстэй зар алга</span>'}</div>
@@ -452,6 +455,41 @@ window.findBuyersFor = async function (pid) {
     ${d.buyers.length ? `<div class="tablebox"><table><thead><tr><th class="num">Оноо</th><th>Худалдан авагч</th><th>Утас</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Агент</th><th></th></tr></thead><tbody>
     ${d.buyers.map((b) => `<tr><td class="num"><span class="score">${b.score}</span></td><td><b>${esc(b.client_name)}</b></td><td>${esc(b.client_phone || '')}</td><td>${DEAL_T[b.deal_type]} · ${b.rooms}ө</td><td class="num">${fmt(b.budget)} сая</td><td>${esc(b.districts || '')}</td><td>${esc(b.agent_name || '—')}</td>
       <td><button class="small" onclick="navigator.clipboard.writeText('${esc(p.district)} ${esc(p.khoroolol || '')}, ${p.rooms} өрөө, ${p.area} м², ${fmt(p.price)} сая ₮ — танд тохирох объект байна. Үзэх цаг товлох уу?').then(()=>toast('Санал хуулагдлаа'))">📋 Санал</button></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Оноо ≥40 худалдан авагч олдсонгүй — Buyer бүртгэлээ нэмээрэй</span>'}</div>`;
+};
+
+// ---------- Гэрээний боломж (lead): эзэн өөрөө нийтэлсэн шинэ зарууд ----------
+const POSTER_KIND = { owner: ['🏠 Эзэн', 'ok'], agent: ['🧑‍💼 Агент', 'mut'], agency: ['🏢 Агентлаг', 'mut'], developer: ['🏗 Хөгжүүлэгч', 'warn'], unknown: ['? Тодорхойгүй', 'mut'] };
+const LEAD_ST = { new: 'Шинэ', working: 'Ажиллаж байна', contacted: 'Холбогдсон', signed: 'Гэрээ хийсэн', rejected: 'Татгалзсан' };
+async function leads(days = 14) {
+  const d = await api('/leads?days=' + days);
+  const rows = d.leads || [];
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🎯 Гэрээний боломж — эзэн өөрөө нийтэлсэн зарууд</h2>
+    <div style="display:flex;gap:6px;align-items:center"><label style="font-size:12.5px">Сүүлийн</label><select onchange="leads(Number(this.value))">${[7, 14, 30, 60].map((n) => `<option value="${n}" ${n === d.days ? 'selected' : ''}>${n} хоног</option>`).join('')}</select></div></div>
+  <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «Эх зар ↗»-аас агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
+  <div class="tablebox"><table>
+    <thead><tr><th class="num">Оноо</th><th>Зар</th><th>Нийтлэгч</th><th class="num">Үнэ</th><th class="num">Индекс</th><th class="num">Хоног</th><th>Төлөв</th><th></th></tr></thead>
+    <tbody>${rows.map((r) => `<tr style="${r.lead_status ? 'opacity:.75' : ''}">
+      <td class="num"><span class="score">${r.score}</span></td>
+      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b><br><span style="font-size:12px;color:var(--muted)">${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''} · ${r.category === 'house' ? 'хаус/хашаа' : r.rooms + 'ө'} ${r.area || '?'} м² · ${r.deal_type === 'rent' ? 'түрээс' : 'зарна'} · зураг ${r.images}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}</span></td>
+      <td><span class="badge ${POSTER_KIND[r.poster_kind][1]}">${POSTER_KIND[r.poster_kind][0]}</span> ${esc(r.poster_name || '')}${r.poster_verified ? ' ✔' : ''}<br><span style="font-size:11.5px;color:var(--muted)">зар ${r.poster_listings} (идэвхтэй ${r.poster_active})</span></td>
+      <td class="num">${fmt(r.price)} сая${r.prev_price ? `<br><small style="color:var(--muted)">өмнө ${fmt(r.prev_price)}</small>` : ''}</td>
+      <td class="num">${r.vsIndex == null ? '—' : `<span class="badge ${r.vsIndex >= 5 ? 'warn' : r.vsIndex <= -8 ? 'ok' : 'mut'}">${r.vsIndex > 0 ? '+' : ''}${r.vsIndex}%</span>`}</td>
+      <td class="num">${r.age}</td>
+      <td>${r.lead_status ? `<select onchange="leadStatus(${r.id},this.value)">${Object.entries(LEAD_ST).map(([k, v]) => `<option value="${k}" ${r.lead_status === k ? 'selected' : ''}>${v}</option>`).join('')}</select>` : '<span class="badge ok">шинэ</span>'}</td>
+      <td style="white-space:nowrap">${r.lead_status ? (r.lead_client ? `<button class="small" onclick="show('clients')">Харилцагч</button>` : '') : `<button class="small primary" onclick="leadClaim(${r.id})">✋ Авч ажиллах</button>`} <button class="small" onclick="marketDetail(${r.id})">Дэлгэрэнгүй</button></td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">Сүүлийн хоногуудад эзний нийтэлсэн зар олдсонгүй — ботууд ажилласаар байна</td></tr>'}</tbody>
+  </table></div>`;
+}
+window.leadClaim = async (id) => { const d = await api('/leads/' + id + '/claim', { method: 'POST' }); if (d.error) return alert(d.error); toast(d.existed ? 'Аль хэдийн ажиллаж байна' : 'Харилцагч (эзэн) үүсгэлээ — утсыг холбогдсоны дараа нөхнө'); leads(); };
+window.leadStatus = async (id, status) => { await api('/leads/' + id, { method: 'PUT', body: { status } }); toast('Төлөв: ' + LEAD_ST[status]); };
+window.posterView = async (key) => {
+  const d = await api('/posters/' + encodeURIComponent(key)); if (d.error) return alert(d.error);
+  const p = d.poster;
+  modal(`<h3>${POSTER_KIND[p.kind][0]} · ${esc(p.name || 'нэргүй')}${p.verified ? ' ✔ баталгаажсан' : ''}</h3>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Эх: ${esc(p.source)} · зар ${p.listings} (идэвхтэй ${p.active_listings}) · ангилал: ${Object.entries(p.categories || {}).map(([k, n]) => k + ' ' + n).join(', ') || '—'} · дүүрэг: ${Object.entries(p.districts || {}).map(([k, n]) => k + ' ' + n).join(', ') || '—'}${p.company_guess ? ' · компани: <b>' + esc(p.company_guess) + '</b>' : ''} · анх ${String(p.first_seen).slice(0, 10)}</div>
+  <div class="tablebox"><table><thead><tr><th>Зар</th><th>Ангилал</th><th class="num">Үнэ</th><th>Огноо</th><th></th></tr></thead><tbody>
+  ${d.listings.map((l) => `<tr style="${l.active ? '' : 'opacity:.6'}"><td>${esc((l.title || '').slice(0, 55))}<br><span style="font-size:11.5px;color:var(--muted)">${esc(l.district)} ${esc(l.khoroolol || '')}</span></td><td>${esc(l.category)} · ${l.deal_type}</td><td class="num">${fmt(l.price)}</td><td>${l.listed_at || ''}</td><td><button class="small" onclick="closeModal();marketDetail(${l.id})">→</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="closeModal()">Хаах</button></div>`);
 };
 
 // ---------- Зах зээл ----------
@@ -1004,7 +1042,7 @@ async function collector() {
       ? `Шат 2 БОДИТ — unegui.mn ажиглах горим · ${Math.round((li.intervalSec || 600) / 60)} мин тутам · хүсэлт ${li.adapter ? li.adapter.requests : 0} / ${li.adapter ? (li.adapter.bytes / 1048576).toFixed(1) : 0} MB`
       : 'Шат 2 демо — симуляц эх сурвалж (жинхэнэ сайт руу хандахгүй)';
     const liveLine = s.live ? `<div style="background:color-mix(in srgb,var(--accent) 10%,var(--surface));border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">
-      📡 <b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> ·
+      📡 <b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> · дараагийн мөчлөг: <b>${li.nextCycleIn != null ? (li.nextCycleIn > 0 ? Math.floor(li.nextCycleIn / 60) + ':' + String(li.nextCycleIn % 60).padStart(2, '0') : 'одоо') : '—'}</b> (ботууд мөчлөг хооронд сул зогсдог — хэвийн) ·
       дахин харагдсан: <b>${li.updated || 0}</b> · үнэ өөрчлөгдсөн: <b>${li.priceChanges || 0}</b> · дэлгэрэнгүй татсан: <b>${li.detailFetched || 0}</b> ·
       сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${li.adapter && li.adapter.cooldownUntil && li.adapter.cooldownUntil > Date.now() ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
       ${li.byCat ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${Object.values(li.byCat).map((c) => `<span class="badge mut" title="${Math.round((Date.now() - c.at) / 60000)} мин өмнө">${esc(c.label)}: ${c.adverts}</span>`).join('')}</div>` : ''}

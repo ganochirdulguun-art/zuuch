@@ -227,7 +227,54 @@ app.get('/api/market/:id', wrap(async (req, res) => {
   const buyers = reqs.map((r) => ({ id: r.id, client_name: r.client_name, client_phone: r.client_phone, budget: r.budget, rooms: r.rooms, districts: r.districts, score: A.matchScore(r, { ...l, created_at: l.listed_at }) })).filter((b) => b.score >= 50).sort((a, b) => b.score - a.score).slice(0, 10);
   const days = l.listed_at ? Math.floor((Date.now() - new Date(l.listed_at).getTime()) / 864e5) : null;
   const m2 = l.area > 0 ? l.price / l.area : null; const baseline = idx ? idx.median_m2 * ({ 1: 1.06, 2: 1.0, 3: 0.95, 4: 0.92, 5: 0.9 }[l.rooms] || 1) : null;
-  res.json({ listing: l, index: idx, valuation: val, similar, location: loc, buyers, days, m2, baseline, vsIndex: m2 && baseline ? Math.round((m2 / baseline - 1) * 100) : null });
+  // Нийтлэгч: ангилал (эзэн/агент/агентлаг/хөгжүүлэгч) + тэдний бусад зарууд; lead-ийн төлөв (энэ компанийн)
+  const poster = l.poster_key ? await db.one('SELECT * FROM posters WHERE key=?', l.poster_key) : null;
+  const posterListings = l.poster_key ? await db.all('SELECT id, title, category, deal_type, district, rooms, area, price, active, listed_at FROM market_listings WHERE poster_key=? AND id<>? ORDER BY id DESC LIMIT 12', l.poster_key, l.id) : [];
+  const lead = await db.one('SELECT * FROM leads WHERE company_id=? AND listing_id=?', req.user.company_id, l.id);
+  res.json({ listing: l, index: idx, valuation: val, similar, location: loc, buyers, days, m2, baseline, vsIndex: m2 && baseline ? Math.round((m2 / baseline - 1) * 100) : null, poster, posterListings, lead });
+}));
+// ---- Гэрээний боломж (lead): эзэн өөрөө нийтэлсэн шинэ зарууд → брокер оффист санал ----
+// Утас ХАДГАЛАХГҮЙ (сайт нуудаг + хувь хүний мэдээллийн хууль): агент эх зарын холбоосоор өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагч болгоно
+app.get('/api/leads', wrap(async (req, res) => {
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen,
+      p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
+      ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
+    FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.category IN ('apartment','house') AND l.listed_at >= (CURRENT_DATE - ?::int)
+    ORDER BY (ld.status IS NULL) DESC, l.listed_at DESC, l.id DESC LIMIT 200`, req.user.company_id, days);
+  const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
+  const idxMap = new Map(idxRows.map((i) => [i.district + '|' + i.is_new, i]));
+  const out = rows.map((r) => {
+    const idx = idxMap.get(r.district + '|0'); const m2 = r.area > 0 ? r.price / r.area : null;
+    const vs = idx && m2 && r.deal_type === 'sale' && r.category === 'apartment' ? Math.round((m2 / (idx.median_m2 * ({ 1: 1.06, 2: 1.0, 3: 0.95, 4: 0.92, 5: 0.9 }[r.rooms] || 1)) - 1) * 100) : null;
+    const age = r.listed_at ? Math.floor((Date.now() - new Date(r.listed_at).getTime()) / 864e5) : 30;
+    // Lead оноо: эзэн (1–2 зар) + шинэ + зарах + үнэ индекст ойр/дээгүүр (эзэн үнээ мэдэхгүй байж магад) + зураг цөөн (мэргэжлийн туслалцаа хэрэгтэй)
+    let score = 50 + (r.deal_type === 'sale' ? 15 : 5) + Math.max(0, 15 - age) + (r.images <= 3 ? 10 : 0) + (vs != null && vs >= 5 ? 8 : 0) + (r.prev_price && r.prev_price > r.price ? 6 : 0) + (r.poster_listings === 1 ? 5 : 0);
+    return { ...r, m2, vsIndex: vs, age, score: Math.min(99, score) };
+  }).sort((a, b) => (a.lead_status ? 1 : 0) - (b.lead_status ? 1 : 0) || b.score - a.score);
+  res.json({ leads: out, days });
+}));
+app.post('/api/leads/:lid/claim', wrap(async (req, res) => {
+  const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.lid);
+  if (!l) return res.status(404).json({ error: 'Зар олдсонгүй' });
+  const p = l.poster_key ? await db.one('SELECT * FROM posters WHERE key=?', l.poster_key) : null;
+  const ex = await db.one('SELECT * FROM leads WHERE company_id=? AND listing_id=?', req.user.company_id, l.id);
+  if (ex) return res.json({ ok: true, lead: ex, existed: true });
+  // Харилцагч (эзэн) — утасгүй; агент холбогдсоны дараа зөвшөөрөлтэйгээр нөхнө
+  const c = await db.one("INSERT INTO clients (company_id, name, phone, type, notes) VALUES (?,?,?,?,?) RETURNING id", req.user.company_id, (p && p.name) || 'Зарын эзэн', '', 'owner', `Зарын эзэн (lead): ${l.title || ''} · ${l.district} ${l.khoroolol || ''} · ${l.rooms}ө ${l.area}м² · ${l.price} сая · эх: ${l.source_url || l.source}. Утас — эх зарын «Дугаар харах»-аар холбогдож, зөвшөөрөлтэйгээр бүртгэнэ.`);
+  const lead = await db.one("INSERT INTO leads (company_id, listing_id, status, agent_id, client_id, note) VALUES (?,?,'working',?,?,?) RETURNING *", req.user.company_id, l.id, req.user.id, c.id, String(req.body && req.body.note || ''));
+  res.json({ ok: true, lead, client_id: c.id });
+}));
+app.put('/api/leads/:lid', wrap(async (req, res) => {
+  const st = ['new', 'working', 'contacted', 'signed', 'rejected'].includes(req.body.status) ? req.body.status : 'working';
+  await db.run("INSERT INTO leads (company_id, listing_id, status, agent_id, note) VALUES (?,?,?,?,?) ON CONFLICT (company_id, listing_id) DO UPDATE SET status=EXCLUDED.status, note=COALESCE(NULLIF(EXCLUDED.note,''), leads.note)", req.user.company_id, req.params.lid, st, req.user.id, String(req.body.note || ''));
+  res.json({ ok: true });
+}));
+app.get('/api/posters/:key', wrap(async (req, res) => {
+  const p = await db.one('SELECT * FROM posters WHERE key=?', req.params.key); if (!p) return res.status(404).json({ error: 'Олдсонгүй' });
+  const listings = await db.all('SELECT id, title, category, deal_type, district, khoroolol, rooms, area, price, active, listed_at, source_url FROM market_listings WHERE poster_key=? ORDER BY id DESC LIMIT 50', p.key);
+  res.json({ poster: p, listings });
 }));
 // Объектод тохирох худалдан авагчид (А4 урвуу): компанийн нээлттэй хүсэлтүүдийг оноогоор
 app.get('/api/properties/:id/buyers', wrap(async (req, res) => {

@@ -93,6 +93,7 @@ function normalize(raw) {
     prev_price: raw.prev_price, images: raw.images | 0,
     phone: /^\+976\d{8}$/.test(phone) ? phone : (phone || null), phoneValid: /^\+976\d{8}$/.test(phone),
     contactKey: raw.contactKey || '', url: raw.url || '', ad_type: raw.ad_type || '', is_business: raw.is_business ? 1 : 0,
+    poster_name: raw.poster_name || '', poster_verified: raw.poster_verified ? 1 : 0,
     postedDaysAgo: daysAgo, descr: raw.descr, _dupOf: raw._dupOf,
     listed_at: new Date(Date.now() - daysAgo * 864e5).toISOString().slice(0, 10),
   };
@@ -149,6 +150,31 @@ async function fitScore(l, source) {
   return { collect: s >= FIT_THRESHOLD, score: s, flags, dd, reason: s >= FIT_THRESHOLD ? null : 'оноо босго хүрээгүй' };
 }
 
+// ---- Нийтлэгчийн бүртгэл: нийтэд ил профайлын баримт (нэр, бизнес, баталгаажсан, зарын тоо/ангилал/дүүрэг) → эзэн/агент/компани ангилал ----
+const COMPANY_RX = /ххк|llc|realty|real ?estate|зуучлал|агентлаг|property|properties|хотхон|барилга|констракшн|construction|групп|group|invest|инвест|девелоп|develop|resid/i;
+function classifyPoster(p) {
+  const cats = Object.keys(p.categories || {}).length, n = p.listings || 0;
+  if (COMPANY_RX.test(p.name || '')) return { kind: n >= 5 ? 'developer' : 'agency', company: p.name };
+  if (p.is_business || n >= 4 || cats >= 3) return { kind: 'agent', company: '' };
+  if (n <= 2) return { kind: 'owner', company: '' };
+  return { kind: 'unknown', company: '' };
+}
+async function upsertPoster(l) {
+  if (!l.contactKey) return;
+  const key = l.contactKey;
+  const ex = await db.one('SELECT * FROM posters WHERE key=?', key);
+  const cats = ex ? { ...(ex.categories || {}) } : {}; cats[l.category] = (cats[l.category] || 0) + (ex && ex.listings ? 0 : 0);
+  const { c } = await db.one('SELECT COUNT(*)::int c FROM market_listings WHERE poster_key=?', key);
+  const { a } = await db.one('SELECT COUNT(*)::int a FROM market_listings WHERE poster_key=? AND active=1', key);
+  const catRows = await db.all('SELECT category, COUNT(*)::int n FROM market_listings WHERE poster_key=? GROUP BY category', key);
+  const distRows = await db.all('SELECT district, COUNT(*)::int n FROM market_listings WHERE poster_key=? GROUP BY district', key);
+  const categories = Object.fromEntries(catRows.map((r) => [r.category || 'apartment', r.n])); const districts = Object.fromEntries(distRows.map((r) => [r.district, r.n]));
+  const base = { name: l.poster_name || (ex && ex.name) || '', is_business: l.is_business || (ex && ex.is_business) || 0, listings: c, categories };
+  const cls = classifyPoster(base);
+  if (ex) await db.run('UPDATE posters SET name=?, is_business=?, verified=GREATEST(verified,?), listings=?, active_listings=?, categories=?, districts=?, kind=?, company_guess=?, last_seen=NOW() WHERE key=?', base.name, base.is_business, l.poster_verified || 0, c, a, JSON.stringify(categories), JSON.stringify(districts), cls.kind, cls.company, key);
+  else await db.run('INSERT INTO posters (key, source, name, is_business, verified, listings, active_listings, categories, districts, kind, company_guess) VALUES (?,?,?,?,?,?,?,?,?,?,?)', key, l.source, base.name, base.is_business, l.poster_verified || 0, c, a, JSON.stringify(categories), JSON.stringify(districts), cls.kind, cls.company);
+}
+
 async function process1(raw, source) {
   state.stats.parsed++;
   const l = await enrich(normalize(raw));
@@ -161,6 +187,7 @@ async function process1(raw, source) {
       else await db.run('UPDATE market_listings SET last_seen=NOW(), active=1, delisted_at=NULL, images=?, ad_type=? WHERE id=?', l.images, l.ad_type, ex.id);
       state.live.updated++;
       if (priceChanged) { state.live.priceChanges++; logEvent({ kind: 'price', lid: ex.id, source: source.name, title: l.title, district: l.district, price: l.price, prev: Number(ex.price), url: l.url }); }
+      if (l.contactKey) { await db.run('UPDATE market_listings SET poster_key=? WHERE id=? AND poster_key IS NULL', l.contactKey, ex.id); if (Math.random() < 0.2) await upsertPoster(l).catch(() => {}); }
       return;
     }
   }
@@ -168,11 +195,12 @@ async function process1(raw, source) {
   if (r.collect) {
     const group = l._group || 'g' + crypto.randomBytes(4).toString('hex');
     const ins = await db.one(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
-        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category)
-      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
+        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category,poster_key)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
       l.prev_price, l.is_new, l.listed_at, r.score, group, new Date().toISOString(), l.contactHash, l.title, l.images,
-      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business, l.category);
+      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business, l.category, l.contactKey || null);
     state.stats.collected++;
+    await upsertPoster(l).catch((e) => console.error('[poster]', e.message));
     await db.run('UPDATE sources SET collected=collected+1 WHERE name=?', source.name);
     logEvent({ kind: 'collected', lid: ins && ins.id, source: source.name, title: l.title, district: l.district, price: l.price, deal: l.deal_type, score: r.score, flags: r.flags || [], url: l.url });
   } else {
@@ -354,7 +382,7 @@ async function status() {
   ]);
   const { known, pageHash, ...liveInfo } = state.live;
   return {
-    live: LIVE, liveInfo: { ...liveInfo, knownCount: known.size, intervalSec: LIVE_INTERVAL_SEC, adapter: LIVE ? unegui.stats() : null },
+    live: LIVE, liveInfo: { ...liveInfo, knownCount: known.size, intervalSec: LIVE_INTERVAL_SEC, nextCycleIn: LIVE && lastRun.unegui ? Math.max(0, Math.round((lastRun.unegui + LIVE_INTERVAL_SEC * 1000 - Date.now()) / 1000)) : null, adapter: LIVE ? unegui.stats() : null },
     running: state.running, note: state.note || '', monitoring: MONITORING_MODE, ua: USER_AGENT, retentionDays: RETENTION_DAYS,
     takedownCount: td.c, workers: state.workers.map((w) => ({ id: w.id, status: w.status, source: w.source })),
     queued: q.c, stats: { ...state.stats, ratePerMin: Math.round(state.stats.collected / mins) },

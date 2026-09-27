@@ -168,6 +168,8 @@ function parseList(html, catKey = 'sale') {
       is_business: !!(a.user && a.user.is_bussiness),
       ad_type: (a.ad_type && a.ad_type.type) || 'regular',
       contactKey: a.user && a.user.id ? 'unegui-user-' + a.user.id : '',
+      poster_name: String((a.user && a.user.name) || '').slice(0, 80), // нийтлэгчийн нэр (нийтэд ил) — эзэн/агент/компани ангилахад
+      poster_verified: !!(a.user && (a.user.verified || a.user.emongolia_verified)),
       url: a.url ? BASE + a.url : '',
       descr: '',
       phone: '',
