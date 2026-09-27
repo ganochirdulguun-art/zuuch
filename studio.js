@@ -21,6 +21,8 @@ function extractJSON(text) {
   return null;
 }
 const textOf = res => (res.content || []).map(c => c.text || '').join('');
+// Бодох (thinking) токен max_tokens-д тооцогддог тул лимитийг өгөөмөр өгнө; таслагдвал шалтгааныг логлоно
+const checkStop = (res, what) => { if (res.stop_reason !== 'end_turn') console.warn(`[studio] ${what}: stop_reason=${res.stop_reason}, output_tokens=${res.usage && res.usage.output_tokens}`); };
 
 // ---- 1. Зургийн шинжилгээ (өрөө, чанар, wow, асуудал) ----
 async function analyzePhotos(assets) {
@@ -40,7 +42,8 @@ async function analyzePhotos(assets) {
 - wow: 0–100 (худалдан авагчийн анхаарлыг татах чадвар, эхний зураг болох чадвар)
 - issues: Монголоор богино асуудлууд (ж: "бүдэг", "ташуу", "эмх цэгцгүй", "хүн харагдсан", "бичиг баримт харагдсан"), байхгүй бол []
 ЗӨВХӨН JSON массив буцаа: [{"i":1,"room":"...","quality":80,"wow":70,"issues":[]}, ...]` });
-  const res = await ai.messages.create({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content }] });
+  const res = await ai.messages.create({ model: MODEL, max_tokens: 6000, messages: [{ role: 'user', content }] });
+  checkStop(res, 'зургийн шинжилгээ');
   const parsed = extractJSON(textOf(res));
   // JSON ирээгүй (ж: зураг танигдахгүй) бол студи унахгүй — анхдагч утгаар үргэлжилнэ
   const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.photos) ? parsed.photos : []);
@@ -141,7 +144,8 @@ ${val ? `ЗАХ ЗЭЭЛИЙН ҮНЭЛГЭЭ (лавлагаа, зард бич
 2) facebook — 60–90 үг, дулаан, emoji хэрэглэсэн, мөр мөрөөр
 3) site — албан, 120–160 үг, брэндийн өнгө аястай
 ЗӨВХӨН JSON: {"unegui":"...","facebook":"...","site":"..."}`;
-  const res = await ai.messages.create({ model: MODEL, max_tokens: 1800, messages: [{ role: 'user', content: prompt }] });
+  const res = await ai.messages.create({ model: MODEL, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] });
+  checkStop(res, 'зарын текст');
   const j = extractJSON(textOf(res));
   if (!j) throw new Error('AI зарын текстийг JSON хэлбэрээр буцаасангүй — дахин оролдоно уу');
   return { unegui: String(j.unegui || ''), facebook: String(j.facebook || ''), site: String(j.site || ''), model: MODEL };
