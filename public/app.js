@@ -80,7 +80,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests, deals, market, collector, team, owner }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests, deals, market, collector, tours, team, owner }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -372,62 +372,101 @@ function toast(msg) {
   let el = $('#toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:opacity .3s'; document.body.appendChild(el); }
   el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = 0; }, 2200);
 }
-window.tourView = async function (pid) {
+// mode: 'auto' (✨ автомат план) | 'measure' (📐 хэмжээс + AI + 360°) | 'build' (🧱 блок өрж бүтээх)
+window.tourView = async function (pid, mode) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  document.querySelectorAll('#menu button').forEach((x) => x.classList.remove('active'));
+  document.querySelectorAll('#menu button').forEach((x) => x.classList.toggle('active', x.dataset.view === 'tours'));
   const d = await api('/tour/' + pid);
   if (d.error) { alert(d.error); return; }
-  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null, tool: null, snap: 0.1, undo: [] };
+  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null, tool: null, snap: 0.1, undo: [], mode: mode || (TOUR && TOUR.pid === pid ? TOUR.mode : null) || 'auto' };
   renderTour();
 };
-function renderTour() {
-  const t = TOUR, p = t.property, plan = t.plan;
-  const shareUrl = location.origin + '/tour/' + t.token;
+window.tourMode = (m) => { TOUR.mode = m; TOUR.tool = null; renderTour(); };
+// 🎥 POV Tour цэс — объект бүрд 3 арга
+async function tours() {
+  const d = await api('/properties');
+  const rows = (d.items || d || []).filter((p) => p.status !== 'archived');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎥 Virtual POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
-    <div style="display:flex;gap:8px"><button onclick="properties()">← Объектууд</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
-  <div class="demo-note" style="margin-bottom:12px">MVP: планыг объектын баримтаас автоматаар зохиож, 3D POV аялал үүсгэнэ. Агент өрөөнүүдийн хэмжээг (метр) бодитоор засаж, планд чирж байрлуулна; хаалга, цонх, тавилга автомат. Студид оруулсан зургууд өрөө бүрийн хананд жаазлагдана (360° панорам бол бүтэн эргэлт).</div>
-  <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px" class="col-grid">
-    <div class="card"><h3>Өрөөнүүд (${plan.rooms.length}) · нийт ${plan.totalArea} м²</h3>
-      <div class="tablebox"><table><thead><tr><th>Нэр</th><th>Төрөл</th><th class="num">Өргөн</th><th class="num">Урт</th><th></th></tr></thead><tbody>
+  <div class="page-head"><h2>🎥 Virtual POV Tour</h2><span class="demo-note">Объект бүрд 3 арга — аль нэгээр нь эхлээд бусдаар нь нарийвчилж болно</span></div>
+  <div class="tiles" style="margin-bottom:14px">
+    <div class="tile" style="text-align:left"><div style="font-weight:700">✨ Автомат план</div><div class="k">Өрөөний тоо, талбайгаас систем ердийн зохион байгуулалт зурна — 10 секунд. Танилцуулах түвшин.</div></div>
+    <div class="tile" style="text-align:left"><div style="font-weight:700">📐 Хэмжээс + AI</div><div class="k">Өрөө бүрийн хэмжээс, цонх/хаалганы байрлалыг маягтаар; зураг/бичлэгээс AI тааз, шал, ханын өнгийг таамаглана; 360° панорам. Бодит түвшин.</div></div>
+    <div class="tile" style="text-align:left"><div style="font-weight:700">🧱 Блок өрж бүтээх</div><div class="k">Нүдэн баримжаа, зургаа харж өрөөнүүдээ блок мэт өрж, чирж хэмжээсээ тааруулаад симуляцийг эхлүүлнэ. Агентын гар бүтээл.</div></div>
+  </div>
+  <div class="card"><h3>Объектууд (${rows.length})</h3>
+    <div class="tablebox"><table><thead><tr><th>Объект</th><th class="num">Өрөө</th><th class="num">м²</th><th>Арга</th></tr></thead><tbody>
+    ${rows.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')} · ${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${fmt(p.price)} сая ₮</td><td class="num">${p.rooms}</td><td class="num">${p.area}</td>
+      <td style="white-space:nowrap"><button class="small" onclick="tourView(${p.id},'auto')">✨ Автомат</button> <button class="small" onclick="tourView(${p.id},'measure')">📐 Хэмжээс + AI</button> <button class="small primary" onclick="tourView(${p.id},'build')">🧱 Блок өрөх</button></td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted)">Объект алга — эхлээд «Объект» цэсээр бүртгэнэ</td></tr>'}
+    </tbody></table></div></div>`;
+}
+function renderTour() {
+  const t = TOUR, p = t.property, plan = t.plan; const mode = t.mode || 'auto';
+  const shareUrl = location.origin + '/tour/' + t.token;
+  const tab = (m, label) => `<button class="${mode === m ? 'primary' : ''}" onclick="tourMode('${m}')">${label}</button>`;
+  const roomsTable = `<div class="tablebox"><table><thead><tr><th>Нэр</th><th>Төрөл</th><th class="num">Өргөн</th><th class="num">Урт</th><th></th></tr></thead><tbody>
       ${plan.rooms.map((r, i) => `<tr style="${t.sel === r.id ? 'background:color-mix(in srgb,var(--accent) 12%,var(--surface))' : ''}" onclick="tourSel('${r.id}')">
         <td><input value="${esc(r.name)}" style="width:110px" onchange="tourEdit(${i},'name',this.value)"></td>
         <td><select onchange="tourEdit(${i},'type',this.value)">${Object.entries(t.types).map(([k, v]) => `<option value="${k}" ${r.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td class="num"><input type="number" step="0.1" min="1" max="20" value="${r.w}" style="width:62px" onchange="tourEdit(${i},'w',this.value)"></td>
         <td class="num"><input type="number" step="0.1" min="1" max="20" value="${r.h}" style="width:62px" onchange="tourEdit(${i},'h',this.value)"></td>
-        <td><button class="small" onclick="tourDelRoom(${i});event.stopPropagation()">✕</button></td></tr>`).join('')}</tbody></table></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-        <button class="small" onclick="tourAddRoom()">+ Өрөө</button>
-        <button class="small" onclick="tourAuto()">✨ Автомат план</button>
-        <button class="small" onclick="tourAnalyze()" title="Студийн зургуудаас таазны өндөр, хаалга/цонх, дам нуруу, шал, ханын өнгийг AI таамаглаж 3D-д тусгана">🔍 AI зургаас шинжлэх</button>
-        <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
-      </div>
-      ${plan.style ? `<div style="margin-top:10px;background:var(--surface-2);border-radius:6px;padding:8px 10px;font-size:12.5px">
+        <td><button class="small" onclick="tourDelRoom(${i});event.stopPropagation()">✕</button></td></tr>`).join('')}</tbody></table></div>`;
+  const styleBox = plan.style ? `<div style="margin-top:10px;background:var(--surface-2);border-radius:6px;padding:8px 10px;font-size:12.5px">
         <b>🔍 AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
-        ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Студид бодит зураг оруулсан бол «AI зургаас шинжлэх» — таазны өндөр, цонх/хаалга, шал, ханын өнгө бодит зурагтай ойртоно.</div>'}
-      <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · таазны өндөр ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length}</div>
-      ${tourRoomDetail(t)}
-      <h3 style="margin-top:16px">🎬 Бичлэг → AI шинжилгээ</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «🔍 AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select id="tour-vid-room">${plan.rooms.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}<option value="">(бүх байр)</option></select>
-        <input type="file" id="tour-vid" accept="video/*" style="width:auto;font-size:12px" onchange="tourVideo(this)">
-        <span id="tour-vid-st" style="font-size:12px;color:var(--muted)">кадр: ${(t.assets || []).filter((a) => a.kind === 'frame').length}</span>
-        ${(t.assets || []).some((a) => a.kind === 'frame') ? '<button class="small" onclick="tourFramesClear()">✕ кадрууд устгах</button>' : ''}
-      </div>
-      <h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
+        ${(plan.style.rooms || []).length ? '<div style="margin-top:4px">' + plan.style.rooms.map((h) => `<div>• <b>${esc(h.room)}</b>: цонх ${h.windows ?? '?'} (${h.window_w ?? '?'} м), хаалга ${h.doors ?? '?'}, хана ${esc(h.wall_color || '?')}, шал ${esc(h.floor || '?')}${h.notes ? ' — ' + esc(h.notes) : ''}</div>`).join('') + '</div>' : ''}
+        ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '';
+  const panoBox = `<h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
       <div class="tablebox"><table><thead><tr><th>Цэг</th><th>Панорам</th><th></th></tr></thead><tbody>
       ${plan.rooms.map((r) => { const pn = (t.assets || []).find((a) => a.kind === 'pano' && a.room_id === r.id); return `<tr><td>${esc(r.name)}</td>
         <td>${pn ? `<span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${pn.id})">✕</button>` : `<input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('${r.id}',this)">`}</td><td></td></tr>`; }).join('')}
       ${(t.assets || []).filter((a) => a.kind === 'pano' && String(a.room_id || '').startsWith('ext:')).map((a) => `<tr><td>🌍 ${esc(a.room_id.slice(4))}</td><td><span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td><td></td></tr>`).join('')}
       <tr><td><input id="tour-ext-name" placeholder="Гадаах цэг (ж: Орц, Хашаа)" style="width:150px"></td><td><input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('ext:'+($('#tour-ext-name').value.trim()||'Гадаах орчин'),this)"></td><td></td></tr>
-      </tbody></table></div>
-      <div style="margin-top:12px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):<br>
+      </tbody></table></div>`;
+  const videoBox = `<h3 style="margin-top:16px">🎬 Бичлэг → AI шинжилгээ</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «🔍 AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="tour-vid-room">${plan.rooms.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}<option value="">(бүх байр)</option></select>
+        <input type="file" id="tour-vid" accept="video/*" style="width:auto;font-size:12px" onchange="tourVideo(this)">
+        <span id="tour-vid-st" style="font-size:12px;color:var(--muted)">кадр: ${(t.assets || []).filter((a) => a.kind === 'frame').length}</span>
+        ${(t.assets || []).some((a) => a.kind === 'frame') ? '<button class="small" onclick="tourFramesClear()">✕ кадрууд устгах</button>' : ''}
+        <button class="small" onclick="tourAnalyze()" title="Студийн зураг + бичлэгийн кадруудаас AI таамаглаж 3D-д тусгана">🔍 AI зургаас шинжлэх</button>
+      </div>`;
+  const shareBox = `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
+      <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
+      <div style="margin-top:10px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
         <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))">📋 Хуулах</button></div></div>
-    </div>
-    <div class="card"><h3>🧱 План бүтээх — блок өрөх засварлагч</h3>
+      <div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · тааз ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length} · нийт ${plan.totalArea} м²</div></div>`;
+  const refPhotos = (t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame');
+  const refBox = refPhotos.length ? `<div style="margin-top:10px"><b style="font-size:12.5px">Лавлах зургууд</b> <span style="font-size:11.5px;color:var(--muted)">(нүдэн баримжаагаа нягтлах)</span>
+        <div style="display:flex;gap:6px;overflow:auto;padding:6px 0">${refPhotos.map((a) => `<img src="/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}" title="${esc(a.room || '')}" style="height:72px;border-radius:4px;flex:none;cursor:zoom-in" onclick="window.open(this.src,'_blank')">`).join('')}</div></div>` : '';
+
+  let body = '';
+  if (mode === 'auto') {
+    body = `<div class="card"><h3>✨ Автомат план — объектын баримтаас</h3>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">${p.rooms} өрөө · ${p.area} м² · ${p.floor || '?'}/${p.total_floors || '?'} давхар → УБ-ын орон сууцны ердийн зохион байгуулалт (унтлагын · угаалгын/хувцасны · зочны · коридор · гал тогоо). Хэмжээг доор засаад хадгална; нарийн хэмжээс, цонх/хаалга — «📐 Хэмжээс + AI» эсвэл «🧱 Блок өрөх» горимд.</div>
+      ${roomsTable}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="small" onclick="tourAuto()">✨ Автомат план дахин үүсгэх</button>
+        <button class="small" onclick="tourAddRoom()">+ Өрөө</button>
+        <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
+      </div></div>`;
+  } else if (mode === 'measure') {
+    body = `<div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px" class="col-grid">
+      <div class="card"><h3>📐 Өрөөнүүд (${plan.rooms.length}) · нийт ${plan.totalArea} м²</h3>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Лазер хэмжигчээр өрөө бүрийн өргөн/уртыг оруулаад, өрөө сонгож цонх/хаалга/дам нурууны байрлалыг заана. Бичлэг/зургаас AI урьдчилан бөглөж болно.</div>
+        ${roomsTable}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="small" onclick="tourAddRoom()">+ Өрөө</button><button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button></div>
+        ${styleBox}
+        ${videoBox}
+        ${panoBox}
+      </div>
+      <div>${tourRoomDetail(t)}
+        <div class="card" style="margin-top:12px"><h3>План (лавлагаа)</h3><canvas id="tour-plan" width="1000" height="680" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);touch-action:none"></canvas>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Өрөө дарж сонгоно · тод = гараар, бүдэг = автомат</div>${refBox}</div>
+      </div></div>`;
+  } else {
+    body = `<div class="card"><h3>🧱 План бүтээх — блок өрөх засварлагч</h3>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12.5px">
         <span style="color:var(--muted)">Өрөө нэмэх:</span>
         ${Object.entries(t.types).map(([k, v]) => `<button class="small" onclick="tourAddRoomOf('${k}')">+ ${v}</button>`).join('')}
@@ -437,17 +476,22 @@ function renderTour() {
         <button class="small" onclick="tourRotateSel()" title="Сонгосон өрөөний өргөн/уртыг солино">⟲ Эргүүлэх</button>
         <button class="small" onclick="tourDupSel()">⧉ Хуулах</button>
         <button class="small" onclick="tourUndo()">↶ Буцаах</button>
+        <button class="small" onclick="if(confirm('Бүх өрөөг устгаж хоосноос эхлэх үү?')){TOUR.undo.push(JSON.stringify(TOUR.plan.rooms));TOUR.plan.rooms=[];TOUR.sel=null;renderTour();}">🗑 Хоосноос</button>
         <label style="margin-left:auto">Алхам <select id="tour-snap" onchange="TOUR.snap=Number(this.value)"><option value="0.1" ${t.snap === 0.1 ? 'selected' : ''}>10 см</option><option value="0.05" ${t.snap === 0.05 ? 'selected' : ''}>5 см</option><option value="0.5" ${t.snap === 0.5 ? 'selected' : ''}>50 см</option></select></label>
       </div>
       <canvas id="tour-plan" width="1000" height="680" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:grab;touch-action:none"></canvas>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Чирж зөөнө · булан/ирмэгээс татаж хэмжээ өөрчилнө (хөрш өрөөнд соронзон шиг наалдана) · сумаар 1 алхам зөөнө · Delete устгана · Ctrl+Z буцаана · 🪟/🚪 горимд ханан дээр дарж нээлхий тавина, дараа нь доорх маягтад нарийн хэмжээсийг засна</div>
-      ${(t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame').length ? `<div style="margin-top:10px"><b style="font-size:12.5px">Лавлах зургууд</b> <span style="font-size:11.5px;color:var(--muted)">(нүдэн баримжаагаа нягтлах)</span>
-        <div style="display:flex;gap:6px;overflow:auto;padding:6px 0">${(t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame').map((a) => `<img src="/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}" title="${esc(a.room || '')}" style="height:72px;border-radius:4px;flex:none;cursor:zoom-in" onclick="window.open(this.src,'_blank')">`).join('')}</div></div>` : ''}
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="primary" onclick="tourSave()">▶ Симуляци эхлүүлэх (хадгалж 3D бүтээнэ)</button><span style="font-size:12px;color:var(--muted)">План хадгалагдмагц доорх 3D шууд шинэчлэгдэнэ</span></div>
-      <h3 style="margin-top:14px">3D урьдчилан харах</h3>
-      <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
-    </div>
-  </div>`;
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Чирж зөөнө · булан/ирмэгээс татаж хэмжээ өөрчилнө (хөрш өрөөнд соронзон шиг наалдана) · сумаар 1 алхам · Delete устгана · Ctrl+Z буцаана · 🪟/🚪 горимд ханан дээр дарж нээлхий тавина · давхар дарж нэр солино</div>
+      ${refBox}
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="tourSave()">▶ Симуляци эхлүүлэх (хадгалж 3D бүтээнэ)</button><span style="font-size:12px;color:var(--muted)">Хадгалагдмагц доорх 3D шинэчлэгдэнэ</span></div>
+      </div>
+      ${tourRoomDetail(t)}`;
+  }
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🎥 POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
+    <div style="display:flex;gap:8px"><button onclick="nav('tours')">← POV Tour</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '✨ Автомат план')}${tab('measure', '📐 Хэмжээс + AI + 360°')}${tab('build', '🧱 Блок өрж бүтээх')}</div>
+  ${body}
+  ${shareBox}`;
   drawTourPlan(); bindTourCanvas();
 }
 // ---- Блок өрөх засварлагч: чирж зөөх, булан/ирмэгээс хэмжээ өөрчлөх, соронзон наалт, ханан дээр цонх/хаалга ----
