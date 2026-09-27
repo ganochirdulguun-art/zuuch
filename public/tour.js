@@ -118,7 +118,7 @@ function buildRoom(r) {
   // Таазны хонхорхой (cove): ханын дагуу 0.3 м өргөн, 0.1 м зузаан цагаан ирмэг + дотор талд нь дулаан LED тууз (лавлагаа рендерийн хэв маяг)
   // Дам нуруу (AI шинжилгээ: style.beams[{room}]) — таазны доор өрөөний богино тэнхлэгийн дагуу 0.3 × 0.25 м
   const beam = STYLE && Array.isArray(STYLE.beams) && STYLE.beams.find((b) => String(b.room || '').toLowerCase().includes((TYPE_MN[r.type] || '').toLowerCase()) || String(b.room || '') === r.id);
-  if (beam) { const along = r.w >= r.h; const bm = box(along ? 0.3 : r.w, 0.25, along ? r.h : 0.3, wallMat); bm.position.set(r.x + r.w / 2, H - 0.125, r.y + r.h / 2); g.add(bm); }
+  if (beam) { const along = r.w >= r.h; const bm = box(along ? 0.3 : r.w, 0.25, along ? r.h : 0.3, mats.ceil); bm.position.set(r.x + r.w / 2, H - 0.125, r.y + r.h / 2); g.add(bm); }
   // Довжоо (орцны хаалганы босго) — style.threshold_cm
   if (STYLE && STYLE.threshold_cm > 0) for (const d of plan.doors) if (d.b === 'out' && d.a === r.id) { const th = box(Math.max(Math.abs(d.x2 - d.x1), 0.2), STYLE.threshold_cm / 100, Math.max(Math.abs(d.y2 - d.y1), 0.2), mats.plinth); th.position.set((d.x1 + d.x2) / 2, STYLE.threshold_cm / 200, (d.y1 + d.y2) / 2); g.add(th); }
   if (r.w > 2 && r.h > 2 && r.type !== 'bath' && !beam && (!STYLE || STYLE.ceiling_cove !== false)) {
