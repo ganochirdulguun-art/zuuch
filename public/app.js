@@ -463,18 +463,33 @@ const LEAD_ST = { new: 'Шинэ', working: 'Ажиллаж байна', contact
 // Нийтлэгчийн эх сайт дээрх профайл (бүх зар) — зөвхөн агентад холбоос; бот энэ замыг уншихгүй (robots: */author)
 const posterUrl = (key) => { const m = /^unegui-user-(\d+)$/.exec(key || ''); return m ? `https://www.unegui.mn/items/author/${m[1]}/` : ''; };
 const phoneBtn = (url) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"><button class="small" title="Эх зарын хуудас нээгдэнэ — «Дугаар харах» товчийг дарна">☎ Дугаар харах ↗</button></a>` : '';
-async function leads(days = 14) {
-  const d = await api('/leads?days=' + days);
-  const rows = d.leads || [];
+const CAT_MN = { apartment: '🏢 Орон сууц', house: '🏡 Хаус / хашаа байшин', office: '🏬 Оффис', commercial: '🛍 Худалдаа үйлчилгээ', object: '🏭 Объект', warehouse: '📦 Агуулах / гараж', land: '🌍 Газар' };
+const LEAD_F = Object.assign({ days: 14, category: '', deal: '', district: '', sort: 'score' }, (() => { try { return JSON.parse(localStorage.getItem('zuuch_lead_f') || '{}'); } catch { return {}; } })());
+window.leadF = (k, v) => { LEAD_F[k] = v; try { localStorage.setItem('zuuch_lead_f', JSON.stringify(LEAD_F)); } catch {} leads(); };
+async function leads() {
+  const q = new URLSearchParams({ days: LEAD_F.days, category: LEAD_F.category, deal: LEAD_F.deal, district: LEAD_F.district });
+  const d = await api('/leads?' + q.toString());
+  let rows = d.leads || [];
+  if (LEAD_F.sort === 'price') rows = [...rows].sort((a, b) => b.price - a.price); else if (LEAD_F.sort === 'price_asc') rows = [...rows].sort((a, b) => a.price - b.price); else if (LEAD_F.sort === 'new') rows = [...rows].sort((a, b) => a.age - b.age);
+  const cnt = {}; for (const c of d.counts || []) { cnt[c.category] = (cnt[c.category] || 0) + c.n; cnt['deal:' + c.deal_type] = (cnt['deal:' + c.deal_type] || 0) + c.n; cnt.all = (cnt.all || 0) + c.n; }
+  const sel = (k, opts, cur) => `<select onchange="leadF('${k}',this.value)">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎯 Гэрээний боломж — эзэн өөрөө нийтэлсэн зарууд</h2>
-    <div style="display:flex;gap:6px;align-items:center"><label style="font-size:12.5px">Сүүлийн</label><select onchange="leads(Number(this.value))">${[7, 14, 30, 60].map((n) => `<option value="${n}" ${n === d.days ? 'selected' : ''}>${n} хоног</option>`).join('')}</select></div></div>
-  <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «Эх зар ↗»-аас агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
+  <div class="page-head"><h2>🎯 Гэрээний боломж — эзэн өөрөө нийтэлсэн зарууд</h2><span class="demo-note">${rows.length} зар${cnt.all ? ' / нийт ' + cnt.all : ''}</span></div>
+  <div class="card" style="padding:10px 14px;margin-bottom:12px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end">
+    <div><label>Төрөл</label>${sel('category', [['', `Бүгд (${cnt.all || 0})`], ...Object.entries(CAT_MN).map(([k, l]) => [k, `${l} (${cnt[k] || 0})`])], LEAD_F.category)}</div>
+    <div><label>Хэлцэл</label>${sel('deal', [['', 'Бүгд'], ['sale', `Зарна (${cnt['deal:sale'] || 0})`], ['rent', `Түрээс (${cnt['deal:rent'] || 0})`]], LEAD_F.deal)}</div>
+    <div><label>Дүүрэг</label>${sel('district', [['', 'Бүгд'], ...(META.districts || []).map((x) => [x, x])], LEAD_F.district)}</div>
+    <div><label>Сүүлийн</label>${sel('days', [[7, '7 хоног'], [14, '14 хоног'], [30, '30 хоног'], [60, '60 хоног']], LEAD_F.days)}</div>
+    <div><label>Эрэмбэ</label>${sel('sort', [['score', 'Оноо'], ['new', 'Хамгийн шинэ'], ['price', 'Үнэ ↓'], ['price_asc', 'Үнэ ↑']], LEAD_F.sort)}</div>
+    <button class="small" onclick="leadF('category','');leadF('deal','');leadF('district','')">Цэвэрлэх</button>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(CAT_MN).map(([k, l]) => `<button class="small ${LEAD_F.category === k ? 'primary' : ''}" onclick="leadF('category','${LEAD_F.category === k ? '' : k}')">${l} <b>${cnt[k] || 0}</b></button>`).join('')}</div></div>
+  <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «☎ Дугаар харах ↗»-аар агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
   <div class="tablebox"><table>
     <thead><tr><th class="num">Оноо</th><th>Зар</th><th>Нийтлэгч</th><th class="num">Үнэ</th><th class="num">Индекс</th><th class="num">Хоног</th><th>Төлөв</th><th></th></tr></thead>
     <tbody>${rows.map((r) => `<tr style="${r.lead_status ? 'opacity:.75' : ''}">
       <td class="num"><span class="score">${r.score}</span></td>
-      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b><br><span style="font-size:12px;color:var(--muted)">${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''} · ${r.category === 'house' ? 'хаус/хашаа' : r.rooms + 'ө'} ${r.area || '?'} м² · ${r.deal_type === 'rent' ? 'түрээс' : 'зарна'} · зураг ${r.images}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}</span></td>
+      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b><br><span style="font-size:12px;color:var(--muted)"><span class="badge mut">${(CAT_MN[r.category] || r.category).replace(/^\S+\s/, '')}</span> ${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''} · ${r.category === 'apartment' ? r.rooms + 'ө · ' : ''}${r.area || '?'} м² · ${r.deal_type === 'rent' ? 'түрээс' : 'зарна'} · зураг ${r.images}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}</span></td>
       <td><span class="badge ${POSTER_KIND[r.poster_kind][1]}">${POSTER_KIND[r.poster_kind][0]}</span> <a href="#" onclick="posterView('${esc(r.poster_key || '')}');return false" title="Энэ нийтлэгчийн бүх зар (манай санд)"><b>${esc(r.poster_name || 'нэргүй')}</b></a>${r.poster_verified ? ' ✔' : ''}<br><span style="font-size:11.5px;color:var(--muted)">зар ${r.poster_listings} (идэвхтэй ${r.poster_active})${posterUrl(r.poster_key) ? ` · <a href="${posterUrl(r.poster_key)}" target="_blank" rel="noopener">unegui профайл ↗</a>` : ''}</span></td>
       <td class="num">${fmt(r.price)} сая${r.prev_price ? `<br><small style="color:var(--muted)">өмнө ${fmt(r.prev_price)}</small>` : ''}</td>
       <td class="num">${r.vsIndex == null ? '—' : `<span class="badge ${r.vsIndex >= 5 ? 'warn' : r.vsIndex <= -8 ? 'ok' : 'mut'}">${r.vsIndex > 0 ? '+' : ''}${r.vsIndex}%</span>`}</td>

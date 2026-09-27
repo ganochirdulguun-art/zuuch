@@ -249,12 +249,23 @@ app.get('/api/market/:id', wrap(async (req, res) => {
 // Утас ХАДГАЛАХГҮЙ (сайт нуудаг + хувь хүний мэдээллийн хууль): агент эх зарын холбоосоор өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагч болгоно
 app.get('/api/leads', wrap(async (req, res) => {
   const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  // Шүүлтүүр: төрөл (apartment|house|office|commercial|object|warehouse|land|all), хэлцэл (sale|rent|all), дүүрэг
+  const CATS = ['apartment', 'house', 'office', 'commercial', 'object', 'warehouse', 'land'];
+  const cat = CATS.includes(req.query.category) ? req.query.category : null;
+  const deal = ['sale', 'rent'].includes(req.query.deal) ? req.query.deal : null;
+  const district = String(req.query.district || '').slice(0, 40) || null;
+  const params = [req.user.company_id, days]; let where = '';
+  if (cat) { where += ' AND l.category=?'; params.push(cat); } else where += " AND l.category IN ('apartment','house','office','commercial','object','warehouse','land')";
+  if (deal) { where += ' AND l.deal_type=?'; params.push(deal); }
+  if (district) { where += ' AND l.district=?'; params.push(district); }
   const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen, l.poster_key,
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
     FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
-    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.category IN ('apartment','house') AND l.listed_at::date >= (CURRENT_DATE - ?::int)
-    ORDER BY (ld.status IS NULL) DESC, l.listed_at DESC, l.id DESC LIMIT 200`, req.user.company_id, days);
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int)${where}
+    ORDER BY (ld.status IS NULL) DESC, l.listed_at DESC, l.id DESC LIMIT 300`, ...params);
+  const counts = await db.all(`SELECT l.category, l.deal_type, COUNT(*)::int n FROM market_listings l JOIN posters p ON p.key=l.poster_key
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) GROUP BY l.category, l.deal_type`, days);
   const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
   const idxMap = new Map(idxRows.map((i) => [i.district + '|' + i.is_new, i]));
   const out = rows.map((r) => {
@@ -265,7 +276,7 @@ app.get('/api/leads', wrap(async (req, res) => {
     let score = 50 + (r.deal_type === 'sale' ? 15 : 5) + Math.max(0, 15 - age) + (r.images <= 3 ? 10 : 0) + (vs != null && vs >= 5 ? 8 : 0) + (r.prev_price && r.prev_price > r.price ? 6 : 0) + (r.poster_listings === 1 ? 5 : 0);
     return { ...r, m2, vsIndex: vs, age, score: Math.min(99, score) };
   }).sort((a, b) => (a.lead_status ? 1 : 0) - (b.lead_status ? 1 : 0) || b.score - a.score);
-  res.json({ leads: out, days });
+  res.json({ leads: out, days, counts, filters: { category: cat, deal, district } });
 }));
 app.post('/api/leads/:lid/claim', wrap(async (req, res) => {
   const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.lid);
