@@ -327,6 +327,8 @@ DELETE FROM market_listings a USING market_listings b
   WHERE a.id < b.id AND a.source = b.source AND a.source_id = b.source_id AND a.source_id <> '' AND a.collected_at IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source, source_id) WHERE source_id <> '';
 CREATE INDEX IF NOT EXISTS market_listings_seen ON market_listings(source, active, last_seen);
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'photo';
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS room_id TEXT;
 -- Ш3д: Virtual POV Tour (объект бүрд нэг план + нийтийн хуваалцах token)
 CREATE TABLE IF NOT EXISTS tours (
   id SERIAL PRIMARY KEY,

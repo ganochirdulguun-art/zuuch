@@ -402,6 +402,14 @@ function renderTour() {
         <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
       </div>
       <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · таазны өндөр ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length}</div>
+      <h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
+      <div class="tablebox"><table><thead><tr><th>Цэг</th><th>Панорам</th><th></th></tr></thead><tbody>
+      ${plan.rooms.map((r) => { const pn = (t.assets || []).find((a) => a.kind === 'pano' && a.room_id === r.id); return `<tr><td>${esc(r.name)}</td>
+        <td>${pn ? `<span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${pn.id})">✕</button>` : `<input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('${r.id}',this)">`}</td><td></td></tr>`; }).join('')}
+      ${(t.assets || []).filter((a) => a.kind === 'pano' && String(a.room_id || '').startsWith('ext:')).map((a) => `<tr><td>🌍 ${esc(a.room_id.slice(4))}</td><td><span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td><td></td></tr>`).join('')}
+      <tr><td><input id="tour-ext-name" placeholder="Гадаах цэг (ж: Орц, Хашаа)" style="width:150px"></td><td><input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('ext:'+($('#tour-ext-name').value.trim()||'Гадаах орчин'),this)"></td><td></td></tr>
+      </tbody></table></div>
       <div style="margin-top:12px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):<br>
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
         <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))">📋 Хуулах</button></div></div>
@@ -449,6 +457,18 @@ window.tourEdit = (i, k, v) => { const r = TOUR.plan.rooms[i]; if (k === 'w' || 
 window.tourAddRoom = () => { const plan = TOUR.plan; const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 0); plan.rooms.push({ id: 'r' + Date.now().toString(36), type: 'bedroom', name: 'Шинэ өрөө', x: maxX, y: 0, w: 3, h: 3 }); renderTour(); };
 window.tourDelRoom = (i) => { TOUR.plan.rooms.splice(i, 1); renderTour(); };
 window.tourAuto = async () => { const d = await api('/tour/' + TOUR.pid + '/auto', { method: 'POST' }); if (d.error) return alert(d.error); TOUR.plan = d.tour.plan; toast('Автомат план үүслээ'); renderTour(); };
+window.tourPanoUpload = async (roomId, input) => {
+  const f = input.files && input.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('room', roomId); fd.append('pano', f);
+  toast('Панорам илгээж байна…');
+  const res = await fetch('/api/tour/' + TOUR.pid + '/pano', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+  const d = await res.json(); if (d.error) return alert(d.error);
+  TOUR.assets = d.assets; toast('360° панорам орлоо'); renderTour();
+};
+window.tourPanoDel = async (id) => {
+  const d = await api('/tour/' + TOUR.pid + '/pano/' + id, { method: 'DELETE' }); if (d.error) return alert(d.error);
+  TOUR.assets = d.assets; renderTour();
+};
 window.tourSave = async () => {
   const d = await api('/tour/' + TOUR.pid, { method: 'PUT', body: { plan: TOUR.plan } });
   if (d.error) return alert(d.error);

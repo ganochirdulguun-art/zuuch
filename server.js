@@ -254,7 +254,7 @@ const assetPath = (a) => path.join(UPLOAD_DIR, String(a.company_id), String(a.pr
 app.get('/api/studio/:pid', wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
-  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, created_at FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
+  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, created_at FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
   const draft = await db.one('SELECT * FROM listing_drafts WHERE company_id=? AND property_id=? ORDER BY id DESC LIMIT 1', req.user.company_id, prop.id);
   res.json({ property: prop, assets, draft, ai: !!process.env.ANTHROPIC_API_KEY });
 }));
@@ -289,7 +289,7 @@ app.delete('/api/studio/asset/:id', wrap(async (req, res) => {
 app.post('/api/studio/:pid/analyze', wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
-  const rows = await db.all('SELECT * FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY id', req.user.company_id, prop.id);
+  const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id);
   const assets = rows.map(a => ({ ...a, path: assetPath(a) }));
   const [loc, val] = await Promise.all([
     A.locationScore(prop.district),
@@ -299,7 +299,7 @@ app.post('/api/studio/:pid/analyze', wrap(async (req, res) => {
   for (const r of out.ranked) await db.run('UPDATE listing_assets SET room=?, quality=?, wow=?, issues=?, rank=? WHERE id=?', r.room, r.quality, r.wow, (r.issues || []).join(', '), r.rank, r.id);
   const draft = await db.one('INSERT INTO listing_drafts (company_id, property_id, model, texts, advantages, price, plan, photo_notes) VALUES (?,?,?,?,?,?,?,?) RETURNING *',
     req.user.company_id, prop.id, out.model, JSON.stringify(out.texts), JSON.stringify(out.advantages), JSON.stringify(out.price), JSON.stringify(out.plan), JSON.stringify(out.photo_notes));
-  const assetsOut = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
+  const assetsOut = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
   res.json({ property: prop, assets: assetsOut, draft, ai: !!process.env.ANTHROPIC_API_KEY });
 }));
 
@@ -319,9 +319,39 @@ async function saveTour(companyId, propId, plan) {
   return db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', companyId, propId);
 }
 async function tourAssets(companyId, propId) {
-  const rows = await db.all('SELECT id, room, rank, quality FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', companyId, propId);
-  return rows.map((a) => ({ id: a.id, room: a.room || '', type: ROOM_TYPE_OF[a.room] || 'other', rank: a.rank }));
+  const rows = await db.all('SELECT id, room, rank, quality, kind, room_id FROM listing_assets WHERE company_id=? AND property_id=? ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', companyId, propId);
+  return rows.map((a) => ({ id: a.id, room: a.room || '', type: ROOM_TYPE_OF[a.room] || 'other', rank: a.rank, kind: a.kind || 'photo', room_id: a.room_id || null }));
 }
+// 360° панорам (equirectangular 2:1) — өрөө бүрд нэг; том файл зөвшөөрнө (≤25MB)
+const uploadPano = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => { const d = path.join(UPLOAD_DIR, String(req.user.company_id), String(req.params.pid)); fs.mkdirSync(d, { recursive: true }); cb(null, d); },
+    filename: (req, file, cb) => cb(null, 'pano_' + crypto.randomBytes(8).toString('hex') + (path.extname(file.originalname || '').toLowerCase() || '.jpg')),
+  }),
+  limits: { files: 1, fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(file.mimetype)),
+});
+app.post('/api/tour/:pid/pano', auth, wrap(async (req, res, next) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  uploadPano.single('pano')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: 'Панорам оруулахад алдаа: ' + err.message });
+    try {
+      const roomId = String(req.body.room || '').slice(0, 40);
+      if (!req.file || !roomId) return res.status(400).json({ error: 'Өрөө болон зураг шаардлагатай' });
+      const old = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND kind='pano' AND room_id=?", req.user.company_id, prop.id, roomId);
+      for (const a of old) { await db.run('DELETE FROM listing_assets WHERE id=?', a.id); fs.promises.unlink(assetPath(a)).catch(() => {}); }
+      const r = await db.one("INSERT INTO listing_assets (company_id, property_id, filename, mime, size, kind, room_id, room) VALUES (?,?,?,?,?,'pano',?,'360°') RETURNING id", req.user.company_id, prop.id, req.file.filename, req.file.mimetype, req.file.size, roomId);
+      res.json({ ok: true, id: r.id, assets: await tourAssets(req.user.company_id, prop.id) });
+    } catch (e) { next(e); }
+  });
+}));
+app.delete('/api/tour/:pid/pano/:id', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const a = await db.one("SELECT * FROM listing_assets WHERE id=? AND company_id=? AND property_id=? AND kind='pano'", req.params.id, req.user.company_id, prop.id);
+  if (!a) return res.status(404).json({ error: 'Олдсонгүй' });
+  await db.run('DELETE FROM listing_assets WHERE id=?', a.id); fs.promises.unlink(assetPath(a)).catch(() => {});
+  res.json({ ok: true, assets: await tourAssets(req.user.company_id, prop.id) });
+}));
 app.get('/api/tour/:pid', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   let t = await db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
