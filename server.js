@@ -237,7 +237,7 @@ app.get('/api/market/:id', wrap(async (req, res) => {
 // Утас ХАДГАЛАХГҮЙ (сайт нуудаг + хувь хүний мэдээллийн хууль): агент эх зарын холбоосоор өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагч болгоно
 app.get('/api/leads', wrap(async (req, res) => {
   const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
-  const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen,
+  const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen, l.poster_key,
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
     FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
