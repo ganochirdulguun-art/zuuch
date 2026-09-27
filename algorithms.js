@@ -82,7 +82,8 @@ async function matchesForRequest(reqId, companyId) {
 
 // ---- А5: Боломж илрүүлэгч ----
 async function opportunities() {
-  const rows = await db.all("SELECT * FROM market_listings WHERE active=1 AND deal_type='sale'");
+  // Бодит зарын талбай тодорхойгүй (0) байж болно — м² үнэ тооцохгүй
+  const rows = await db.all("SELECT * FROM market_listings WHERE active=1 AND deal_type='sale' AND area > 0 AND price > 0");
   const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
   const idxMap = new Map(idxRows.map(i => [i.district + '|' + i.is_new, i]));
   const out = [];
