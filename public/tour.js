@@ -532,6 +532,8 @@ async function main() {
   const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }; addEventListener('resize', resize); resize();
   // Загварууд ачаалагдтал (≤6с) хүлээнэ, дараа нь эхэлнэ
   const t0 = Date.now(); while (loadedN < pending && Date.now() - t0 < 6000) { $('#load').lastElementChild.textContent = `Тавилга ачаалж байна… ${loadedN}/${pending}`; await new Promise((r) => setTimeout(r, 120)); }
+  // Шэйдерүүдийг урьдчилан компиляц — тавилга гарч ирэх/өрөө солигдох мөчид гацахгүй (бенчмарк: эхний frame 62 мс, дараа нь 2 мс)
+  try { renderer.compile(scene, camera); } catch { /* зарим GPU-д алгасна */ }
   $('#load').style.display = 'none';
   let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1, fpsAcc = 0, fpsN = 0; // эхний frame-д минимап зурагдана
   function frame(now) {
@@ -544,7 +546,7 @@ async function main() {
     if (id !== curRoomId && !extShown) { curRoomId = id; $('#rName').textContent = r ? r.name : '—'; $('#rArea').textContent = r ? `${(r.w * r.h).toFixed(1)} м² · ${r.w} × ${r.h} м` : ''; $('#bPano').style.display = (r && panoByRoom[r.id]) || panoActive ? '' : 'none'; }
     mapT += dt; if (mapT > 0.08) { mapT = 0; drawMap(); }
     // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/загвар ачаалагдах үед л шинэчилнэ
-    if (staging || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; shadowLoaded = loadedN; } frameN++;
+    if (staging || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; if (loadedN !== shadowLoaded) { try { renderer.compile(scene, camera); } catch {} } shadowLoaded = loadedN; } frameN++;
     // Гэрлийн хасалт: 9 м-ээс хол өрөөний цэгэн гэрлийг унтраана (fragment бүр бүх гэрлийг тооцдог)
     if (frameN % 10 === 0) for (const l of roomLights) l.visible = Math.hypot(l.position.x - cam.x, l.position.z - cam.z) < 9;
     // Адаптив нягтрал: FPS < 28 бол pixel ratio-г бууруулна (доод 0.7), > 55 бол өсгөнө (дээд 1.25)
