@@ -377,7 +377,7 @@ window.tourView = async function (pid) {
   document.querySelectorAll('#menu button').forEach((x) => x.classList.remove('active'));
   const d = await api('/tour/' + pid);
   if (d.error) { alert(d.error); return; }
-  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null };
+  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null, tool: null, snap: 0.1, undo: [] };
   renderTour();
 };
 function renderTour() {
@@ -427,44 +427,164 @@ function renderTour() {
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
         <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))">📋 Хуулах</button></div></div>
     </div>
-    <div class="card"><h3>2D план (чирж байрлуулна, 0.5 м алхам)</h3>
-      <canvas id="tour-plan" width="900" height="620" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:grab;touch-action:none"></canvas>
+    <div class="card"><h3>🧱 План бүтээх — блок өрөх засварлагч</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12.5px">
+        <span style="color:var(--muted)">Өрөө нэмэх:</span>
+        ${Object.entries(t.types).map(([k, v]) => `<button class="small" onclick="tourAddRoomOf('${k}')">+ ${v}</button>`).join('')}
+        <span style="border-left:1px solid var(--line);height:18px;margin:0 4px"></span>
+        <button class="small ${t.tool === 'win' ? 'primary' : ''}" onclick="tourTool('win')" title="Ханан дээр дарж цонх тавина">🪟 Цонх</button>
+        <button class="small ${t.tool === 'door' ? 'primary' : ''}" onclick="tourTool('door')" title="Ханан дээр дарж хаалга тавина">🚪 Хаалга</button>
+        <button class="small" onclick="tourRotateSel()" title="Сонгосон өрөөний өргөн/уртыг солино">⟲ Эргүүлэх</button>
+        <button class="small" onclick="tourDupSel()">⧉ Хуулах</button>
+        <button class="small" onclick="tourUndo()">↶ Буцаах</button>
+        <label style="margin-left:auto">Алхам <select id="tour-snap" onchange="TOUR.snap=Number(this.value)"><option value="0.1" ${t.snap === 0.1 ? 'selected' : ''}>10 см</option><option value="0.05" ${t.snap === 0.05 ? 'selected' : ''}>5 см</option><option value="0.5" ${t.snap === 0.5 ? 'selected' : ''}>50 см</option></select></label>
+      </div>
+      <canvas id="tour-plan" width="1000" height="680" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:grab;touch-action:none"></canvas>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Чирж зөөнө · булан/ирмэгээс татаж хэмжээ өөрчилнө (хөрш өрөөнд соронзон шиг наалдана) · сумаар 1 алхам зөөнө · Delete устгана · Ctrl+Z буцаана · 🪟/🚪 горимд ханан дээр дарж нээлхий тавина, дараа нь доорх маягтад нарийн хэмжээсийг засна</div>
+      ${(t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame').length ? `<div style="margin-top:10px"><b style="font-size:12.5px">Лавлах зургууд</b> <span style="font-size:11.5px;color:var(--muted)">(нүдэн баримжаагаа нягтлах)</span>
+        <div style="display:flex;gap:6px;overflow:auto;padding:6px 0">${(t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame').map((a) => `<img src="/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}" title="${esc(a.room || '')}" style="height:72px;border-radius:4px;flex:none;cursor:zoom-in" onclick="window.open(this.src,'_blank')">`).join('')}</div></div>` : ''}
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="primary" onclick="tourSave()">▶ Симуляци эхлүүлэх (хадгалж 3D бүтээнэ)</button><span style="font-size:12px;color:var(--muted)">План хадгалагдмагц доорх 3D шууд шинэчлэгдэнэ</span></div>
       <h3 style="margin-top:14px">3D урьдчилан харах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
     </div>
   </div>`;
   drawTourPlan(); bindTourCanvas();
 }
+// ---- Блок өрөх засварлагч: чирж зөөх, булан/ирмэгээс хэмжээ өөрчлөх, соронзон наалт, ханан дээр цонх/хаалга ----
 function tourXform() {
   const plan = TOUR.plan; const minX = Math.min(...plan.rooms.map((r) => r.x), 0), minY = Math.min(...plan.rooms.map((r) => r.y), 0);
   const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 4), maxY = Math.max(...plan.rooms.map((r) => r.y + r.h), 4);
-  const sc = Math.min(820 / (maxX - minX + 2), 560 / (maxY - minY + 2));
-  return { sc, ox: 40 - minX * sc + sc, oy: 30 - minY * sc + sc };
+  const sc = Math.min(900 / (maxX - minX + 3), 600 / (maxY - minY + 3));
+  return { sc, ox: 50 - minX * sc + sc * 1.5, oy: 40 - minY * sc + sc * 1.5 };
+}
+const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+function tourHandlePos(r, h, X, Y, sc) {
+  const cx = X(r.x + r.w / 2), cy = Y(r.y + r.h / 2), l = X(r.x), t = Y(r.y), rt = X(r.x + r.w), b = Y(r.y + r.h);
+  return { nw: [l, t], n: [cx, t], ne: [rt, t], e: [rt, cy], se: [rt, b], s: [cx, b], sw: [l, b], w: [l, cy] }[h];
+}
+function tourSnapVal(v, axis, exceptId) {
+  const s = TOUR.snap || 0.1; let best = Math.round(v / s) * s, bd = 0.15;
+  for (const o of TOUR.plan.rooms) { if (o.id === exceptId) continue; for (const c of axis === 'x' ? [o.x, o.x + o.w] : [o.y, o.y + o.h]) { const d = Math.abs(v - c); if (d < bd) { bd = d; best = c; } } }
+  return Math.round(best * 100) / 100;
+}
+function tourOpeningSeg(r, side, off, w) { // өрөөний хананы (side) off..off+w хэсэг → план координат
+  if (side === 'N') return [r.x + off, r.y, r.x + off + w, r.y]; if (side === 'S') return [r.x + off, r.y + r.h, r.x + off + w, r.y + r.h];
+  if (side === 'W') return [r.x, r.y + off, r.x, r.y + off + w]; return [r.x + r.w, r.y + off, r.x + r.w, r.y + off + w];
 }
 function drawTourPlan() {
   const c = $('#tour-plan'); if (!c) return; const g = c.getContext('2d'); const plan = TOUR.plan; const { sc, ox, oy } = tourXform();
+  const X = (x) => ox + x * sc, Y = (y) => oy + y * sc;
   g.clearRect(0, 0, c.width, c.height);
   const FILL = { living: '#93c5fd', kitchen: '#fde68a', bedroom: '#c4b5fd', bath: '#a5f3fc', hall: '#e2e8f0', balcony: '#bbf7d0', office: '#fdba74', other: '#e5e7eb' };
-  // тор
-  g.strokeStyle = 'rgba(100,116,139,.15)'; g.lineWidth = 1;
-  for (let m = -2; m < 40; m++) { g.beginPath(); g.moveTo(ox + m * sc, 0); g.lineTo(ox + m * sc, c.height); g.stroke(); g.beginPath(); g.moveTo(0, oy + m * sc); g.lineTo(c.width, oy + m * sc); g.stroke(); }
+  // тор (1 м) + нарийн тор (алхам)
+  const step = TOUR.snap || 0.1;
+  if (sc * step >= 6) { g.strokeStyle = 'rgba(100,116,139,.07)'; g.lineWidth = 1; for (let m = -3; m < 60; m += step) { g.beginPath(); g.moveTo(X(m), 0); g.lineTo(X(m), c.height); g.stroke(); g.beginPath(); g.moveTo(0, Y(m)); g.lineTo(c.width, Y(m)); g.stroke(); } }
+  g.strokeStyle = 'rgba(100,116,139,.18)'; g.lineWidth = 1;
+  for (let m = -3; m < 60; m++) { g.beginPath(); g.moveTo(X(m), 0); g.lineTo(X(m), c.height); g.stroke(); g.beginPath(); g.moveTo(0, Y(m)); g.lineTo(c.width, Y(m)); g.stroke(); }
+  // өрөөнүүд
   for (const r of plan.rooms) {
-    g.fillStyle = FILL[r.type] || '#e5e7eb'; g.fillRect(ox + r.x * sc, oy + r.y * sc, r.w * sc, r.h * sc);
-    g.strokeStyle = TOUR.sel === r.id ? '#2563eb' : '#1e293b'; g.lineWidth = TOUR.sel === r.id ? 4 : 2.5; g.strokeRect(ox + r.x * sc, oy + r.y * sc, r.w * sc, r.h * sc);
-    g.fillStyle = '#0f172a'; g.font = '600 14px Inter,sans-serif'; g.textAlign = 'center'; g.fillText(r.name, ox + (r.x + r.w / 2) * sc, oy + (r.y + r.h / 2) * sc);
-    g.font = '12px Inter,sans-serif'; g.fillStyle = '#334155'; g.fillText(`${r.w}×${r.h} м · ${(r.w * r.h).toFixed(1)} м²`, ox + (r.x + r.w / 2) * sc, oy + (r.y + r.h / 2) * sc + 16);
+    const sel = TOUR.sel === r.id;
+    g.fillStyle = FILL[r.type] || '#e5e7eb'; g.fillRect(X(r.x), Y(r.y), r.w * sc, r.h * sc);
+    g.strokeStyle = sel ? '#2563eb' : '#1e293b'; g.lineWidth = sel ? 4 : 2.5; g.strokeRect(X(r.x), Y(r.y), r.w * sc, r.h * sc);
+    g.fillStyle = '#0f172a'; g.font = '600 14px Inter,sans-serif'; g.textAlign = 'center'; g.fillText(r.name, X(r.x + r.w / 2), Y(r.y + r.h / 2) + 4);
+    g.font = '12px Inter,sans-serif'; g.fillStyle = '#334155'; g.fillText(`${r.w} × ${r.h} м · ${(r.w * r.h).toFixed(1)} м²`, X(r.x + r.w / 2), Y(r.y + r.h / 2) + 18);
+    // гар нээлхий (цонх цэнхэр, хаалга цагаан/улаан) — өрөөний хананд
+    for (const w of r.win || []) { const [x1, y1, x2, y2] = tourOpeningSeg(r, w.side, w.off, w.w); g.strokeStyle = '#1d4ed8'; g.lineWidth = 7; g.beginPath(); g.moveTo(X(x1), Y(y1)); g.lineTo(X(x2), Y(y2)); g.stroke(); }
+    for (const d of r.door || []) { const [x1, y1, x2, y2] = tourOpeningSeg(r, d.side, d.off, d.w); g.strokeStyle = d.to === 'out' ? '#dc2626' : '#f8fafc'; g.lineWidth = 7; g.beginPath(); g.moveTo(X(x1), Y(y1)); g.lineTo(X(x2), Y(y2)); g.stroke(); }
   }
-  for (const d of plan.doors || []) { g.strokeStyle = d.b === 'out' ? '#dc2626' : '#ffffff'; g.lineWidth = 6; g.beginPath(); g.moveTo(ox + d.x1 * sc, oy + d.y1 * sc); g.lineTo(ox + d.x2 * sc, oy + d.y2 * sc); g.stroke(); }
-  for (const w of plan.windows || []) { g.strokeStyle = '#2563eb'; g.lineWidth = 6; g.beginPath(); g.moveTo(ox + w.x1 * sc, oy + w.y1 * sc); g.lineTo(ox + w.x2 * sc, oy + w.y2 * sc); g.stroke(); }
-  g.fillStyle = '#64748b'; g.font = '12px Inter,sans-serif'; g.textAlign = 'left'; g.fillText('🔴 орц · ⬜ хаалга · 🔵 цонх (автомат) · дээд тал = хойд зүг', 10, c.height - 10);
+  // серверийн тооцоолсон автомат хаалга/цонх (бүдэг)
+  for (const d of plan.doors || []) if (!d.manual) { g.strokeStyle = d.b === 'out' ? 'rgba(220,38,38,.55)' : 'rgba(255,255,255,.8)'; g.lineWidth = 5; g.beginPath(); g.moveTo(X(d.x1), Y(d.y1)); g.lineTo(X(d.x2), Y(d.y2)); g.stroke(); }
+  for (const w of plan.windows || []) if (!w.manual) { g.strokeStyle = 'rgba(37,99,235,.5)'; g.lineWidth = 5; g.beginPath(); g.moveTo(X(w.x1), Y(w.y1)); g.lineTo(X(w.x2), Y(w.y2)); g.stroke(); }
+  // сонгосон өрөө: бариулууд + хэмжээсийн шугам + соронзон заагч
+  const r = plan.rooms.find((x) => x.id === TOUR.sel);
+  if (r) {
+    for (const h of HANDLES) { const [hx, hy] = tourHandlePos(r, h, X, Y, sc); g.fillStyle = '#fff'; g.strokeStyle = '#2563eb'; g.lineWidth = 2; g.beginPath(); g.rect(hx - 5, hy - 5, 10, 10); g.fill(); g.stroke(); }
+    g.fillStyle = '#2563eb'; g.font = '700 12px Inter,sans-serif'; g.textAlign = 'center';
+    g.fillText(`${r.w} м`, X(r.x + r.w / 2), Y(r.y) - 8); g.save(); g.translate(X(r.x) - 10, Y(r.y + r.h / 2)); g.rotate(-Math.PI / 2); g.fillText(`${r.h} м`, 0, 0); g.restore();
+    if (TOUR.guide) { g.strokeStyle = '#f59e0b'; g.lineWidth = 1.5; g.setLineDash([6, 4]); for (const gd of TOUR.guide) { g.beginPath(); if (gd.axis === 'x') { g.moveTo(X(gd.v), 0); g.lineTo(X(gd.v), c.height); } else { g.moveTo(0, Y(gd.v)); g.lineTo(c.width, Y(gd.v)); } g.stroke(); } g.setLineDash([]); }
+  }
+  g.fillStyle = '#64748b'; g.font = '12px Inter,sans-serif'; g.textAlign = 'left';
+  g.fillText((TOUR.tool === 'win' ? '🪟 Ханан дээр дарж цонх тавина (Esc — болих)' : TOUR.tool === 'door' ? '🚪 Ханан дээр дарж хаалга тавина (Esc — болих)' : '🔴 орц · ⬜ хаалга · 🔵 цонх · тод = гараар, бүдэг = автомат · дээд тал = хойд зүг'), 10, c.height - 10);
 }
 function bindTourCanvas() {
   const c = $('#tour-plan'); if (!c) return;
-  const pt = (e) => { const r = c.getBoundingClientRect(); const { sc, ox, oy } = tourXform(); return { x: ((e.clientX - r.left) / r.width * c.width - ox) / sc, y: ((e.clientY - r.top) / r.height * c.height - oy) / sc }; };
-  c.addEventListener('pointerdown', (e) => { const p = pt(e); const r = [...TOUR.plan.rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h); TOUR.sel = r ? r.id : null; TOUR.drag = r ? { id: r.id, dx: p.x - r.x, dy: p.y - r.y } : null; c.setPointerCapture(e.pointerId); drawTourPlan(); });
-  c.addEventListener('pointermove', (e) => { if (!TOUR.drag) return; const p = pt(e); const r = TOUR.plan.rooms.find((r) => r.id === TOUR.drag.id); r.x = Math.round((p.x - TOUR.drag.dx) * 2) / 2; r.y = Math.round((p.y - TOUR.drag.dy) * 2) / 2; drawTourPlan(); });
-  c.addEventListener('pointerup', () => { TOUR.drag = null; renderTour(); }); // сонгосон өрөөний маягтыг харуулна
+  const pt = (e) => { const r = c.getBoundingClientRect(); const { sc, ox, oy } = tourXform(); return { x: ((e.clientX - r.left) / r.width * c.width - ox) / sc, y: ((e.clientY - r.top) / r.height * c.height - oy) / sc, px: (e.clientX - r.left) / r.width * c.width, py: (e.clientY - r.top) / r.height * c.height, sc, ox, oy }; };
+  const snapshot = () => { TOUR.undo.push(JSON.stringify(TOUR.plan.rooms)); if (TOUR.undo.length > 40) TOUR.undo.shift(); };
+  c.addEventListener('pointerdown', (e) => {
+    const p = pt(e); const rooms = TOUR.plan.rooms;
+    // 1) нээлхий тавих горим: хамгийн ойрын хана (≤0.25 м)
+    if (TOUR.tool) {
+      let best = null;
+      for (const r of rooms) {
+        const cands = [['N', Math.abs(p.y - r.y), p.x - r.x, r.w], ['S', Math.abs(p.y - (r.y + r.h)), p.x - r.x, r.w], ['W', Math.abs(p.x - r.x), p.y - r.y, r.h], ['E', Math.abs(p.x - (r.x + r.w)), p.y - r.y, r.h]];
+        for (const [side, dist, along, len] of cands) if (dist <= 0.25 && along >= -0.1 && along <= len + 0.1 && (!best || dist < best.dist)) best = { r, side, dist, along, len };
+      }
+      if (best) {
+        snapshot(); const w = TOUR.tool === 'win' ? 1.4 : 0.9; const off = Math.round(Math.max(0.05, Math.min(best.along - w / 2, best.len - w - 0.05)) * 20) / 20;
+        best.r[TOUR.tool] = best.r[TOUR.tool] || []; best.r[TOUR.tool].push(TOUR.tool === 'win' ? { side: best.side, off, w, sill: 0.85, top: 2.2 } : { side: best.side, off, w, to: 'auto' });
+        TOUR.sel = best.r.id; renderTour();
+      }
+      return;
+    }
+    // 2) сонгосон өрөөний бариул (хэмжээ өөрчлөх)
+    const sel = rooms.find((x) => x.id === TOUR.sel);
+    if (sel) { const X = (x) => p.ox + x * p.sc, Y = (y) => p.oy + y * p.sc; for (const h of HANDLES) { const [hx, hy] = tourHandlePos(sel, h, X, Y, p.sc); if (Math.abs(p.px - hx) <= 9 && Math.abs(p.py - hy) <= 9) { snapshot(); TOUR.drag = { id: sel.id, mode: 'resize', h, start: { ...sel } }; c.setPointerCapture(e.pointerId); return; } } }
+    // 3) өрөө сонгох / зөөх
+    const r = [...rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
+    if (r) { snapshot(); TOUR.drag = { id: r.id, mode: 'move', dx: p.x - r.x, dy: p.y - r.y }; }
+    if ((r ? r.id : null) !== TOUR.sel) { TOUR.sel = r ? r.id : null; renderTour(); }
+    c.setPointerCapture(e.pointerId);
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!TOUR.drag) { // курсор
+      const p = pt(e); const sel = TOUR.plan.rooms.find((x) => x.id === TOUR.sel); let cur = TOUR.tool ? 'crosshair' : 'grab';
+      if (sel && !TOUR.tool) { const X = (x) => p.ox + x * p.sc, Y = (y) => p.oy + y * p.sc; for (const h of HANDLES) { const [hx, hy] = tourHandlePos(sel, h, X, Y, p.sc); if (Math.abs(p.px - hx) <= 9 && Math.abs(p.py - hy) <= 9) cur = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize' }[h]; } }
+      c.style.cursor = cur; return;
+    }
+    const p = pt(e); const r = TOUR.plan.rooms.find((x) => x.id === TOUR.drag.id); if (!r) return; TOUR.guide = [];
+    const rd = (v) => Math.round(v * 100) / 100;
+    if (TOUR.drag.mode === 'move') {
+      const nx = tourSnapVal(p.x - TOUR.drag.dx, 'x', r.id), ny = tourSnapVal(p.y - TOUR.drag.dy, 'y', r.id);
+      // баруун/доод ирмэг ч наалдана
+      const nx2 = tourSnapVal(p.x - TOUR.drag.dx + r.w, 'x', r.id) - r.w, ny2 = tourSnapVal(p.y - TOUR.drag.dy + r.h, 'y', r.id) - r.h;
+      r.x = rd(Math.abs(nx2 - (p.x - TOUR.drag.dx)) < Math.abs(nx - (p.x - TOUR.drag.dx)) ? nx2 : nx); r.y = rd(Math.abs(ny2 - (p.y - TOUR.drag.dy)) < Math.abs(ny - (p.y - TOUR.drag.dy)) ? ny2 : ny);
+      TOUR.guide = [{ axis: 'x', v: r.x }, { axis: 'y', v: r.y }];
+    } else {
+      const s = TOUR.drag.start, h = TOUR.drag.h;
+      if (h.includes('e')) { const nx = tourSnapVal(p.x, 'x', r.id); r.w = rd(Math.max(1, nx - s.x)); TOUR.guide.push({ axis: 'x', v: s.x + r.w }); }
+      if (h.includes('w')) { const nx = tourSnapVal(p.x, 'x', r.id); const w = Math.max(1, s.x + s.w - nx); r.x = rd(s.x + s.w - w); r.w = rd(w); TOUR.guide.push({ axis: 'x', v: r.x }); }
+      if (h.includes('s')) { const ny = tourSnapVal(p.y, 'y', r.id); r.h = rd(Math.max(1, ny - s.y)); TOUR.guide.push({ axis: 'y', v: s.y + r.h }); }
+      if (h.includes('n')) { const ny = tourSnapVal(p.y, 'y', r.id); const hh = Math.max(1, s.y + s.h - ny); r.y = rd(s.y + s.h - hh); r.h = rd(hh); TOUR.guide.push({ axis: 'y', v: r.y }); }
+    }
+    drawTourPlan();
+  });
+  const end = () => { if (!TOUR.drag) return; TOUR.drag = null; TOUR.guide = null; renderTour(); };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  c.addEventListener('dblclick', (e) => { const p = pt(e); const r = [...TOUR.plan.rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h); if (!r) return; const n = prompt('Өрөөний нэр', r.name); if (n) { r.name = n.slice(0, 40); renderTour(); } });
 }
+// Гарын товч: сумаар зөөх, Delete устгах, Ctrl+Z буцаах, Esc — горим болих
+window.addEventListener('keydown', (e) => {
+  if (!TOUR || !$('#tour-plan') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  const r = TOUR.plan.rooms.find((x) => x.id === TOUR.sel);
+  if (e.key === 'Escape') { TOUR.tool = null; renderTour(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); tourUndo(); return; }
+  if (!r) return;
+  const s = TOUR.snap || 0.1; const rd = (v) => Math.round(v * 100) / 100;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); TOUR.undo.push(JSON.stringify(TOUR.plan.rooms)); TOUR.plan.rooms.splice(TOUR.plan.rooms.indexOf(r), 1); TOUR.sel = null; renderTour(); return; }
+  if (e.key === 'ArrowLeft') r.x = rd(r.x - s); else if (e.key === 'ArrowRight') r.x = rd(r.x + s); else if (e.key === 'ArrowUp') r.y = rd(r.y - s); else if (e.key === 'ArrowDown') r.y = rd(r.y + s); else return;
+  e.preventDefault(); drawTourPlan();
+});
+window.tourTool = (t) => { TOUR.tool = TOUR.tool === t ? null : t; renderTour(); };
+window.tourUndo = () => { const s = TOUR.undo.pop(); if (!s) return toast('Буцаах зүйл алга'); TOUR.plan.rooms = JSON.parse(s); renderTour(); };
+window.tourAddRoomOf = (type) => {
+  const rooms = TOUR.plan.rooms; TOUR.undo.push(JSON.stringify(rooms));
+  const sel = rooms.find((x) => x.id === TOUR.sel); const size = { living: [4.2, 4.5], kitchen: [3, 2.6], bedroom: [3.2, 3.6], bath: [1.8, 2.2], hall: [1.4, 3], balcony: [2.4, 1.2], office: [2.6, 3], other: [1.6, 2] }[type] || [3, 3];
+  const x = sel ? sel.x + sel.w : Math.max(0, ...rooms.map((r) => r.x + r.w)), y = sel ? sel.y : 0;
+  const id = type + '_' + Date.now().toString(36).slice(-4); const n = rooms.filter((r) => r.type === type).length + 1;
+  rooms.push({ id, type, name: TOUR.types[type] + (n > 1 ? ' ' + n : ''), x, y, w: size[0], h: size[1] }); TOUR.sel = id; renderTour();
+};
+window.tourRotateSel = () => { const r = TOUR.plan.rooms.find((x) => x.id === TOUR.sel); if (!r) return toast('Эхлээд өрөө сонго'); TOUR.undo.push(JSON.stringify(TOUR.plan.rooms)); [r.w, r.h] = [r.h, r.w]; r.win = []; r.door = []; renderTour(); };
+window.tourDupSel = () => { const r = TOUR.plan.rooms.find((x) => x.id === TOUR.sel); if (!r) return toast('Эхлээд өрөө сонго'); TOUR.undo.push(JSON.stringify(TOUR.plan.rooms)); const c = JSON.parse(JSON.stringify(r)); c.id = r.type + '_' + Date.now().toString(36).slice(-4); c.x = r.x + r.w; c.name = r.name + ' (хуулбар)'; TOUR.plan.rooms.push(c); TOUR.sel = c.id; renderTour(); };
 window.tourSel = (id) => { if (TOUR.sel === id) return; TOUR.sel = id; renderTour(); };
 window.tourEdit = (i, k, v) => { const r = TOUR.plan.rooms[i]; if (k === 'w' || k === 'h') r[k] = Math.max(1, Math.min(20, Math.round(Number(v) * 10) / 10)); else r[k] = v; drawTourPlan(); };
 window.tourAddRoom = () => { const plan = TOUR.plan; const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 0); plan.rooms.push({ id: 'r' + Date.now().toString(36), type: 'bedroom', name: 'Шинэ өрөө', x: maxX, y: 0, w: 3, h: 3 }); renderTour(); };
