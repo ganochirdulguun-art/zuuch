@@ -538,10 +538,19 @@ const TIER_BADGE = (t) => ({ green: '🟢 ногоон', yellow: '🟡 шар', 
 async function collector() {
   $('#main').innerHTML = `
   <div class="page-head"><h2>🤖 Цуглуулах хөдөлгүүр</h2>
-    <span class="demo-note">Шат 2 демо — симуляц эх сурвалж (жинхэнэ сайт руу хандахгүй)</span></div>
+    <span class="demo-note" id="col-mode">…</span></div>
   <div id="col-body">Ачааллаж байна…</div>`;
   async function render() {
     const s = await api('/collector/status');
+    const li = s.liveInfo || {};
+    $('#col-mode').textContent = s.live
+      ? `Шат 2 БОДИТ — unegui.mn ажиглах горим · ${Math.round((li.intervalSec || 600) / 60)} мин тутам · хүсэлт ${li.adapter ? li.adapter.requests : 0} / ${li.adapter ? (li.adapter.bytes / 1048576).toFixed(1) : 0} MB`
+      : 'Шат 2 демо — симуляц эх сурвалж (жинхэнэ сайт руу хандахгүй)';
+    const liveLine = s.live ? `<div style="background:color-mix(in srgb,var(--accent) 10%,var(--surface));border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">
+      📡 <b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> ·
+      дахин харагдсан: <b>${li.updated || 0}</b> · үнэ өөрчлөгдсөн: <b>${li.priceChanges || 0}</b> · дэлгэрэнгүй татсан: <b>${li.detailFetched || 0}</b> ·
+      сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${li.adapter && li.adapter.cooldownUntil && li.adapter.cooldownUntil > Date.now() ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
+    </div>` : '';
     const wcard = s.workers.map((w) => {
       const busy = w.status !== 'сул';
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:${busy ? 'color-mix(in srgb,var(--accent) 12%,var(--surface))' : 'var(--surface)'}">
@@ -552,10 +561,18 @@ async function collector() {
     const rej = Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]);
     const ev = s.events.map((e) => {
       const ago = Math.max(0, Math.round((Date.now() - e.t) / 1000));
+      const link = e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener" style="font-size:11px">↗ эх</a>` : '';
       if (e.kind === 'collected') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
-        <span class="badge ok">✓ ${e.score}</span> <b>${esc(e.title)}</b> — ${fmt(e.price)} сая ₮
+        <span class="badge ok">✓ ${e.score}</span> <b>${esc(e.title)}</b> — ${fmt(e.price)} сая ₮${e.deal === 'rent' ? '/сар' : ''}${link}
         <span style="color:var(--muted)">· ${esc(e.source)} · ${ago}с</span>
         ${(e.flags || []).map((f) => `<span class="badge warn">${esc(f)}</span>`).join('')}</div>`;
+      if (e.kind === 'price') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
+        <span class="badge ${e.price < e.prev ? 'ok' : 'warn'}">${e.price < e.prev ? '▼' : '▲'} үнэ</span> <b>${esc(e.title)}</b> — ${fmt(e.prev)} → <b>${fmt(e.price)}</b> сая ₮${link}
+        <span style="color:var(--muted)">· ${ago}с</span></div>`;
+      if (e.kind === 'delisted') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
+        <span class="badge mut">✔ хасагдсан</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
+      if (e.kind === 'error') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--accent-2)">
+        ⚠ ${esc(e.reason || '')} <span style="color:var(--muted)">· ${esc(e.source || '')} · ${ago}с</span></div>`;
       if (e.kind === 'retired') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)">
         🗄 <b>${e.count}</b> зар хугацаагаар устгагдав <span>— ${esc(e.reason)} · ${ago}с</span></div>`;
       if (e.kind === 'takedown') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
@@ -577,6 +594,7 @@ async function collector() {
       <span style="color:var(--muted);font-size:12.5px">Босго: <b>${s.threshold}</b> · дараалалд: <b>${s.queued}</b> · хасалт: <b>${s.takedownCount || 0}</b></span>
       ${s.note ? `<span class="badge warn">${esc(s.note)}</span>` : ''}
     </div>
+    ${liveLine}
     <div style="background:var(--surface-2);border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12.5px;color:var(--muted)">
       🛡️ <b>Ажиглах горим</b> — зөвхөн баримт хадгална (зураг/тайлбар/жинхэнэ утас БИШ) · утас = давсласан хэш ·
       хадгалалт ${s.retentionDays} хоног · улаан tier автоматаар хөндөгдөхгүй · UA: <code style="font-size:11px">${esc(s.ua || '')}</code>

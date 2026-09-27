@@ -313,8 +313,25 @@ async function ensureOwner() {
   }
 }
 
+// Ш2: бодит адаптерийн баганууд (байгаа санг эвдэхгүй — IF NOT EXISTS)
+const MIGRATE_LIVE = `
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS delisted_at TIMESTAMPTZ;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS khoroolol TEXT;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS floor INTEGER;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS total_floors INTEGER;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS ad_type TEXT;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS is_business INTEGER DEFAULT 0;
+DELETE FROM market_listings a USING market_listings b
+  WHERE a.id < b.id AND a.source = b.source AND a.source_id = b.source_id AND a.source_id <> '' AND a.collected_at IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source, source_id) WHERE source_id <> '';
+CREATE INDEX IF NOT EXISTS market_listings_seen ON market_listings(source, active, last_seen);
+`;
+
 async function init() {
   await db.exec(SCHEMA);
+  await db.exec(MIGRATE_LIVE);
   await seed();
   await db.run("INSERT INTO companies (id, name, license_no, plan) VALUES (1, 'Демо агентлаг ХХК', 'СЗХ-2026-001', 'demo') ON CONFLICT (id) DO NOTHING");
   await db.exec("SELECT setval(pg_get_serial_sequence('companies','id'), GREATEST((SELECT COALESCE(MAX(id),1) FROM companies),1))");

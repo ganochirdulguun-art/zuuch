@@ -215,6 +215,22 @@ app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.o
 app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district)) || { error: 'Оноо олдсонгүй' })));
 
 // ---- Цуглуулагч ----
+// Ботын ил бодлогын хуудас — UA доторх холбоос энд заана (эх сурвалжийн админ юу, яаж, хэрхэн хасуулахыг харна)
+app.get('/bot', (req, res) => {
+  const contact = process.env.ZUUCH_BOT_CONTACT || 'holboo@zuuch.mn';
+  res.type('html').send(`<!doctype html><html lang="mn"><head><meta charset="utf-8"><title>ZuuchBot — ажиглах горимын бот</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Inter,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.55;color:#0f172a}h1{color:#2563eb}code{background:#eff6ff;padding:1px 5px;border-radius:4px}li{margin:4px 0}</style></head><body>
+<h1>ZuuchBot</h1>
+<p>Энэ бот нь <b>«Зууч»</b> — Монголын үл хөдлөх хөрөнгийн зуучлалын компаниудад зориулсан дотоод шинжилгээний платформын <b>зах зээлийн ажиглагч</b> юм.</p>
+<h3>Юу хийдэг вэ</h3>
+<ul><li>Нийтэд ил орон сууцны зарын <b>баримт</b> (үнэ, талбай, өрөө, дүүрэг, огноо) л уншиж, дүүргийн үнийн индекс, дундаж хугацаа зэрэг <b>нэгтгэсэн статистик</b> гаргана.</li>
+<li>Зарын <b>тайлбар, зураг, утасны дугаар хадгалахгүй</b>; зарыг дахин нийтлэхгүй, олон нийтэд түгээхгүй.</li>
+<li><code>robots.txt</code>-г мөрдөнө; хүсэлт хооронд ≥4 сек зайтай, цөөн хуудас (ойролцоогоор 10 минут тутам 5–15 хуудас); 429/5xx хариунд 10 мин зогсоно.</li></ul>
+<h3>User-Agent</h3><p><code>${collector.status ? 'ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot)' : ''}</code></p>
+<h3>Хасуулах / асуулт</h3><p>Эх сурвалжийн админ эсвэл зарын эзэн: <b>${contact}</b> — хүсэлт ирмэгц тухайн зар/эх сурвалжийг 24 цагийн дотор хасаж, дахин уншихыг хориглоно.</p>
+<p style="color:#64748b;font-size:13px">This is a low-rate, read-only monitoring crawler for aggregate real-estate market statistics in Mongolia. It respects robots.txt, sends ≤1 request / 4 s, stores facts only (no photos, descriptions or phone numbers). Contact ${contact} to opt out.</p>
+</body></html>`);
+});
 app.get('/api/collector/status', wrap(async (req, res) => res.json(await collector.status())));
 app.post('/api/collector/start', zahiralOnly, wrap(async (req, res) => { collector.start(); res.json(await collector.status()); }));
 app.post('/api/collector/stop', zahiralOnly, wrap(async (req, res) => { collector.stop(); res.json(await collector.status()); }));
