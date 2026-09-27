@@ -514,6 +514,8 @@ async function main() {
   // FPS: pixel ratio ≤1.5, статик сүүдэр (зөвхөн тавилга гарч ирэх үед шинэчилнэ), high-performance GPU
   renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
+  // Оношилгоо: консолоос zuuchBench(20) → нэг frame-ийн дундаж мс (GPU finish-тэй), pixel ratio, draw calls
+  window.zuuchBench = (n = 20) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) { camera.position.set(cam.x, EYE, cam.z); renderer.render(scene, camera); } gl.finish(); const ms = (performance.now() - t) / n; return { frameMs: Math.round(ms * 10) / 10, estFps: Math.round(1000 / ms), pixelRatio: renderer.getPixelRatio(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, lights: roomLights.filter((l) => l.visible).length }; };
   const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
   initMats(); outdoors(); scene.add(furnGroup);
   for (const r of rooms) scene.add(buildRoom(r));
