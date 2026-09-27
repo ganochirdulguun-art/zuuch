@@ -154,7 +154,9 @@ function buildRoom(r) {
     const put = (lo, hi, y0, y1, m = wallMat) => {
       if (hi - lo < 0.01 || y1 - y0 < 0.01) return;
       const len = hi - lo, hgt = y1 - y0, mid = (lo + hi) / 2;
-      const b = e.axis === 'x' ? box(len, hgt, WALL_T, m) : box(WALL_T, hgt, len, m);
+      // Хүрээ (frame) ханаас 2.5 см цухуйна — хананы хайрцагтай нэг хавтгайд давхцаж анивчихгүй (z-fighting)
+      const th = m === mats.frame ? WALL_T + 0.05 : WALL_T;
+      const b = e.axis === 'x' ? box(len, hgt, th, m) : box(th, hgt, len, m);
       b.position.set(e.axis === 'x' ? mid : cc, y0 + hgt / 2, e.axis === 'x' ? cc : mid); g.add(b);
       // Шалны хөвөө (plinth) — хана/шалны зааг тодорхой харагдана (хаалганы нээлхийд байхгүй)
       if (y0 === 0 && m === wallMat) { const p = e.axis === 'x' ? box(len, 0.08, WALL_T + 0.03, mats.plinth) : box(WALL_T + 0.03, 0.08, len, mats.plinth); p.position.set(e.axis === 'x' ? mid : cc, 0.04, e.axis === 'x' ? cc : mid); g.add(p); }
