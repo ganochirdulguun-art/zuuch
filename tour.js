@@ -25,8 +25,13 @@ function autoPlan(prop) {
   // дээд эгнээ (y=0..hT): унтлагын … → угаалгын (цонхгүй, коридороос) → зочны (баруун талд, хойд цонх)
   let x = 0;
   for (let i = 0; i < bedrooms; i++) { const w = round(bedroomA / hT, 1); rooms.push({ id: 'bed' + (i + 1), type: 'bedroom', name: bedrooms > 1 ? `Унтлагын ${i + 1}` : 'Унтлагын', x, y: 0, w, h: hT }); x = round(x + w, 1); }
-  const wBath = round(Math.min(2.2, Math.max(1.4, bathA / hT)), 1);
-  rooms.push({ id: 'bath', type: 'bath', name: 'Угаалгын', x, y: 0, w: wBath, h: hT }); x = round(x + wBath, 1);
+  // Угаалгын: коридортой хиллэх доод хэсэгт 2–3.5 м гүн; дээр нь үлдсэн (≥1.5 м) = хувцасны өрөө (хөрш өрөөнөөс хаалгатай)
+  const wBath = round(Math.min(2.4, Math.max(1.6, Math.sqrt(bathA * 0.7))), 1);
+  const hBath = round(Math.min(hT, Math.max(2.0, Math.min(3.5, bathA / wBath))), 1);
+  const leftover = round(hT - hBath, 1);
+  if (leftover >= 1.5) { rooms.push({ id: 'closet', type: 'other', name: 'Хувцасны өрөө', x, y: 0, w: wBath, h: leftover }); rooms.push({ id: 'bath', type: 'bath', name: 'Угаалгын', x, y: leftover, w: wBath, h: hBath }); }
+  else rooms.push({ id: 'bath', type: 'bath', name: 'Угаалгын', x, y: 0, w: wBath, h: hT });
+  x = round(x + wBath, 1);
   const livingX = x;
   let living = { id: 'living', type: 'living', name: 'Зочны', x, y: 0, w: round(Math.max(3.6, W - x), 1), h: hT };
   rooms.push(living);

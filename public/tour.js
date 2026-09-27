@@ -57,6 +57,8 @@ function initMats() {
   mats.wallTex = wallT; mats.parquetTex = parquet; mats.tileTex = tile;
 }
 const box = (w, h, d, m) => { const g = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); g.castShadow = g.receiveShadow = true; return g; };
+// Хэвтээ хавтгай (хивс) — Group дотор эргүүлснээр place()-ийн y-эргэлт хэвтээ байдлыг эвдэхгүй
+const flat = (w, d, m) => { const g = new THREE.Group(); const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m); p.rotation.x = -Math.PI / 2; p.receiveShadow = true; g.add(p); return g; };
 
 // ---------- Хана: нэг тал = нээлхийгээр (хаалга/цонх) хэсэглэсэн хайрцгууд ----------
 function segOnEdge(seg, edge) {
@@ -152,7 +154,7 @@ function furnish(r, g) {
     const sofa = new THREE.Group(); sofa.add(box(1.9, 0.42, 0.9, mats.fabric).translateY(0.21)); const bk = box(1.9, 0.5, 0.25, mats.fabric); bk.position.set(0, 0.6, 0.33); sofa.add(bk);
     for (const s of [-1, 1]) { const arm = box(0.2, 0.58, 0.9, mats.fabric); arm.position.set(s * 0.95, 0.29, 0); sofa.add(arm); }
     place(sofa, 0, Math.min(-0.3, -depth / 2 + 1.4), 0, Math.PI); // хаалга/явах зам хаахгүй
-    const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.8), mats.rug); rug.rotation.x = -Math.PI / 2; place(rug, 0, 0.1, 0.005);
+    place(flat(2.6, 1.8, mats.rug), 0, 0.1, 0.005);
     place(box(1.1, 0.4, 0.6, mats.wood), 0, 0.2, 0.2);
     place(box(1.6, 0.45, 0.42, mats.white), 0, backV, 0.225);
     place(box(1.3, 0.75, 0.05, mats.dark), 0, backV + 0.15, 1.05);
@@ -165,7 +167,7 @@ function furnish(r, g) {
     place(bed, 0, backV - 0.75, 0);
     for (const s of [-1, 1]) if (width > 3) place(box(0.45, 0.5, 0.4, mats.wood), s * 1.1, backV - 0.15, 0.25);
     place(box(Math.min(1.8, width - 1), 2.1, 0.6, mats.wood), 0, -depth / 2 + 0.35, 1.05);
-    const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.2), mats.rug); rug.rotation.x = -Math.PI / 2; place(rug, 0, 0.1, 0.005);
+    place(flat(2.2, 1.2, mats.rug), 0, 0.1, 0.005);
   } else if (T === 'kitchen') {
     // тавцан + шүүгээ хаалганы эсрэг хананд, дээд шүүгээ, хөргөгч, ширээ
     const cw = width - 0.3;
@@ -192,6 +194,10 @@ function furnish(r, g) {
     place(box(1.4, 0.04, 0.7, mats.wood), 0, backV - 0.1, 0.74); place(box(0.5, 0.5, 0.5, mats.dark), 0, backV - 0.9, 0.25); place(box(0.6, 0.4, 0.03, mats.dark), 0, backV, 1.05);
   } else if (T === 'balcony') {
     place(box(0.5, 0.45, 0.5, mats.wood), 0, 0, 0.225);
+  } else if (T === 'other') {
+    // хувцасны өрөө / агуулах: гол ханын дагуу шүүгээ + тавиурууд
+    place(box(Math.max(0.8, width - 0.4), 2.1, 0.55, mats.wood), 0, backV + 0.08, 1.05);
+    for (const y of [0.4, 0.9, 1.4]) place(box(Math.max(0.8, width - 0.4), 0.03, 0.3, mats.white), 0, -depth / 2 + 0.4, y);
   }
 }
 
