@@ -335,7 +335,7 @@ app.get('/api/properties/:id/buyers', wrap(async (req, res) => {
 // ---- Цуглуулагч ----
 // Ботын ил бодлогын хуудас — UA доторх холбоос энд заана (эх сурвалжийн админ юу, яаж, хэрхэн хасуулахыг харна)
 app.get('/bot', (req, res) => {
-  const contact = process.env.ZUUCH_BOT_CONTACT || 'holboo@zuuch.mn';
+  const contact = process.env.ZUUCH_BOT_CONTACT || 'smartzuuch.mn@gmail.com';
   res.type('html').send(`<!doctype html><html lang="mn"><head><meta charset="utf-8"><title>ZuuchBot — ажиглах горимын бот</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Inter,system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.55;color:#0f172a}h1{color:#2563eb}code{background:#eff6ff;padding:1px 5px;border-radius:4px}li{margin:4px 0}</style></head><body>
 <h1>ZuuchBot</h1>

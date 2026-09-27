@@ -21,7 +21,7 @@ const CATS = {
   warehouse_rent: { path: '/l-hdlh/l-hdlh-treesllne/jldver-aguulah-treesllne/', dealType: 'rent', category: 'warehouse', label: 'Үйлдвэр/агуулах түрээс', regStart: 2 },
   land_sale: { path: '/l-hdlh/l-hdlh-zarna/gazar/', dealType: 'sale', category: 'land', label: 'Газар зарна', regStart: 2 },
 };
-const CONTACT = process.env.ZUUCH_BOT_CONTACT || 'holboo@zuuch.mn';
+const CONTACT = process.env.ZUUCH_BOT_CONTACT || 'smartzuuch.mn@gmail.com';
 // HTTP толгой = зөвхөн ASCII (кирилл бичвэл fetch ByteString алдаа өгнө)
 const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot; ${CONTACT}; read-only monitoring)`;
 const MIN_GAP_MS = Number(process.env.ZUUCH_UNEGUI_GAP_MS || 4000); // хүсэлт хоорондын доод зай
