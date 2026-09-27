@@ -21,7 +21,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'");
+    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; connect-src 'self'");
   next();
 });
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
@@ -206,7 +206,7 @@ function crud(name, table, fields) {
     res.json({ ok: r.changes > 0 });
   }));
 }
-crud('properties', 'properties', ['deal_type', 'district', 'khoroolol', 'rooms', 'area', 'floor', 'total_floors', 'is_new', 'price', 'status', 'agent_id', 'owner_name', 'owner_phone', 'notes']);
+crud('properties', 'properties', ['deal_type', 'district', 'khoroolol', 'rooms', 'area', 'floor', 'total_floors', 'is_new', 'price', 'status', 'agent_id', 'owner_name', 'owner_phone', 'notes', 'lat', 'lng']);
 crud('clients', 'clients', ['name', 'phone', 'type', 'notes']);
 crud('requests', 'requests', ['client_id', 'deal_type', 'budget', 'districts', 'rooms', 'area_min', 'area_max', 'status', 'agent_id', 'last_contact']);
 crud('deals', 'deals', ['property_id', 'client_id', 'deal_type', 'amount', 'commission', 'payment_form', 'contract_end', 'deal_date']);
@@ -225,6 +225,23 @@ app.get('/api/matches/:id', wrap(async (req, res) => res.json(await A.matchesFor
 app.get('/api/market/index', wrap(async (req, res) => res.json(await db.all('SELECT * FROM price_index ORDER BY median_m2 DESC'))));
 app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.opportunities())));
 app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district)) || { error: 'Оноо олдсонгүй' })));
+// ---- Д-5: Замын/түгжрэлийн профайл ----
+const commute = require('./commute');
+app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
+app.get('/api/properties/:id/commute', wrap(async (req, res) => {
+  const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
+  if (!p) return res.status(404).json({ error: 'Объект олдсонгүй' });
+  if (p.lat == null || p.lng == null) return res.json({ property: p, profile: null, hasKey: commute.hasKey(), needLocation: true });
+  const c = await db.one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", commute.cellOf(p.lat, p.lng));
+  res.json({ property: p, profile: c ? { ...c.profile, cached: true } : null, hasKey: commute.hasKey() });
+}));
+app.post('/api/properties/:id/commute', wrap(async (req, res) => {
+  const p = await db.one('SELECT id, lat, lng FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
+  if (!p) return res.status(404).json({ error: 'Объект олдсонгүй' });
+  if (p.lat == null || p.lng == null) return res.status(400).json({ error: 'Эхлээд объектын байршлыг газрын зураг дээр заана уу' });
+  try { res.json({ profile: await commute.profile(Number(p.lat), Number(p.lng), { force: req.body && req.body.force === true }) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+}));
 // Зах зээлийн нэг зарын бүрэн мэдээлэл + судалгаа (индекс, үнэлгээ, ижил төстэй зарууд, зах зээлд байсан хоног, дотоод тохирох хүсэлтүүд)
 app.get('/api/market/:id', wrap(async (req, res) => {
   const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.id);

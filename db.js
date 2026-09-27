@@ -345,6 +345,17 @@ CREATE TABLE IF NOT EXISTS posters (
   last_seen TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS market_listings_poster ON market_listings(poster_key);
+-- Д-5: Замын/түгжрэлийн профайл — объектын байршил (lat/lng) + ~100 м торны нүд бүрд кэш (Google Routes, 30 хоног)
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+CREATE TABLE IF NOT EXISTS commute_cells (
+  cell TEXT PRIMARY KEY,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  profile JSONB NOT NULL,
+  score INTEGER,
+  computed_at TIMESTAMPTZ DEFAULT NOW()
+);
 -- Ш1.3: сесс Postgres-д (redeploy/олон instance-д нэвтрэлт тасрахгүй)
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,

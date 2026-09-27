@@ -124,7 +124,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV Tour</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл">🚦</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -159,6 +159,9 @@ window.propForm = function (p = {}) {
     <div class="field"><label>Эзэмшигчийн нэр</label><input name="owner_name" value="${esc(p.owner_name || '')}"></div>
     <div class="field"><label>Эзэмшигчийн утас</label><input name="owner_phone" value="${esc(p.owner_phone || '')}"></div>
     <div class="field wide"><label>Тэмдэглэл</label><input name="notes" value="${esc(p.notes || '')}"></div>
+    <div class="field wide"><label>📍 Байршил — газрын зураг дээр дарж заана (замын/түгжрэлийн профайл, орчны шинжилгээнд)</label>
+      <div style="display:flex;gap:6px;margin-bottom:6px"><input name="lat" type="number" step="0.000001" placeholder="өргөрөг" value="${p.lat ?? ''}" style="width:150px"><input name="lng" type="number" step="0.000001" placeholder="уртраг" value="${p.lng ?? ''}" style="width:150px"><span style="font-size:12px;color:var(--muted);align-self:center">${p.lat ? '✔ заасан' : 'заагаагүй'}</span></div>
+      <div id="pick-map" style="height:240px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2)"></div></div>
     <div class="modal-actions wide">
       ${p.id ? `<button type="button" onclick="delRow('properties',${p.id})">Устгах</button>` : ''}
       <button type="button" onclick="closeModal()">Болих</button>
@@ -166,6 +169,7 @@ window.propForm = function (p = {}) {
   </form>`);
   const f = $('#f');
   if (p.district) f.district.value = p.district;
+  initPickMap('pick-map', f.lat, f.lng, p.lat, p.lng);
   async function updateHints() {
     const q = new URLSearchParams({
       district: f.district.value, rooms: f.rooms.value, area: f.area.value,
@@ -192,6 +196,41 @@ window.propForm = function (p = {}) {
     else await api('/properties', { method: 'POST', body });
     closeModal(); properties();
   });
+};
+
+// ---------- Д-5: Байршил заах газрын зураг (Leaflet + OSM) + замын/түгжрэлийн профайл ----------
+function initPickMap(elId, latInput, lngInput, lat, lng) {
+  const el = document.getElementById(elId); if (!el || typeof L === 'undefined') { if (el) el.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--muted)">Газрын зураг ачаалагдсангүй — өргөрөг/уртрагийг гараар оруулна уу</div>'; return; }
+  const has = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) && lat != null && lng != null;
+  const map = L.map(el, { zoomControl: true }).setView(has ? [Number(lat), Number(lng)] : [47.918, 106.917], has ? 15 : 12);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  let marker = has ? L.marker([Number(lat), Number(lng)]).addTo(map) : null;
+  map.on('click', (e) => { const { lat: a, lng: b } = e.latlng; latInput.value = a.toFixed(6); lngInput.value = b.toFixed(6); if (marker) marker.setLatLng(e.latlng); else marker = L.marker(e.latlng).addTo(map); });
+  setTimeout(() => map.invalidateSize(), 250);
+  return map;
+}
+window.commuteView = async function (pid, force = false) {
+  const d = force ? await api('/properties/' + pid + '/commute', { method: 'POST', body: { force: true } }) : await api('/properties/' + pid + '/commute');
+  if (d.error) return alert(d.error);
+  if (d.needLocation) { alert('Эхлээд объектыг «Засах» дараад газрын зураг дээр байршлыг нь заана уу'); return; }
+  let prof = d.profile;
+  if (!prof) {
+    if (!d.hasKey) { modal(`<h3>🚦 Замын / түгжрэлийн профайл</h3><div class="demo-note" style="margin-bottom:10px">GOOGLE_MAPS_KEY тохируулаагүй байна. Google Cloud → Routes API идэвхжүүлж түлхүүрээ Railway-д <code>GOOGLE_MAPS_KEY</code> нэрээр тавимагц энэ хуудас бодит хугацаагаар (өглөө/өдөр/оройн оргил, чөлөөт урсгал) бөглөгдөнө. Сард 10 000 тооцоо үнэгүй ≈ 200 объект.</div><div class="modal-actions"><button type="button" onclick="closeModal()">Хаах</button></div>`); return; }
+    modal('<h3>🚦 Тооцоолж байна…</h3><div style="color:var(--muted);font-size:13px">11 цэг × 4 цагийн цонх — 20–40 сек. Нэг удаа тооцоод 30 хоног хадгална (ойролцоох объектуудад хамт).</div>');
+    const r = await api('/properties/' + pid + '/commute', { method: 'POST' }); if (r.error) { closeModal(); return alert(r.error); } prof = r.profile;
+  }
+  const badge = (m, free) => { if (m == null) return '—'; const k = free && m > free * 1.6 ? 'warn' : m <= 20 ? 'ok' : 'mut'; return `<span class="badge ${k}">${m} мин</span>`; };
+  modal(`<h3>🚦 Замын / түгжрэлийн профайл — ${esc(d.property.district)} ${esc(d.property.khoroolol || '')}</h3>
+  <div class="tiles" style="margin-bottom:12px">
+    <div class="tile"><div class="v">${prof.score}<small style="font-size:12px">/100</small></div><div class="k">Хүрэх байдлын оноо (А8)</div></div>
+    <div class="tile"><div class="v">${prof.peakMin} мин</div><div class="k">оргил цагийн жинлэсэн дундаж</div></div>
+    <div class="tile"><div class="v">${prof.freeMin} мин</div><div class="k">чөлөөт урсгал</div></div>
+    <div class="tile"><div class="v">×${prof.jamRatio}</div><div class="k">түгжрэлийн коэффициент (оргил/чөлөөт)</div></div>
+  </div>
+  <div class="tablebox"><table><thead><tr><th>Хүрэх цэг</th><th class="num">км</th>${prof.slots.map((s) => `<th class="num">${s.name}</th>`).join('')}</tr></thead><tbody>
+  ${prof.rows.map((r) => `<tr><td><b>${esc(r.name)}</b>${r.w > 1 ? ' <span style="color:var(--muted);font-size:11px">×' + r.w + '</span>' : ''}</td><td class="num">${r.free ? r.free.km : '—'}</td>${prof.slots.map((s) => `<td class="num">${badge(r[s.id] && r[s.id].min, r.free && r.free.min)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+  <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Эх: ${esc(prof.provider)} · тооцсон ${String(prof.computed_at).slice(0, 16).replace('T', ' ')}${prof.cached ? ' (кэш)' : ''} · ×N = жин (хотын төв 3, яамд/4 зам/гүүр 2). Улаан = оргил цагт чөлөөтөөс 1.6 дахин удаан.</div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="commuteView(${pid},true)">↻ Дахин тооцох</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
 };
 
 // ---------- Харилцагч ----------
@@ -382,7 +421,7 @@ async function mylist() {
     <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th>Хэрэгслүүд</th></tr></thead>
     <tbody>${list.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')}<br><span style="font-size:12px;color:var(--muted)">${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${p.floor ? p.floor + '/' + (p.total_floors || '—') + ' давхар · ' : ''}${p.is_new ? 'шинэ' : 'хуучин'}${p.notes ? ' · ' + esc(p.notes) : ''}</span></td>
       <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV</button> <button class="small" onclick="findBuyersFor(${p.id})">🔎 Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл">🚦</button> <button class="small" onclick="findBuyersFor(${p.id})">🔎 Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
   </table></div>`;
 }
 async function studio() {
