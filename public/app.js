@@ -87,7 +87,7 @@ function show(view) {
 async function dashboard() {
   const d = await api('/dashboard');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Хянах самбар</h2><span class="demo-note">Зах зээлийн өгөгдөл = жишиг (цуглуулагч Шат 2-т холбогдоно)</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-layout-dashboard></use></svg>Хянах самбар</h2><span class="demo-note">Зах зээлийн өгөгдөл = жишиг (цуглуулагч Шат 2-т холбогдоно)</span></div>
   <div class="tiles">
     <div class="tile" style="cursor:pointer" onclick="show('properties')" title="Объектууд руу"><div class="v">${d.activeProperties}</div><div class="k">Идэвхтэй объект →</div></div>
     <div class="tile" style="cursor:pointer" onclick="show('buyers')" title="Buyer бүртгэл рүү"><div class="v">${d.openRequests}</div><div class="k">Нээлттэй хүсэлт (Buyer) →</div></div>
@@ -95,12 +95,12 @@ async function dashboard() {
     <div class="tile" style="cursor:pointer" onclick="show('deals')" title="Хэлцлүүд рүү"><div class="v">${fmt(d.monthCommission)}<small style="font-size:13px"> сая ₮</small></div><div class="k">Энэ сарын шимтгэл →</div></div>
     <div class="tile" style="cursor:pointer" onclick="show('collector')" title="Цуглуулагч руу"><div class="v">${d.marketListings}</div><div class="k">Ажиглаж буй зах зээлийн зар →</div></div>
   </div>
-  <div class="card"><h3>⏰ Сануулга (А6)</h3>
-    ${d.expiring.map((x) => `<div>📄 Гэрээ <b>${esc(x.district)} ${esc(x.khoroolol || '')}</b> — <b>${x.contract_end}</b>-нд дуусна (сунгах/чөлөөлөх шийдвэр)</div>`).join('') || ''}
-    ${d.staleReqs.map((x) => `<div>📵 <b>${esc(x.client_name)}</b>-тэй ${Math.floor((Date.now() - new Date(x.last_contact)) / 864e5)} хоног холбогдоогүй — follow-up хийх (хариуцагч: ${esc(agentName(x.agent_id))})</div>`).join('') || ''}
-    ${!d.expiring.length && !d.staleReqs.length ? '<span style="color:var(--muted)">Одоогоор сануулга алга 🎉</span>' : ''}
+  <div class="card"><h3><svg class=ic><use href=#i-bell></use></svg>Сануулга (А6)</h3>
+    ${d.expiring.map((x) => `<div><svg class=ic><use href=#i-file-text></use></svg>Гэрээ <b>${esc(x.district)} ${esc(x.khoroolol || '')}</b> — <b>${x.contract_end}</b>-нд дуусна (сунгах/чөлөөлөх шийдвэр)</div>`).join('') || ''}
+    ${d.staleReqs.map((x) => `<div><svg class=ic><use href=#i-phone-off></use></svg><b>${esc(x.client_name)}</b>-тэй ${Math.floor((Date.now() - new Date(x.last_contact)) / 864e5)} хоног холбогдоогүй — follow-up хийх (хариуцагч: ${esc(agentName(x.agent_id))})</div>`).join('') || ''}
+    ${!d.expiring.length && !d.staleReqs.length ? '<span style="color:var(--muted)">Одоогоор сануулга алга <svg class=ic><use href=#i-circle-check></use></svg></span>' : ''}
   </div>
-  <div class="card"><h3>💡 Өнөөдрийн боломжууд (А5) — зах зээлээс</h3>
+  <div class="card"><h3><svg class=ic><use href=#i-lightbulb></use></svg>Өнөөдрийн боломжууд (А5) — зах зээлээс</h3>
     <div class="tablebox"><table>
       <thead><tr><th>Дүүрэг</th><th class="num">Өрөө</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Пайз</th></tr></thead>
       <tbody>${d.opportunities.map((o) => `<tr style="cursor:pointer" onclick="marketDetail(${o.id})" title="Бүрэн мэдээлэл, судалгаа"><td>${esc(o.district)}${o.khoroolol ? ' · ' + esc(o.khoroolol) : ''}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
@@ -114,7 +114,7 @@ async function dashboard() {
 async function properties() {
   const rows = await api('/properties');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Объект</h2><button class="primary" onclick="propForm()">+ Объект нэмэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-building-2></use></svg>Объект</h2><button class="primary" onclick="propForm()">+ Объект нэмэх</button></div>
   <div class="tablebox"><table>
     <thead><tr><th>#</th><th>Төрөл</th><th>Дүүрэг / хороолол</th><th class="num">Өрөө</th><th class="num">м²</th>
     <th class="num">Үнэ (сая ₮)</th><th>Байршил (А8)</th><th>Төлөв</th><th>Агент</th><th></th></tr></thead>
@@ -124,7 +124,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл">🚦</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -139,7 +139,7 @@ window.propForm = function (p = {}) {
   modal(`
   <h3>${p.id ? 'Объект засах' : 'Шинэ объект'}</h3>
   <form id="f" class="form-grid">
-    <div class="hint-card" id="val-hint">💡 Дүүрэг, өрөө, талбайг сонгоход <b>А3 үнэлгээ</b> болон <b>А8 байршлын оноо</b> энд гарна.</div>
+    <div class="hint-card" id="val-hint"><svg class=ic><use href=#i-lightbulb></use></svg>Дүүрэг, өрөө, талбайг сонгоход <b>А3 үнэлгээ</b> болон <b>А8 байршлын оноо</b> энд гарна.</div>
     <div class="field"><label>Төрөл</label><select name="deal_type">
       <option value="sale" ${p.deal_type !== 'rent' ? 'selected' : ''}>Худалдах</option>
       <option value="rent" ${p.deal_type === 'rent' ? 'selected' : ''}>Түрээс (сарын үнэ)</option></select></div>
@@ -159,8 +159,8 @@ window.propForm = function (p = {}) {
     <div class="field"><label>Эзэмшигчийн нэр</label><input name="owner_name" value="${esc(p.owner_name || '')}"></div>
     <div class="field"><label>Эзэмшигчийн утас</label><input name="owner_phone" value="${esc(p.owner_phone || '')}"></div>
     <div class="field wide"><label>Тэмдэглэл</label><input name="notes" value="${esc(p.notes || '')}"></div>
-    <div class="field wide"><label>📍 Байршил — газрын зураг дээр дарж заана (замын/түгжрэлийн профайл, орчны шинжилгээнд)</label>
-      <div style="display:flex;gap:6px;margin-bottom:6px"><input name="lat" type="number" step="0.000001" placeholder="өргөрөг" value="${p.lat ?? ''}" style="width:150px"><input name="lng" type="number" step="0.000001" placeholder="уртраг" value="${p.lng ?? ''}" style="width:150px"><span style="font-size:12px;color:var(--muted);align-self:center">${p.lat ? '✔ заасан' : 'заагаагүй'}</span></div>
+    <div class="field wide"><label><svg class=ic><use href=#i-map-pin></use></svg>Байршил — газрын зураг дээр дарж заана (замын/түгжрэлийн профайл, орчны шинжилгээнд)</label>
+      <div style="display:flex;gap:6px;margin-bottom:6px"><input name="lat" type="number" step="0.000001" placeholder="өргөрөг" value="${p.lat ?? ''}" style="width:150px"><input name="lng" type="number" step="0.000001" placeholder="уртраг" value="${p.lng ?? ''}" style="width:150px"><span style="font-size:12px;color:var(--muted);align-self:center">${p.lat ? '<svg class=ic><use href=#i-check></use></svg>заасан' : 'заагаагүй'}</span></div>
       <div id="pick-map" style="height:240px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2)"></div></div>
     <div class="modal-actions wide">
       ${p.id ? `<button type="button" onclick="delRow('properties',${p.id})">Устгах</button>` : ''}
@@ -175,17 +175,17 @@ window.propForm = function (p = {}) {
       district: f.district.value, rooms: f.rooms.value, area: f.area.value,
       is_new: f.is_new.value, floor: f.floor.value, total_floors: f.total_floors.value,
     });
-    if (f.deal_type.value !== 'sale') { $('#val-hint').innerHTML = '💡 Үнэлгээ одоогоор худалдах объектод л ажиллана (түрээсийн индекс Шат 2-т).'; return; }
+    if (f.deal_type.value !== 'sale') { $('#val-hint').innerHTML = '<svg class=ic><use href=#i-lightbulb></use></svg>Үнэлгээ одоогоор худалдах объектод л ажиллана (түрээсийн индекс Шат 2-т).'; return; }
     const [v, loc] = await Promise.all([api('/valuation?' + q), api('/location-score?district=' + encodeURIComponent(f.district.value))]);
     $('#val-hint').innerHTML = v.estimate ? `
-      💡 <b>А3 үнэлгээ:</b> ~<b>${fmt(v.estimate)} сая ₮</b> (интервал ${fmt(v.low)}–${fmt(v.high)}, ${fmt(v.m2)} сая ₮/м²)
+      <svg class=ic><use href=#i-lightbulb></use></svg><b>А3 үнэлгээ:</b> ~<b>${fmt(v.estimate)} сая ₮</b> (интервал ${fmt(v.low)}–${fmt(v.high)}, ${fmt(v.m2)} сая ₮/м²)
       · итгэлцэл <b>${v.confidence}%</b> · эх: ${v.source}${v.notes.length ? ' · ' + v.notes.join(', ') : ''}<br>
-      📍 <b>А8 байршил:</b> <b>${loc.total || '—'}/100</b> ${loc.growth === 'high' ? '· 📈 эрчимтэй өсөх бүс' : loc.growth === 'growing' ? '· ↗ өсөх төлөвтэй' : ''}
+      <svg class=ic><use href=#i-map-pin></use></svg><b>А8 байршил:</b> <b>${loc.total || '—'}/100</b> ${loc.growth === 'high' ? '· <svg class=ic><use href=#i-trending-up></use></svg>эрчимтэй өсөх бүс' : loc.growth === 'growing' ? '· ↗ өсөх төлөвтэй' : ''}
       ${loc.growth_note ? `<span style="color:var(--muted)"> — ${esc(loc.growth_note)}</span>` : ''}
       <div class="subscores">
-        <span>🎓 Боловсрол ${loc.education}</span><span>🚌 Тээвэр ${loc.transport}</span><span>🛒 Худалдаа ${loc.commerce}</span>
-        <span>🌫 Орчин ${loc.environment}</span><span>🏥 Эрүүл мэнд ${loc.health}</span><span>🅿️ Зогсоол ${loc.parking}</span></div>`
-      : '💡 Үнэлгээ гаргах өгөгдөл хүрэлцэхгүй байна.';
+        <span><svg class=ic><use href=#i-graduation-cap></use></svg>Боловсрол ${loc.education}</span><span><svg class=ic><use href=#i-bus></use></svg>Тээвэр ${loc.transport}</span><span><svg class=ic><use href=#i-shopping-cart></use></svg>Худалдаа ${loc.commerce}</span>
+        <span><svg class=ic><use href=#i-leaf></use></svg>Орчин ${loc.environment}</span><span><svg class=ic><use href=#i-hospital></use></svg>Эрүүл мэнд ${loc.health}</span><span><svg class=ic><use href=#i-square-parking></use></svg>Зогсоол ${loc.parking}</span></div>`
+      : '<svg class=ic><use href=#i-lightbulb></use></svg>Үнэлгээ гаргах өгөгдөл хүрэлцэхгүй байна.';
   }
   ['district', 'rooms', 'area', 'is_new', 'floor', 'total_floors', 'deal_type'].forEach((n) => f[n].addEventListener('change', updateHints));
   updateHints();
@@ -215,12 +215,12 @@ window.commuteView = async function (pid, force = false) {
   if (d.needLocation) { alert('Эхлээд объектыг «Засах» дараад газрын зураг дээр байршлыг нь заана уу'); return; }
   let prof = d.profile;
   if (!prof) {
-    if (!d.hasKey) { modal(`<h3>🚦 Замын / түгжрэлийн профайл</h3><div class="demo-note" style="margin-bottom:10px">Замын API түлхүүр тохируулаагүй байна. Railway-д <code>TOMTOM_KEY</code> (developer.tomtom.com — карт шаардахгүй, өдөрт 2 500 тооцоо үнэгүй) эсвэл <code>GOOGLE_MAPS_KEY</code> тавимагц энэ хуудас бодит хугацаагаар (өглөө/оройн оргил, өдөр, чөлөөт урсгал) бөглөгдөнө. Нэг объект = 44 тооцоо, 30 хоног кэшлэнэ.</div><div class="modal-actions"><button type="button" onclick="closeModal()">Хаах</button></div>`); return; }
-    modal('<h3>🚦 Тооцоолж байна…</h3><div style="color:var(--muted);font-size:13px">11 цэг × 4 цагийн цонх — 20–40 сек. Нэг удаа тооцоод 30 хоног хадгална (ойролцоох объектуудад хамт).</div>');
+    if (!d.hasKey) { modal(`<h3><svg class=ic><use href=#i-route></use></svg>Замын / түгжрэлийн профайл</h3><div class="demo-note" style="margin-bottom:10px">Замын API түлхүүр тохируулаагүй байна. Railway-д <code>TOMTOM_KEY</code> (developer.tomtom.com — карт шаардахгүй, өдөрт 2 500 тооцоо үнэгүй) эсвэл <code>GOOGLE_MAPS_KEY</code> тавимагц энэ хуудас бодит хугацаагаар (өглөө/оройн оргил, өдөр, чөлөөт урсгал) бөглөгдөнө. Нэг объект = 44 тооцоо, 30 хоног кэшлэнэ.</div><div class="modal-actions"><button type="button" onclick="closeModal()">Хаах</button></div>`); return; }
+    modal('<h3><svg class=ic><use href=#i-route></use></svg>Тооцоолж байна…</h3><div style="color:var(--muted);font-size:13px">11 цэг × 4 цагийн цонх — 20–40 сек. Нэг удаа тооцоод 30 хоног хадгална (ойролцоох объектуудад хамт).</div>');
     const r = await api('/properties/' + pid + '/commute', { method: 'POST' }); if (r.error) { closeModal(); return alert(r.error); } prof = r.profile;
   }
   const badge = (m, free) => { if (m == null) return '—'; const k = free && m > free * 1.6 ? 'warn' : m <= 20 ? 'ok' : 'mut'; return `<span class="badge ${k}">${m} мин</span>`; };
-  modal(`<h3>🚦 Замын / түгжрэлийн профайл — ${esc(d.property.district)} ${esc(d.property.khoroolol || '')}</h3>
+  modal(`<h3><svg class=ic><use href=#i-route></use></svg>Замын / түгжрэлийн профайл — ${esc(d.property.district)} ${esc(d.property.khoroolol || '')}</h3>
   <div class="tiles" style="margin-bottom:12px">
     <div class="tile"><div class="v">${prof.score}<small style="font-size:12px">/100</small></div><div class="k">Хүрэх байдлын оноо (А8)</div></div>
     <div class="tile"><div class="v">${prof.peakMin} мин</div><div class="k">оргил цагийн жинлэсэн дундаж</div></div>
@@ -237,7 +237,7 @@ window.commuteView = async function (pid, force = false) {
 async function clients() {
   const rows = await api('/clients');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Харилцагч</h2><button class="primary" onclick="clientForm()">+ Харилцагч нэмэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-users></use></svg>Харилцагч</h2><button class="primary" onclick="clientForm()">+ Харилцагч нэмэх</button></div>
   <div class="tablebox"><table>
     <thead><tr><th>#</th><th>Нэр</th><th>Утас</th><th>Төрөл</th><th>Тэмдэглэл</th><th></th></tr></thead>
     <tbody>${rows.map((c) => `<tr><td>${c.id}</td><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}</td>
@@ -271,7 +271,7 @@ window.clientForm = function (c = {}) {
 async function requests() {
   const rows = await api('/requests-full');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Хүсэлт</h2><button class="primary" onclick="reqForm()">+ Хүсэлт нэмэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-contact></use></svg>Хүсэлт</h2><button class="primary" onclick="reqForm()">+ Хүсэлт нэмэх</button></div>
   <div class="tablebox"><table>
     <thead><tr><th>#</th><th>Харилцагч</th><th>Төрөл</th><th class="num">Төсөв (сая ₮)</th><th>Дүүрэг</th>
     <th class="num">Өрөө</th><th>Төлөв</th><th>Агент</th><th></th></tr></thead>
@@ -286,7 +286,7 @@ async function requests() {
 window.showMatches = async function (id) {
   const m = await api('/matches/' + id);
   $('#match-area').innerHTML = `
-  <div class="card" style="margin-top:16px"><h3>🎯 Хүсэлт №${id} — тохирсон объектууд (оноо ≥50 дотоод, ≥60 зах зээл)</h3>
+  <div class="card" style="margin-top:16px"><h3><svg class=ic><use href=#i-target></use></svg>Хүсэлт №${id} — тохирсон объектууд (оноо ≥50 дотоод, ≥60 зах зээл)</h3>
     <b style="font-size:13px">Дотоод бүртгэлээс:</b>
     <div class="tablebox" style="margin:8px 0 14px"><table>
       <thead><tr><th class="num">Оноо</th><th>Дүүрэг / хороолол</th><th class="num">Өрөө</th><th class="num">м²</th><th class="num">Үнэ</th><th>Агент</th></tr></thead>
@@ -338,7 +338,7 @@ window.reqForm = function (r = {}) {
 async function deals() {
   const rows = await api('/deals-full');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Хэлцэл</h2><button class="primary" onclick="dealForm()">+ Хэлцэл бүртгэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-handshake></use></svg>Хэлцэл</h2><button class="primary" onclick="dealForm()">+ Хэлцэл бүртгэх</button></div>
   <div class="tablebox"><table>
     <thead><tr><th>#</th><th>Огноо</th><th>Төрөл</th><th>Объект</th><th>Харилцагч</th>
     <th class="num">Дүн (сая ₮)</th><th class="num">Шимтгэл</th><th>Гэрээ дуусах</th><th></th></tr></thead>
@@ -394,16 +394,16 @@ window.marketDetail = async function (id) {
     <div class="tile"><div class="v">${d.m2 ? fmt(d.m2) : '—'}</div><div class="k">сая ₮/м² ${pos}</div></div>
     <div class="tile"><div class="v">${d.days ?? '—'}</div><div class="k">хоног зах зээлд${l.delisted_at ? ' · хасагдсан' : l.active ? '' : ' · идэвхгүй'}</div></div>
   </div>
-  ${v ? `<div class="card" style="margin-bottom:12px"><h3>📊 Үнэлгээ (А3)</h3><div style="font-size:13.5px">Зах зээлийн бодит үнэ: <b>${fmt(v.low)} – ${fmt(v.high)}</b> сая ₮ (төв <b>${fmt(v.estimate)}</b>) · эх сурвалж: ${esc(v.source || 'индекс')} · итгэлцүүр ${v.confidence || '—'}</div>
+  ${v ? `<div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-chart-column></use></svg>Үнэлгээ (А3)</h3><div style="font-size:13.5px">Зах зээлийн бодит үнэ: <b>${fmt(v.low)} – ${fmt(v.high)}</b> сая ₮ (төв <b>${fmt(v.estimate)}</b>) · эх сурвалж: ${esc(v.source || 'индекс')} · итгэлцүүр ${v.confidence || '—'}</div>
     <div style="font-size:12.5px;color:var(--muted);margin-top:4px">Зар ${l.price < v.low ? '<b style="color:var(--accent)">интервалаас доогуур — боломж</b>' : l.price > v.high ? '<b style="color:var(--accent-2)">интервалаас дээгүүр</b>' : 'интервал дотор'}${d.index ? ` · дүүргийн индекс ${fmt(d.index.median_m2)} сая/м² (${d.index.month})` : ''}</div></div>` : ''}
-  ${d.location ? `<div class="card" style="margin-bottom:12px"><h3>📍 Байршил (А8)</h3><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px">${['education', 'transport', 'commerce', 'health', 'parking', 'green'].map((k) => d.location[k] != null ? `<span class="badge ${d.location[k] >= 75 ? 'ok' : 'mut'}">${{ education: 'Сургууль', transport: 'Тээвэр', commerce: 'Худалдаа', health: 'Эмнэлэг', parking: 'Зогсоол', green: 'Ногоон' }[k]} ${d.location[k]}</span>` : '').join('')}${d.location.growth ? ` <span class="badge warn">өсөлт: ${esc(d.location.growth)}</span>` : ''}</div>${d.location.growth_note ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(d.location.growth_note)}</div>` : ''}</div>` : ''}
-  ${d.poster ? `<div class="card" style="margin-bottom:12px"><h3>👤 Нийтлэгч</h3><div style="font-size:13px"><span class="badge ${POSTER_KIND[d.poster.kind][1]}">${POSTER_KIND[d.poster.kind][0]}</span> <b>${esc(d.poster.name || 'нэргүй')}</b>${d.poster.verified ? ' ✔' : ''} · зар ${d.poster.listings} (идэвхтэй ${d.poster.active_listings})${d.poster.company_guess ? ' · компани: <b>' + esc(d.poster.company_guess) + '</b>' : ''} <button class="small" onclick="posterView('${esc(d.poster.key)}')">бүх зар (манай сан)</button>${posterUrl(d.poster.key) ? ` <a href="${posterUrl(d.poster.key)}" target="_blank" rel="noopener"><button class="small">unegui профайл ↗</button></a>` : ''} ${phoneBtn(l.source_url)}</div>
+  ${d.location ? `<div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-map-pin></use></svg>Байршил (А8)</h3><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px">${['education', 'transport', 'commerce', 'health', 'parking', 'green'].map((k) => d.location[k] != null ? `<span class="badge ${d.location[k] >= 75 ? 'ok' : 'mut'}">${{ education: 'Сургууль', transport: 'Тээвэр', commerce: 'Худалдаа', health: 'Эмнэлэг', parking: 'Зогсоол', green: 'Ногоон' }[k]} ${d.location[k]}</span>` : '').join('')}${d.location.growth ? ` <span class="badge warn">өсөлт: ${esc(d.location.growth)}</span>` : ''}</div>${d.location.growth_note ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(d.location.growth_note)}</div>` : ''}</div>` : ''}
+  ${d.poster ? `<div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-user></use></svg>Нийтлэгч</h3><div style="font-size:13px"><span class="badge ${POSTER_KIND[d.poster.kind][1]}">${POSTER_KIND[d.poster.kind][0]}</span> <b>${esc(d.poster.name || 'нэргүй')}</b>${d.poster.verified ? ' <svg class="ic vf"><use href=#i-badge-check></use></svg>' : ''} · зар ${d.poster.listings} (идэвхтэй ${d.poster.active_listings})${d.poster.company_guess ? ' · компани: <b>' + esc(d.poster.company_guess) + '</b>' : ''} <button class="small" onclick="posterView('${esc(d.poster.key)}')">бүх зар (манай сан)</button>${posterUrl(d.poster.key) ? ` <a href="${posterUrl(d.poster.key)}" target="_blank" rel="noopener"><button class="small">unegui профайл ↗</button></a>` : ''} ${phoneBtn(l.source_url)}</div>
     ${d.posterListings.length ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">Бусад зар: ${d.posterListings.slice(0, 5).map((x) => `<a href="#" onclick="marketDetail(${x.id});return false">${esc((x.title || '').slice(0, 30))}</a>`).join(' · ')}${d.posterListings.length > 5 ? ' …' : ''}</div>` : ''}
-    ${d.poster.kind === 'owner' ? `<div style="margin-top:8px">${d.lead ? `<span class="badge ok">Lead: ${LEAD_ST[d.lead.status] || d.lead.status}</span>` : `<button class="small primary" onclick="leadClaim(${l.id});closeModal()">✋ Гэрээний боломж — авч ажиллах</button>`} <span style="font-size:11.5px;color:var(--muted)">утас — эх зарын «Дугаар харах»-аар, зөвшөөрөлтэйгээр</span></div>` : ''}</div>` : ''}
-  <div class="card" style="margin-bottom:12px"><h3>🏘 Ижил төстэй зарууд (${d.similar.length})</h3>
+    ${d.poster.kind === 'owner' ? `<div style="margin-top:8px">${d.lead ? `<span class="badge ok">Lead: ${LEAD_ST[d.lead.status] || d.lead.status}</span>` : `<button class="small primary" onclick="leadClaim(${l.id});closeModal()"><svg class=ic><use href=#i-handshake></use></svg>Гэрээний боломж — авч ажиллах</button>`} <span style="font-size:11.5px;color:var(--muted)">утас — эх зарын «Дугаар харах»-аар, зөвшөөрөлтэйгээр</span></div>` : ''}</div>` : ''}
+  <div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-building></use></svg>Ижил төстэй зарууд (${d.similar.length})</h3>
     ${d.similar.length ? `<div class="tablebox"><table><thead><tr><th>Зар</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Огноо</th></tr></thead><tbody>
     ${d.similar.map((s) => `<tr style="cursor:pointer" onclick="marketDetail(${s.id})"><td>${esc((s.title || '').slice(0, 50))}${s.khoroolol ? ' <span style="color:var(--muted)">' + esc(s.khoroolol) + '</span>' : ''}</td><td class="num">${s.area}</td><td class="num">${fmt(s.price)}${s.prev_price ? ` <small style="color:var(--muted)">(${fmt(s.prev_price)})</small>` : ''}</td><td class="num">${s.area ? fmt(s.price / s.area) : '—'}</td><td>${s.listed_at || ''}</td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Ижил төстэй зар алга</span>'}</div>
-  <div class="card" style="margin-bottom:12px"><h3>🎯 Тохирох худалдан авагчид (А4, манай хүсэлтүүдээс)</h3>
+  <div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-target></use></svg>Тохирох худалдан авагчид (А4, манай хүсэлтүүдээс)</h3>
     ${d.buyers.length ? d.buyers.map((b) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px"><span><span class="score">${b.score}</span> <b>${esc(b.client_name)}</b> ${esc(b.client_phone || '')} · төсөв ${fmt(b.budget)} сая · ${b.rooms}ө · ${esc(b.districts || '')}</span><button class="small" onclick="closeModal();show('buyers');setTimeout(()=>showMatches(${b.id}),500)">Хүсэлт №${b.id}</button></div>`).join('') : '<span style="color:var(--muted)">Одоогоор тохирох нээлттэй хүсэлт алга</span>'}</div>
   <div style="font-size:11.5px;color:var(--muted)">Ажиглах горим: зөвхөн баримт хадгалсан (тайлбар, зураг, утас байхгүй) — бүрэн зарыг эх сурвалжаас үзнэ. Цуглуулсан: ${l.collected_at ? String(l.collected_at).slice(0, 16).replace('T', ' ') : '—'} · сүүлд харагдсан: ${l.last_seen ? String(l.last_seen).slice(0, 16).replace('T', ' ') : '—'}</div>
   <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="closeModal()">Хаах</button></div>`);
@@ -416,23 +416,23 @@ async function mylist() {
   const mine = rows.filter((p) => ME && p.agent_id === ME.id);
   const list = mine.length ? mine : rows;
   $('#main').innerHTML = `
-  <div class="page-head"><h2>📌 Миний лист</h2><div style="display:flex;gap:8px"><span class="demo-note">${mine.length ? 'Танд хариуцуулсан объектууд' : 'Танд хариуцуулсан объект алга — бүх объект'}</span><button class="primary" onclick="propForm()">+ Объект нэмэх</button></div></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-bookmark></use></svg>Миний лист</h2><div style="display:flex;gap:8px"><span class="demo-note">${mine.length ? 'Танд хариуцуулсан объектууд' : 'Танд хариуцуулсан объект алга — бүх объект'}</span><button class="primary" onclick="propForm()">+ Объект нэмэх</button></div></div>
   <div class="tablebox"><table>
     <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th>Хэрэгслүүд</th></tr></thead>
     <tbody>${list.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')}<br><span style="font-size:12px;color:var(--muted)">${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${p.floor ? p.floor + '/' + (p.total_floors || '—') + ' давхар · ' : ''}${p.is_new ? 'шинэ' : 'хуучин'}${p.notes ? ' · ' + esc(p.notes) : ''}</span></td>
       <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл">🚦</button> <button class="small" onclick="findBuyersFor(${p.id})">🔎 Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="findBuyersFor(${p.id})"><svg class=ic><use href=#i-user-search></use></svg>Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
   </table></div>`;
 }
 async function studio() {
   const rows = await api('/properties');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎨 AI Студи</h2><span class="demo-note">Зураг оруул → AI зураг бүрийг үнэлж эрэмбэлнэ, 3 сувгийн зарын текст, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-sparkles></use></svg>AI Студи</h2><span class="demo-note">Зураг оруул → AI зураг бүрийг үнэлж эрэмбэлнэ, 3 сувгийн зарын текст, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө</span></div>
   <div class="tablebox"><table>
     <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th></th></tr></thead>
     <tbody>${rows.map((p) => `<tr style="cursor:pointer" onclick="studioView(${p.id})"><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')} <span style="font-size:12px;color:var(--muted)">· ${p.deal_type === 'rent' ? 'түрээс' : 'зарна'}</span></td>
       <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
-      <td><button class="small primary" onclick="studioView(${p.id});event.stopPropagation()">🎨 Студи нээх</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+      <td><button class="small primary" onclick="studioView(${p.id});event.stopPropagation()"><svg class=ic><use href=#i-sparkles></use></svg>Студи нээх</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
   </table></div>`;
 }
 // Buyer бүртгэл: харилцагч + хүсэлтийг нэг маягтаар (2 алхмыг нэг болгосон)
@@ -440,13 +440,13 @@ async function buyers() {
   const rows = await api('/requests-full');
   const open = rows.filter((r) => r.status !== 'closed');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🧑‍💼 Buyer бүртгэл</h2><button class="primary" onclick="buyerForm()">+ Худалдан авагч бүртгэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-contact></use></svg>Buyer бүртгэл</h2><button class="primary" onclick="buyerForm()">+ Худалдан авагч бүртгэх</button></div>
   <div class="demo-note" style="margin-bottom:12px">Худалдан авагч (харилцагч) + хайж буй зүйлийг (хүсэлт) нэг маягтаар бүртгэнэ. Бүртгэмэгц А4 тохирол автоматаар ажиллаж, тохирох объект/зах зээлийн зарыг харуулна.</div>
   <div class="tablebox"><table>
     <thead><tr><th>Худалдан авагч</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Төлөв</th><th>Агент</th><th></th></tr></thead>
     <tbody>${open.map((r) => `<tr><td><b>${esc(r.client_name)}</b></td><td>${DEAL_T[r.deal_type]} · ${r.rooms}ө${r.area_min || r.area_max ? ` · ${r.area_min || '?'}–${r.area_max || '?'} м²` : ''}</td>
       <td class="num">${fmt(r.budget)} сая</td><td>${esc(r.districts)}</td><td>${badge(r.status)}</td><td>${esc(r.agent_name || '—')}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="showMatches(${r.id})">🎯 Тохирол (А4)</button> <button class="small" onclick='reqForm(${JSON.stringify(r)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">Нээлттэй хүсэлт алга</td></tr>'}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="showMatches(${r.id})"><svg class=ic><use href=#i-target></use></svg>Тохирол (А4)</button> <button class="small" onclick='reqForm(${JSON.stringify(r)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">Нээлттэй хүсэлт алга</td></tr>'}</tbody>
   </table></div>
   <div id="match-area"></div>`;
 }
@@ -480,7 +480,7 @@ window.buyerForm = function () {
 async function findbuyers() {
   const rows = await api('/properties');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🔎 Худалдан авагч хайх</h2><span class="demo-note">Объект сонгоход бүртгэлтэй худалдан авагчдын хүсэлтүүдээс тохирохыг оноогоор жагсаана (А4)</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-user-search></use></svg>Худалдан авагч хайх</h2><span class="demo-note">Объект сонгоход бүртгэлтэй худалдан авагчдын хүсэлтүүдээс тохирохыг оноогоор жагсаана (А4)</span></div>
   <div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label>Объект</label><select id="fb-prop" onchange="findBuyersFor(this.value)"><option value="">— сонгох —</option>${rows.map((p) => `<option value="${p.id}">${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая</option>`).join('')}</select></div></div>
   <div id="fb-out"></div>`;
 }
@@ -490,19 +490,20 @@ window.findBuyersFor = async function (pid) {
   if ($('#fb-prop')) $('#fb-prop').value = pid;
   const d = await api('/properties/' + pid + '/buyers'); if (d.error) return alert(d.error);
   const p = d.property;
-  $('#fb-out').innerHTML = `<div class="card" style="margin-top:12px"><h3>🎯 ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая — тохирох худалдан авагчид (${d.buyers.length} / нээлттэй ${d.total})</h3>
+  $('#fb-out').innerHTML = `<div class="card" style="margin-top:12px"><h3><svg class=ic><use href=#i-target></use></svg>${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая — тохирох худалдан авагчид (${d.buyers.length} / нээлттэй ${d.total})</h3>
     ${d.buyers.length ? `<div class="tablebox"><table><thead><tr><th class="num">Оноо</th><th>Худалдан авагч</th><th>Утас</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Агент</th><th></th></tr></thead><tbody>
     ${d.buyers.map((b) => `<tr><td class="num"><span class="score">${b.score}</span></td><td><b>${esc(b.client_name)}</b></td><td>${esc(b.client_phone || '')}</td><td>${DEAL_T[b.deal_type]} · ${b.rooms}ө</td><td class="num">${fmt(b.budget)} сая</td><td>${esc(b.districts || '')}</td><td>${esc(b.agent_name || '—')}</td>
-      <td><button class="small" onclick="navigator.clipboard.writeText('${esc(p.district)} ${esc(p.khoroolol || '')}, ${p.rooms} өрөө, ${p.area} м², ${fmt(p.price)} сая ₮ — танд тохирох объект байна. Үзэх цаг товлох уу?').then(()=>toast('Санал хуулагдлаа'))">📋 Санал</button></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Оноо ≥40 худалдан авагч олдсонгүй — Buyer бүртгэлээ нэмээрэй</span>'}</div>`;
+      <td><button class="small" onclick="navigator.clipboard.writeText('${esc(p.district)} ${esc(p.khoroolol || '')}, ${p.rooms} өрөө, ${p.area} м², ${fmt(p.price)} сая ₮ — танд тохирох объект байна. Үзэх цаг товлох уу?').then(()=>toast('Санал хуулагдлаа'))"><svg class=ic><use href=#i-copy></use></svg>Санал</button></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Оноо ≥40 худалдан авагч олдсонгүй — Buyer бүртгэлээ нэмээрэй</span>'}</div>`;
 };
 
 // ---------- Гэрээний боломж (lead): эзэн өөрөө нийтэлсэн шинэ зарууд ----------
-const POSTER_KIND = { owner: ['🏠 Эзэн', 'ok'], agent: ['🧑‍💼 Агент', 'mut'], agency: ['🏢 Агентлаг', 'mut'], developer: ['🏗 Хөгжүүлэгч', 'warn'], unknown: ['? Тодорхойгүй', 'mut'] };
+const POSTER_KIND = { owner: ['<svg class=ic><use href=#i-house></use></svg>Эзэн', 'ok'], agent: ['<svg class=ic><use href=#i-user-round></use></svg>Агент', 'mut'], agency: ['<svg class=ic><use href=#i-building-2></use></svg>Агентлаг', 'mut'], developer: ['<svg class=ic><use href=#i-hard-hat></use></svg>Хөгжүүлэгч', 'warn'], unknown: ['? Тодорхойгүй', 'mut'] };
 const LEAD_ST = { new: 'Шинэ', working: 'Ажиллаж байна', contacted: 'Холбогдсон', signed: 'Гэрээ хийсэн', rejected: 'Татгалзсан' };
 // Нийтлэгчийн эх сайт дээрх профайл (бүх зар) — зөвхөн агентад холбоос; бот энэ замыг уншихгүй (robots: */author)
 const posterUrl = (key) => { const m = /^unegui-user-(\d+)$/.exec(key || ''); return m ? `https://www.unegui.mn/items/author/${m[1]}/` : ''; };
-const phoneBtn = (url) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"><button class="small" title="Эх зарын хуудас нээгдэнэ — «Дугаар харах» товчийг дарна">☎ Дугаар харах ↗</button></a>` : '';
-const CAT_MN = { apartment: '🏢 Орон сууц', house: '🏡 Хаус / хашаа байшин', office: '🏬 Оффис', commercial: '🛍 Худалдаа үйлчилгээ', object: '🏭 Объект', warehouse: '📦 Агуулах / гараж', land: '🌍 Газар' };
+const phoneBtn = (url) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"><button class="small" title="Эх зарын хуудас нээгдэнэ — «Дугаар харах» товчийг дарна"><svg class=ic><use href=#i-phone></use></svg>Дугаар харах ↗</button></a>` : '';
+const CAT_MN = { apartment: 'Орон сууц', house: 'Хаус / хашаа байшин', office: 'Оффис', commercial: 'Худалдаа үйлчилгээ', object: 'Объект', warehouse: 'Агуулах / гараж', land: 'Газар' };
+const CAT_IC = { apartment: 'building-2', house: 'house', office: 'building', commercial: 'store', object: 'factory', warehouse: 'warehouse', land: 'land-plot' };
 const LEAD_F = Object.assign({ days: 14, category: '', deal: '', city: '', district: '', khoroolol: '', sort: 'score' }, (() => { try { return JSON.parse(localStorage.getItem('zuuch_lead_f') || '{}'); } catch { return {}; } })());
 window.leadF = (k, v) => { LEAD_F[k] = v; if (k === 'city') { LEAD_F.district = ''; LEAD_F.khoroolol = ''; } if (k === 'district') LEAD_F.khoroolol = ''; try { localStorage.setItem('zuuch_lead_f', JSON.stringify(LEAD_F)); } catch {} leads(); };
 async function leads() {
@@ -513,7 +514,7 @@ async function leads() {
   const cnt = {}; for (const c of d.counts || []) { cnt[c.category] = (cnt[c.category] || 0) + c.n; cnt['deal:' + c.deal_type] = (cnt['deal:' + c.deal_type] || 0) + c.n; cnt.all = (cnt.all || 0) + c.n; }
   const sel = (k, opts, cur) => `<select onchange="leadF('${k}',this.value)">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎯 Гэрээний боломж — эзэн өөрөө нийтэлсэн зарууд</h2><span class="demo-note">${rows.length} зар${cnt.all ? ' / нийт ' + cnt.all : ''}</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-target></use></svg>Гэрээний боломж — эзэн өөрөө нийтэлсэн зарууд</h2><span class="demo-note">${rows.length} зар${cnt.all ? ' / нийт ' + cnt.all : ''}</span></div>
   <div class="card" style="padding:10px 14px;margin-bottom:12px"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:end">
     <div><label>Төрөл</label>${sel('category', [['', `Бүгд (${cnt.all || 0})`], ...Object.entries(CAT_MN).map(([k, l]) => [k, `${l} (${cnt[k] || 0})`])], LEAD_F.category)}</div>
     <div><label>Хэлцэл</label>${sel('deal', [['', 'Бүгд'], ['sale', `Зарна (${cnt['deal:sale'] || 0})`], ['rent', `Түрээс (${cnt['deal:rent'] || 0})`]], LEAD_F.deal)}</div>
@@ -530,19 +531,19 @@ async function leads() {
     <div><label>Эрэмбэ</label>${sel('sort', [['score', 'Оноо'], ['new', 'Хамгийн шинэ'], ['price', 'Үнэ ↓'], ['price_asc', 'Үнэ ↑']], LEAD_F.sort)}</div>
     <button class="small" onclick="LEAD_F.category='';LEAD_F.deal='';LEAD_F.city='';LEAD_F.district='';LEAD_F.khoroolol='';leadF('sort','score')">Цэвэрлэх</button>
   </div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(CAT_MN).map(([k, l]) => `<button class="small ${LEAD_F.category === k ? 'primary' : ''}" onclick="leadF('category','${LEAD_F.category === k ? '' : k}')">${l} <b>${cnt[k] || 0}</b></button>`).join('')}</div></div>
-  <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «☎ Дугаар харах ↗»-аар агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(CAT_MN).map(([k, l]) => `<button class="small ${LEAD_F.category === k ? 'primary' : ''}" onclick="leadF('category','${LEAD_F.category === k ? '' : k}')">${ic(CAT_IC[k])}${l} <b>${cnt[k] || 0}</b></button>`).join('')}</div></div>
+  <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «<svg class=ic><use href=#i-phone></use></svg>Дугаар харах ↗»-аар агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
   <div class="tablebox"><table>
     <thead><tr><th class="num">Оноо</th><th>Зар</th><th>Нийтлэгч</th><th class="num">Үнэ</th><th class="num">Индекс</th><th class="num">Хоног</th><th>Төлөв</th><th></th></tr></thead>
     <tbody>${rows.map((r) => `<tr style="${r.lead_status ? 'opacity:.75' : ''}">
       <td class="num"><span class="score">${r.score}</span></td>
-      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b><br><span style="font-size:12px;color:var(--muted)"><span class="badge mut">${(CAT_MN[r.category] || r.category).replace(/^\S+\s/, '')}</span> ${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''} · ${r.category === 'apartment' ? r.rooms + 'ө · ' : ''}${r.area || '?'} м² · ${r.deal_type === 'rent' ? 'түрээс' : 'зарна'} · зураг ${r.images}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}</span></td>
-      <td><span class="badge ${POSTER_KIND[r.poster_kind][1]}">${POSTER_KIND[r.poster_kind][0]}</span> <a href="#" onclick="posterView('${esc(r.poster_key || '')}');return false" title="Энэ нийтлэгчийн бүх зар (манай санд)"><b>${esc(r.poster_name || 'нэргүй')}</b></a>${r.poster_verified ? ' ✔' : ''}<br><span style="font-size:11.5px;color:var(--muted)">зар ${r.poster_listings} (идэвхтэй ${r.poster_active})${posterUrl(r.poster_key) ? ` · <a href="${posterUrl(r.poster_key)}" target="_blank" rel="noopener">unegui профайл ↗</a>` : ''}</span></td>
+      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b><br><span style="font-size:12px;color:var(--muted)"><span class="badge mut">${CAT_MN[r.category] || r.category}</span> ${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''} · ${r.category === 'apartment' ? r.rooms + 'ө · ' : ''}${r.area || '?'} м² · ${r.deal_type === 'rent' ? 'түрээс' : 'зарна'} · зураг ${r.images}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}</span></td>
+      <td><span class="badge ${POSTER_KIND[r.poster_kind][1]}">${POSTER_KIND[r.poster_kind][0]}</span> <a href="#" onclick="posterView('${esc(r.poster_key || '')}');return false" title="Энэ нийтлэгчийн бүх зар (манай санд)"><b>${esc(r.poster_name || 'нэргүй')}</b></a>${r.poster_verified ? ' <svg class="ic vf"><use href=#i-badge-check></use></svg>' : ''}<br><span style="font-size:11.5px;color:var(--muted)">зар ${r.poster_listings} (идэвхтэй ${r.poster_active})${posterUrl(r.poster_key) ? ` · <a href="${posterUrl(r.poster_key)}" target="_blank" rel="noopener">unegui профайл ↗</a>` : ''}</span></td>
       <td class="num">${fmt(r.price)} сая${r.prev_price ? `<br><small style="color:var(--muted)">өмнө ${fmt(r.prev_price)}</small>` : ''}</td>
       <td class="num">${r.vsIndex == null ? '—' : `<span class="badge ${r.vsIndex >= 5 ? 'warn' : r.vsIndex <= -8 ? 'ok' : 'mut'}">${r.vsIndex > 0 ? '+' : ''}${r.vsIndex}%</span>`}</td>
       <td class="num">${r.age}</td>
       <td>${r.lead_status ? `<select onchange="leadStatus(${r.id},this.value)">${Object.entries(LEAD_ST).map(([k, v]) => `<option value="${k}" ${r.lead_status === k ? 'selected' : ''}>${v}</option>`).join('')}</select>` : '<span class="badge ok">шинэ</span>'}</td>
-      <td style="white-space:nowrap">${r.lead_status ? (r.lead_client ? `<button class="small" onclick="show('clients')">Харилцагч</button>` : '') : `<button class="small primary" onclick="leadClaim(${r.id})">✋ Авч ажиллах</button>`} ${phoneBtn(r.source_url)} <button class="small" onclick="marketDetail(${r.id})">Дэлгэрэнгүй</button></td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">Сүүлийн хоногуудад эзний нийтэлсэн зар олдсонгүй — ботууд ажилласаар байна</td></tr>'}</tbody>
+      <td style="white-space:nowrap">${r.lead_status ? (r.lead_client ? `<button class="small" onclick="show('clients')">Харилцагч</button>` : '') : `<button class="small primary" onclick="leadClaim(${r.id})"><svg class=ic><use href=#i-handshake></use></svg>Авч ажиллах</button>`} ${phoneBtn(r.source_url)} <button class="small" onclick="marketDetail(${r.id})">Дэлгэрэнгүй</button></td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--muted)">Сүүлийн хоногуудад эзний нийтэлсэн зар олдсонгүй — ботууд ажилласаар байна</td></tr>'}</tbody>
   </table></div>`;
 }
 window.leadClaim = async (id) => { const d = await api('/leads/' + id + '/claim', { method: 'POST' }); if (d.error) return alert(d.error); toast(d.existed ? 'Аль хэдийн ажиллаж байна' : 'Харилцагч (эзэн) үүсгэлээ — утсыг холбогдсоны дараа нөхнө'); leads(); };
@@ -550,7 +551,7 @@ window.leadStatus = async (id, status) => { await api('/leads/' + id, { method: 
 window.posterView = async (key) => {
   const d = await api('/posters/' + encodeURIComponent(key)); if (d.error) return alert(d.error);
   const p = d.poster;
-  modal(`<h3>${POSTER_KIND[p.kind][0]} · ${esc(p.name || 'нэргүй')}${p.verified ? ' ✔ баталгаажсан' : ''}</h3>
+  modal(`<h3>${POSTER_KIND[p.kind][0]} · ${esc(p.name || 'нэргүй')}${p.verified ? ' <svg class="ic vf"><use href=#i-badge-check></use></svg>баталгаажсан' : ''}</h3>
   <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Эх: ${esc(p.source)} · зар ${p.listings} (идэвхтэй ${p.active_listings}) · ангилал: ${Object.entries(p.categories || {}).map(([k, n]) => k + ' ' + n).join(', ') || '—'} · дүүрэг: ${Object.entries(p.districts || {}).map(([k, n]) => k + ' ' + n).join(', ') || '—'}${p.company_guess ? ' · компани: <b>' + esc(p.company_guess) + '</b>' : ''} · анх ${String(p.first_seen).slice(0, 10)}
     ${posterUrl(p.key) ? ` · <a href="${posterUrl(p.key)}" target="_blank" rel="noopener"><b>unegui дээрх бүх зар ↗</b></a>` : ''}</div>
   <div class="tablebox"><table><thead><tr><th>Зар</th><th>Ангилал</th><th class="num">Үнэ</th><th>Огноо</th><th></th></tr></thead><tbody>
@@ -567,14 +568,14 @@ async function market() {
     <td style="min-width:160px"><div style="background:var(--surface-2);border-radius:3px;height:16px"><div style="height:100%;border-radius:3px;background:var(--accent);width:${(i.median_m2 / maxM2) * 100}%"></div></div></td>
     <td class="num"><b>${fmt(i.median_m2)}</b></td><td class="num">${fmt(i.p25_m2)}–${fmt(i.p75_m2)}</td><td class="num">${i.sample}</td></tr>`;
   $('#main').innerHTML = `
-  <div class="page-head"><h2>Зах зээл</h2><span class="demo-note">А2 индекс — жишиг өгөгдөл (2026-02); Шат 2-т цуглуулагчаас сар бүр шинэчлэгдэнэ</span></div>
-  <div class="card"><h3>🏗 Шинэ орон сууц — дүүргийн индекс (сая ₮/м², медиан)</h3>
+  <div class="page-head"><h2><svg class=ic><use href=#i-trending-up></use></svg>Зах зээл</h2><span class="demo-note">А2 индекс — жишиг өгөгдөл (2026-02); Шат 2-т цуглуулагчаас сар бүр шинэчлэгдэнэ</span></div>
+  <div class="card"><h3><svg class=ic><use href=#i-hard-hat></use></svg>Шинэ орон сууц — дүүргийн индекс (сая ₮/м², медиан)</h3>
     <div class="tablebox"><table><thead><tr><th>Дүүрэг</th><th></th><th class="num">Медиан</th><th class="num">P25–P75</th><th class="num">Түүвэр</th></tr></thead>
     <tbody>${newIdx.map(row).join('')}</tbody></table></div></div>
-  <div class="card"><h3>🏘 Хуучин орон сууц — дүүргийн индекс (сая ₮/м², медиан)</h3>
+  <div class="card"><h3><svg class=ic><use href=#i-building></use></svg>Хуучин орон сууц — дүүргийн индекс (сая ₮/м², медиан)</h3>
     <div class="tablebox"><table><thead><tr><th>Дүүрэг</th><th></th><th class="num">Медиан</th><th class="num">P25–P75</th><th class="num">Түүвэр</th></tr></thead>
     <tbody>${oldIdx.map(row).join('')}</tbody></table></div></div>
-  <div class="card"><h3>💡 Боломжийн самбар (А5) — бүх пайзтай зар</h3>
+  <div class="card"><h3><svg class=ic><use href=#i-lightbulb></use></svg>Боломжийн самбар (А5) — бүх пайзтай зар</h3>
     <div class="tablebox"><table>
       <thead><tr><th>Дүүрэг</th><th class="num">Өрөө</th><th class="num">м²</th><th class="num">Үнэ (сая)</th><th class="num">₮/м²</th><th class="num">Индекс ₮/м²</th><th>Пайз</th></tr></thead>
       <tbody>${opp.map((o) => `<tr style="cursor:pointer" onclick="marketDetail(${o.id})" title="Бүрэн мэдээлэл, судалгаа"><td>${esc(o.district)}${o.khoroolol ? ' · ' + esc(o.khoroolol) : ''}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
@@ -599,21 +600,21 @@ window.tourView = async function (pid, mode) {
   renderTour();
 };
 window.tourMode = (m) => { TOUR.mode = m; TOUR.tool = null; renderTour(); };
-// 🎥 POV Tour цэс — объект бүрд 3 арга
+// POV Tour цэс — объект бүрд 3 арга
 async function tours() {
   const d = await api('/properties');
   const rows = (d.items || d || []).filter((p) => p.status !== 'archived');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎥 Virtual POV Tour</h2><span class="demo-note">Объект бүрд 3 арга — аль нэгээр нь эхлээд бусдаар нь нарийвчилж болно</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual POV Tour</h2><span class="demo-note">Объект бүрд 3 арга — аль нэгээр нь эхлээд бусдаар нь нарийвчилж болно</span></div>
   <div class="tiles" style="margin-bottom:14px">
-    <div class="tile" style="text-align:left"><div style="font-weight:700">✨ Автомат план</div><div class="k">Өрөөний тоо, талбайгаас систем ердийн зохион байгуулалт зурна — 10 секунд. Танилцуулах түвшин.</div></div>
-    <div class="tile" style="text-align:left"><div style="font-weight:700">📐 Хэмжээс + AI</div><div class="k">Өрөө бүрийн хэмжээс, цонх/хаалганы байрлалыг маягтаар; зураг/бичлэгээс AI тааз, шал, ханын өнгийг таамаглана; 360° панорам. Бодит түвшин.</div></div>
-    <div class="tile" style="text-align:left"><div style="font-weight:700">🧱 Блок өрж бүтээх</div><div class="k">Нүдэн баримжаа, зургаа харж өрөөнүүдээ блок мэт өрж, чирж хэмжээсээ тааруулаад симуляцийг эхлүүлнэ. Агентын гар бүтээл.</div></div>
+    <div class="tile" style="text-align:left"><div style="font-weight:700"><svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план</div><div class="k">Өрөөний тоо, талбайгаас систем ердийн зохион байгуулалт зурна — 10 секунд. Танилцуулах түвшин.</div></div>
+    <div class="tile" style="text-align:left"><div style="font-weight:700"><svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI</div><div class="k">Өрөө бүрийн хэмжээс, цонх/хаалганы байрлалыг маягтаар; зураг/бичлэгээс AI тааз, шал, ханын өнгийг таамаглана; 360° панорам. Бодит түвшин.</div></div>
+    <div class="tile" style="text-align:left"><div style="font-weight:700"><svg class=ic><use href=#i-brick-wall></use></svg>Блок өрж бүтээх</div><div class="k">Нүдэн баримжаа, зургаа харж өрөөнүүдээ блок мэт өрж, чирж хэмжээсээ тааруулаад симуляцийг эхлүүлнэ. Агентын гар бүтээл.</div></div>
   </div>
   <div class="card"><h3>Объектууд (${rows.length})</h3>
     <div class="tablebox"><table><thead><tr><th>Объект</th><th class="num">Өрөө</th><th class="num">м²</th><th>Арга</th></tr></thead><tbody>
     ${rows.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')} · ${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${fmt(p.price)} сая ₮</td><td class="num">${p.rooms}</td><td class="num">${p.area}</td>
-      <td style="white-space:nowrap"><button class="small" onclick="tourView(${p.id},'auto')">✨ Автомат</button> <button class="small" onclick="tourView(${p.id},'measure')">📐 Хэмжээс + AI</button> <button class="small primary" onclick="tourView(${p.id},'build')">🧱 Блок өрөх</button></td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted)">Объект алга — эхлээд «Объект» цэсээр бүртгэнэ</td></tr>'}
+      <td style="white-space:nowrap"><button class="small" onclick="tourView(${p.id},'auto')"><svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат</button> <button class="small" onclick="tourView(${p.id},'measure')"><svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI</button> <button class="small primary" onclick="tourView(${p.id},'build')"><svg class=ic><use href=#i-brick-wall></use></svg>Блок өрөх</button></td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted)">Объект алга — эхлээд «Объект» цэсээр бүртгэнэ</td></tr>'}
     </tbody></table></div></div>`;
 }
 function renderTour() {
@@ -628,31 +629,31 @@ function renderTour() {
         <td class="num"><input type="number" step="0.1" min="1" max="20" value="${r.h}" style="width:62px" onchange="tourEdit(${i},'h',this.value)"></td>
         <td><button class="small" onclick="tourDelRoom(${i});event.stopPropagation()">✕</button></td></tr>`).join('')}</tbody></table></div>`;
   const styleBox = plan.style ? `<div style="margin-top:10px;background:var(--surface-2);border-radius:6px;padding:8px 10px;font-size:12.5px">
-        <b>🔍 AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
+        <b><svg class=ic><use href=#i-scan-search></use></svg>AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
         ${(plan.style.rooms || []).length ? '<div style="margin-top:4px">' + plan.style.rooms.map((h) => `<div>• <b>${esc(h.room)}</b>: цонх ${h.windows ?? '?'} (${h.window_w ?? '?'} м), хаалга ${h.doors ?? '?'}, хана ${esc(h.wall_color || '?')}, шал ${esc(h.floor || '?')}${h.notes ? ' — ' + esc(h.notes) : ''}</div>`).join('') + '</div>' : ''}
         ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '';
-  const panoBox = `<h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
+  const panoBox = `<h3 style="margin-top:16px"><svg class=ic><use href=#i-camera></use></svg>360° панорам (бодит орчин)</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
       <div class="tablebox"><table><thead><tr><th>Цэг</th><th>Панорам</th><th></th></tr></thead><tbody>
       ${plan.rooms.map((r) => { const pn = (t.assets || []).find((a) => a.kind === 'pano' && a.room_id === r.id); return `<tr><td>${esc(r.name)}</td>
-        <td>${pn ? `<span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${pn.id})">✕</button>` : `<input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('${r.id}',this)">`}</td><td></td></tr>`; }).join('')}
-      ${(t.assets || []).filter((a) => a.kind === 'pano' && String(a.room_id || '').startsWith('ext:')).map((a) => `<tr><td>🌍 ${esc(a.room_id.slice(4))}</td><td><span class="badge ok">✔ оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td><td></td></tr>`).join('')}
+        <td>${pn ? `<span class="badge ok"><svg class=ic><use href=#i-check></use></svg>оруулсан</span> <button class="small" onclick="tourPanoDel(${pn.id})">✕</button>` : `<input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('${r.id}',this)">`}</td><td></td></tr>`; }).join('')}
+      ${(t.assets || []).filter((a) => a.kind === 'pano' && String(a.room_id || '').startsWith('ext:')).map((a) => `<tr><td><svg class=ic><use href=#i-trees></use></svg>${esc(a.room_id.slice(4))}</td><td><span class="badge ok"><svg class=ic><use href=#i-check></use></svg>оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td><td></td></tr>`).join('')}
       <tr><td><input id="tour-ext-name" placeholder="Гадаах цэг (ж: Орц, Хашаа)" style="width:150px"></td><td><input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('ext:'+($('#tour-ext-name').value.trim()||'Гадаах орчин'),this)"></td><td></td></tr>
       </tbody></table></div>`;
-  const videoBox = `<h3 style="margin-top:16px">🎬 Бичлэг → AI шинжилгээ</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «🔍 AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
+  const videoBox = `<h3 style="margin-top:16px"><svg class=ic><use href=#i-clapperboard></use></svg>Бичлэг → AI шинжилгээ</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «<svg class=ic><use href=#i-scan-search></use></svg>AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="tour-vid-room">${plan.rooms.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}<option value="">(бүх байр)</option></select>
         <input type="file" id="tour-vid" accept="video/*" style="width:auto;font-size:12px" onchange="tourVideo(this)">
         <span id="tour-vid-st" style="font-size:12px;color:var(--muted)">кадр: ${(t.assets || []).filter((a) => a.kind === 'frame').length}</span>
         ${(t.assets || []).some((a) => a.kind === 'frame') ? '<button class="small" onclick="tourFramesClear()">✕ кадрууд устгах</button>' : ''}
-        <button class="small" onclick="tourAnalyze()" title="Студийн зураг + бичлэгийн кадруудаас AI таамаглаж 3D-д тусгана">🔍 AI зургаас шинжлэх</button>
+        <button class="small" onclick="tourAnalyze()" title="Студийн зураг + бичлэгийн кадруудаас AI таамаглаж 3D-д тусгана"><svg class=ic><use href=#i-scan-search></use></svg>AI зургаас шинжлэх</button>
       </div>`;
   const shareBox = `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
       <div style="margin-top:10px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
-        <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))">📋 Хуулах</button></div></div>
+        <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))"><svg class=ic><use href=#i-copy></use></svg>Хуулах</button></div></div>
       <div style="margin-top:8px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · тааз ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length} · нийт ${plan.totalArea} м²</div></div>`;
   const refPhotos = (t.assets || []).filter((a) => a.kind !== 'pano' && a.kind !== 'frame');
   const refBox = refPhotos.length ? `<div style="margin-top:10px"><b style="font-size:12.5px">Лавлах зургууд</b> <span style="font-size:11.5px;color:var(--muted)">(нүдэн баримжаагаа нягтлах)</span>
@@ -660,20 +661,20 @@ function renderTour() {
 
   let body = '';
   if (mode === 'auto') {
-    body = `<div class="card"><h3>✨ Автомат план — объектын баримтаас</h3>
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">${p.rooms} өрөө · ${p.area} м² · ${p.floor || '?'}/${p.total_floors || '?'} давхар → УБ-ын орон сууцны ердийн зохион байгуулалт (унтлагын · угаалгын/хувцасны · зочны · коридор · гал тогоо). Хэмжээг доор засаад хадгална; нарийн хэмжээс, цонх/хаалга — «📐 Хэмжээс + AI» эсвэл «🧱 Блок өрөх» горимд.</div>
+    body = `<div class="card"><h3><svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план — объектын баримтаас</h3>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">${p.rooms} өрөө · ${p.area} м² · ${p.floor || '?'}/${p.total_floors || '?'} давхар → УБ-ын орон сууцны ердийн зохион байгуулалт (унтлагын · угаалгын/хувцасны · зочны · коридор · гал тогоо). Хэмжээг доор засаад хадгална; нарийн хэмжээс, цонх/хаалга — «<svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI» эсвэл «<svg class=ic><use href=#i-brick-wall></use></svg>Блок өрөх» горимд.</div>
       ${roomsTable}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-        <button class="small" onclick="tourAuto()">✨ Автомат план дахин үүсгэх</button>
+        <button class="small" onclick="tourAuto()"><svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план дахин үүсгэх</button>
         <button class="small" onclick="tourAddRoom()">+ Өрөө</button>
-        <button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button>
+        <button class="small primary" onclick="tourSave()"><svg class=ic><use href=#i-save></use></svg>Хадгалах + 3D шинэчлэх</button>
       </div></div>`;
   } else if (mode === 'measure') {
     body = `<div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px" class="col-grid">
-      <div class="card"><h3>📐 Өрөөнүүд (${plan.rooms.length}) · нийт ${plan.totalArea} м²</h3>
+      <div class="card"><h3><svg class=ic><use href=#i-ruler></use></svg>Өрөөнүүд (${plan.rooms.length}) · нийт ${plan.totalArea} м²</h3>
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Лазер хэмжигчээр өрөө бүрийн өргөн/уртыг оруулаад, өрөө сонгож цонх/хаалга/дам нурууны байрлалыг заана. Бичлэг/зургаас AI урьдчилан бөглөж болно.</div>
         ${roomsTable}
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="small" onclick="tourAddRoom()">+ Өрөө</button><button class="small primary" onclick="tourSave()">💾 Хадгалах + 3D шинэчлэх</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="small" onclick="tourAddRoom()">+ Өрөө</button><button class="small primary" onclick="tourSave()"><svg class=ic><use href=#i-save></use></svg>Хадгалах + 3D шинэчлэх</button></div>
         ${styleBox}
         ${videoBox}
         ${panoBox}
@@ -683,30 +684,30 @@ function renderTour() {
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Өрөө дарж сонгоно · тод = гараар, бүдэг = автомат</div>${refBox}</div>
       </div></div>`;
   } else {
-    body = `<div class="card"><h3>🧱 План бүтээх — блок өрөх засварлагч</h3>
+    body = `<div class="card"><h3><svg class=ic><use href=#i-brick-wall></use></svg>План бүтээх — блок өрөх засварлагч</h3>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12.5px">
         <span style="color:var(--muted)">Өрөө нэмэх:</span>
         ${Object.entries(t.types).map(([k, v]) => `<button class="small" onclick="tourAddRoomOf('${k}')">+ ${v}</button>`).join('')}
         <span style="border-left:1px solid var(--line);height:18px;margin:0 4px"></span>
-        <button class="small ${t.tool === 'win' ? 'primary' : ''}" onclick="tourTool('win')" title="Ханан дээр дарж цонх тавина">🪟 Цонх</button>
-        <button class="small ${t.tool === 'door' ? 'primary' : ''}" onclick="tourTool('door')" title="Ханан дээр дарж хаалга тавина">🚪 Хаалга</button>
+        <button class="small ${t.tool === 'win' ? 'primary' : ''}" onclick="tourTool('win')" title="Ханан дээр дарж цонх тавина"><svg class=ic><use href=#i-blinds></use></svg>Цонх</button>
+        <button class="small ${t.tool === 'door' ? 'primary' : ''}" onclick="tourTool('door')" title="Ханан дээр дарж хаалга тавина"><svg class=ic><use href=#i-door-open></use></svg>Хаалга</button>
         <button class="small" onclick="tourRotateSel()" title="Сонгосон өрөөний өргөн/уртыг солино">⟲ Эргүүлэх</button>
         <button class="small" onclick="tourDupSel()">⧉ Хуулах</button>
         <button class="small" onclick="tourUndo()">↶ Буцаах</button>
-        <button class="small" onclick="if(confirm('Бүх өрөөг устгаж хоосноос эхлэх үү?')){TOUR.undo.push(JSON.stringify(TOUR.plan.rooms));TOUR.plan.rooms=[];TOUR.sel=null;renderTour();}">🗑 Хоосноос</button>
+        <button class="small" onclick="if(confirm('Бүх өрөөг устгаж хоосноос эхлэх үү?')){TOUR.undo.push(JSON.stringify(TOUR.plan.rooms));TOUR.plan.rooms=[];TOUR.sel=null;renderTour();}"><svg class=ic><use href=#i-trash-2></use></svg>Хоосноос</button>
         <label style="margin-left:auto">Алхам <select id="tour-snap" onchange="TOUR.snap=Number(this.value)"><option value="0.1" ${t.snap === 0.1 ? 'selected' : ''}>10 см</option><option value="0.05" ${t.snap === 0.05 ? 'selected' : ''}>5 см</option><option value="0.5" ${t.snap === 0.5 ? 'selected' : ''}>50 см</option></select></label>
       </div>
       <canvas id="tour-plan" width="1000" height="680" style="width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:grab;touch-action:none"></canvas>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Чирж зөөнө · булан/ирмэгээс татаж хэмжээ өөрчилнө (хөрш өрөөнд соронзон шиг наалдана) · сумаар 1 алхам · Delete устгана · Ctrl+Z буцаана · 🪟/🚪 горимд ханан дээр дарж нээлхий тавина · давхар дарж нэр солино</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Чирж зөөнө · булан/ирмэгээс татаж хэмжээ өөрчилнө (хөрш өрөөнд соронзон шиг наалдана) · сумаар 1 алхам · Delete устгана · Ctrl+Z буцаана · <svg class=ic><use href=#i-blinds></use></svg>/<svg class=ic><use href=#i-door-open></use></svg>горимд ханан дээр дарж нээлхий тавина · давхар дарж нэр солино</div>
       ${refBox}
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="tourSave()">▶ Симуляци эхлүүлэх (хадгалж 3D бүтээнэ)</button><span style="font-size:12px;color:var(--muted)">Хадгалагдмагц доорх 3D шинэчлэгдэнэ</span></div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="tourSave()"><svg class=ic><use href=#i-play></use></svg>Симуляци эхлүүлэх (хадгалж 3D бүтээнэ)</button><span style="font-size:12px;color:var(--muted)">Хадгалагдмагц доорх 3D шинэчлэгдэнэ</span></div>
       </div>
       ${tourRoomDetail(t)}`;
   }
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎥 POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
-    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '✨ Автомат план')}${tab('measure', '📐 Хэмжээс + AI + 360°')}${tab('build', '🧱 Блок өрж бүтээх')}</div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
+    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '<svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план')}${tab('measure', '<svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI + 360°')}${tab('build', '<svg class=ic><use href=#i-brick-wall></use></svg>Блок өрж бүтээх')}</div>
   ${body}
   ${shareBox}`;
   drawTourPlan(); bindTourCanvas();
@@ -765,7 +766,7 @@ function drawTourPlan() {
     if (TOUR.guide) { g.strokeStyle = '#f59e0b'; g.lineWidth = 1.5; g.setLineDash([6, 4]); for (const gd of TOUR.guide) { g.beginPath(); if (gd.axis === 'x') { g.moveTo(X(gd.v), 0); g.lineTo(X(gd.v), c.height); } else { g.moveTo(0, Y(gd.v)); g.lineTo(c.width, Y(gd.v)); } g.stroke(); } g.setLineDash([]); }
   }
   g.fillStyle = '#64748b'; g.font = '12px Inter,sans-serif'; g.textAlign = 'left';
-  g.fillText((TOUR.tool === 'win' ? '🪟 Ханан дээр дарж цонх тавина (Esc — болих)' : TOUR.tool === 'door' ? '🚪 Ханан дээр дарж хаалга тавина (Esc — болих)' : '🔴 орц · ⬜ хаалга · 🔵 цонх · тод = гараар, бүдэг = автомат · дээд тал = хойд зүг'), 10, c.height - 10);
+  g.fillText((TOUR.tool === 'win' ? 'Цонх: ханан дээр дарж тавина (Esc — болих)' : TOUR.tool === 'door' ? 'Хаалга: ханан дээр дарж тавина (Esc — болих)' : 'улаан = орц · цагаан = хаалга · цэнхэр = цонх · тод = гараар, бүдэг = автомат · дээд тал = хойд зүг'), 10, c.height - 10);
 }
 function bindTourCanvas() {
   const c = $('#tour-plan'); if (!c) return;
@@ -862,7 +863,7 @@ function tourRoomDetail(t) {
   const wins = (r.win || []).map((w, k) => `<tr><td>${sideSel(w.side, `tourOp(${i},'win',${k},'side',this.value)`)}</td><td>${numIn(w.off, `tourOp(${i},'win',${k},'off',this.value)`)}</td><td>${numIn(w.w, `tourOp(${i},'win',${k},'w',this.value)`)}</td><td>${numIn(w.sill, `tourOp(${i},'win',${k},'sill',this.value)`)}</td><td>${numIn(w.top, `tourOp(${i},'win',${k},'top',this.value)`)}</td><td><button class="small" onclick="tourOpDel(${i},'win',${k})">✕</button></td></tr>`).join('');
   const doors = (r.door || []).map((d, k) => `<tr><td>${sideSel(d.side, `tourOp(${i},'door',${k},'side',this.value)`)}</td><td>${numIn(d.off, `tourOp(${i},'door',${k},'off',this.value)`)}</td><td>${numIn(d.w, `tourOp(${i},'door',${k},'w',this.value)`)}</td><td><select onchange="tourOp(${i},'door',${k},'to',this.value)"><option value="auto" ${d.to !== 'out' ? 'selected' : ''}>хөрш өрөө рүү</option><option value="out" ${d.to === 'out' ? 'selected' : ''}>гадагш (орц/тагт)</option></select></td><td><button class="small" onclick="tourOpDel(${i},'door',${k})">✕</button></td></tr>`).join('');
   const beams = (r.beams || []).map((b, k) => `<tr><td><select onchange="tourOp(${i},'beams',${k},'axis',this.value)"><option value="x" ${b.axis === 'x' ? 'selected' : ''}>зүүн→баруун (off = дээд захаас)</option><option value="y" ${b.axis === 'y' ? 'selected' : ''}>дээш→доош (off = зүүн захаас)</option></select></td><td>${numIn(b.off, `tourOp(${i},'beams',${k},'off',this.value)`)}</td><td>${numIn(b.w, `tourOp(${i},'beams',${k},'w',this.value)`)}</td><td>${numIn(b.h, `tourOp(${i},'beams',${k},'h',this.value)`)}</td><td><button class="small" onclick="tourOpDel(${i},'beams',${k})">✕</button></td></tr>`).join('');
-  return `<div class="card" style="margin-top:12px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))"><h3>📐 ${esc(r.name)} — бодит хэмжээс (м)</h3>
+  return `<div class="card" style="margin-top:12px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))"><h3><svg class=ic><use href=#i-ruler></use></svg>${esc(r.name)} — бодит хэмжээс (м)</h3>
     <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Хана: хойд = планы дээд тал. «Зайд» = тухайн хананы зүүн (эсвэл дээд) захаас нээлхийн эхлэл хүртэл. Хоосон = автомат.</div>
     <b style="font-size:12.5px">Цонх</b> <button class="small" onclick="tourOpAdd(${i},'win')">+ цонх</button>
     ${wins ? `<div class="tablebox"><table><thead><tr><th>Хана</th><th>Зайд</th><th>Өргөн</th><th>Тавцан</th><th>Дээд</th><th></th></tr></thead><tbody>${wins}</tbody></table></div>` : '<div style="font-size:12px;color:var(--muted)">автомат</div>'}
@@ -874,7 +875,7 @@ function tourRoomDetail(t) {
       <label>Ханын өнгө <input type="color" value="${r.wallColor || '#e3d9cb'}" onchange="tourEdit(${i},'wallColor',this.value)"> <button class="small" onclick="tourEdit(${i},'wallColor',null)">авто</button></label>
       <label>Шал <select onchange="tourEdit(${i},'floor',this.value||null)">${Object.entries(FLOOR_MN).map(([k, l]) => `<option value="${k}" ${(r.floor || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Өөрчлөлт «💾 Хадгалах + 3D шинэчлэх» дармагц 3D-д орно.</div></div>`;
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Өөрчлөлт «<svg class=ic><use href=#i-save></use></svg>Хадгалах + 3D шинэчлэх» дармагц 3D-д орно.</div></div>`;
 }
 window.tourOpAdd = (i, kind) => { const r = TOUR.plan.rooms[i]; r[kind] = r[kind] || []; r[kind].push(kind === 'win' ? { side: 'N', off: 0.5, w: 1.4, sill: 0.85, top: 2.2 } : kind === 'door' ? { side: 'S', off: 0.5, w: 0.9, to: 'auto' } : { axis: 'x', off: Math.round(r.h / 2 * 10) / 10, w: 0.3, h: 0.25 }); renderTour(); };
 window.tourOp = (i, kind, k, key, v) => { const o = TOUR.plan.rooms[i][kind][k]; o[key] = (key === 'side' || key === 'to' || key === 'axis') ? v : Number(v); drawTourPlan(); };
@@ -899,7 +900,7 @@ window.tourVideo = async (input) => {
     st.textContent = 'илгээж байна…';
     const res = await fetch('/api/tour/' + TOUR.pid + '/frames', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
     const d = await res.json(); if (d.error) throw new Error(d.error);
-    toast(`${d.added} кадр орлоо (нийт ${d.frames}) — одоо «🔍 AI зургаас шинжлэх»`); tourView(TOUR.pid);
+    toast(`${d.added} кадр орлоо (нийт ${d.frames}) — одоо «AI зургаас шинжлэх»`); tourView(TOUR.pid);
   } catch (e) { st.textContent = 'алдаа: ' + e.message; }
 };
 window.tourFramesClear = async () => { await api('/tour/' + TOUR.pid + '/frames', { method: 'DELETE' }); tourView(TOUR.pid); };
@@ -940,14 +941,14 @@ function renderStudio(d) {
   const texts = dr.texts || {}, adv = dr.advantages || [], price = dr.price || null, plan = dr.plan || [], notes = dr.photo_notes || [];
   const img = (a) => `/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}`;
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🎨 Студи · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая ₮</h2>
+  <div class="page-head"><h2><svg class=ic><use href=#i-sparkles></use></svg>Студи · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая ₮</h2>
     <div style="display:flex;gap:8px"><button onclick="properties()">← Объектууд</button></div></div>
-  ${!d.ai ? '<div class="demo-note" style="margin-bottom:12px">⚠️ ANTHROPIC_API_KEY тохируулаагүй — зургийн шинжилгээ, зарын текст загвар горимоор (AI-гүй) ажиллана. Түлхүүр тавимагц бодит AI.</div>' : ''}
+  ${!d.ai ? '<div class="demo-note" style="margin-bottom:12px"><svg class=ic><use href=#i-triangle-alert></use></svg>ANTHROPIC_API_KEY тохируулаагүй — зургийн шинжилгээ, зарын текст загвар горимоор (AI-гүй) ажиллана. Түлхүүр тавимагц бодит AI.</div>' : ''}
   <div class="card"><h3>1 · Зураг оруулах (${d.assets.length}; зорилт 22–27)</h3>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <input type="file" id="st-files" accept="image/jpeg,image/png,image/webp" multiple style="width:auto">
-      <button class="primary" onclick="studioUpload(${p.id})">⬆ Оруулах</button>
-      <button class="primary" onclick="studioAnalyze(${p.id})" ${d.assets.length ? '' : 'disabled'}>🤖 AI шинжилгээ хийх</button>
+      <button class="primary" onclick="studioUpload(${p.id})"><svg class=ic><use href=#i-upload></use></svg>Оруулах</button>
+      <button class="primary" onclick="studioAnalyze(${p.id})" ${d.assets.length ? '' : 'disabled'}><svg class=ic><use href=#i-bot></use></svg>AI шинжилгээ хийх</button>
       <span id="st-status" style="color:var(--muted);font-size:13px"></span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:14px">
       ${d.assets.map((a) => `<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)">
@@ -962,7 +963,7 @@ function renderStudio(d) {
   <div class="card"><h3>2 · Зургийн зөвлөмж</h3>${notes.length ? '<ul style="margin:0;padding-left:20px">' + notes.map((n) => `<li>${esc(n)}</li>`).join('') + '</ul>' : '<span style="color:var(--muted)">Зөвлөмжгүй — зургууд сайн байна</span>'}</div>
   <div class="card"><h3>3 · Зарын текст <span class="badge mut">${esc(dr.model || '')}</span></h3>
     <div style="display:flex;gap:6px;margin-bottom:8px">${['unegui', 'facebook', 'site'].map((k, i) => `<button class="small ${i === 0 ? 'primary' : ''}" data-t="${k}" onclick="studioTab(this)">${{ unegui: 'Unegui', facebook: 'Facebook', site: 'Сайт/PDF' }[k]}</button>`).join('')}
-      <button class="small" onclick="navigator.clipboard.writeText(document.getElementById('st-text').value);this.textContent='✓ Хуулав'">📋 Хуулах</button></div>
+      <button class="small" onclick="navigator.clipboard.writeText(document.getElementById('st-text').value);this.textContent='✓ Хуулав'"><svg class=ic><use href=#i-copy></use></svg>Хуулах</button></div>
     <textarea id="st-text" rows="9" style="width:100%">${esc(texts.unegui || '')}</textarea>
     <script type="application/json" id="st-texts">${JSON.stringify(texts).replace(/</g, '\\u003c')}</script></div>
   <div class="card"><h3>4 · Давуу тал (орчны шинжилгээ А8 + баримт)</h3><ul style="margin:0;padding-left:20px">${adv.map((a) => `<li>${esc(a)}</li>`).join('') || '<li style="color:var(--muted)">—</li>'}</ul></div>
@@ -970,7 +971,7 @@ function renderStudio(d) {
     <div class="tiles">${price.options.map((o) => `<div class="tile"><div class="v">${fmt(o.price)}<small style="font-size:12px"> сая</small></div><div class="k"><b>${o.label}</b> · ${o.days}<br>${esc(o.note)}</div></div>`).join('')}</div></div>` : ''}
   <div class="card"><h3>6 · 30 хоногийн борлуулалтын төлөвлөгөө</h3>
     <div class="tablebox"><table><thead><tr><th class="num">Өдөр</th><th>Ажил</th></tr></thead><tbody>${plan.map((s) => `<tr><td class="num">${s.day}</td><td>${esc(s.task)}</td></tr>`).join('')}</tbody></table></div></div>`
-  : '<div class="card" style="color:var(--muted)">Зургуудаа оруулаад «🤖 AI шинжилгээ хийх» дарахад: зургийн эрэмбэ/чанар, зарын текст ×3, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө үүснэ.</div>'}`;
+  : '<div class="card" style="color:var(--muted)">Зургуудаа оруулаад «<svg class=ic><use href=#i-bot></use></svg>AI шинжилгээ хийх» дарахад: зургийн эрэмбэ/чанар, зарын текст ×3, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө үүснэ.</div>'}`;
 }
 window.studioTab = function (btn) {
   document.querySelectorAll('[data-t]').forEach((b) => b.classList.remove('primary')); btn.classList.add('primary');
@@ -988,7 +989,7 @@ window.studioUpload = async function (pid) {
 };
 window.studioDel = async function (id, pid) { await api('/studio/asset/' + id, { method: 'DELETE' }); studioView(pid); };
 window.studioAnalyze = async function (pid) {
-  $('#st-status').textContent = '🤖 Шинжилж байна (30–60 сек)…';
+  $('#st-status').innerHTML = ic('loader-circle', 'spin') + 'Шинжилж байна (30–60 сек)…';
   const r = await api('/studio/' + pid + '/analyze', { method: 'POST' });
   if (r.error) { alert(r.error); $('#st-status').textContent = ''; return; }
   renderStudio(r);
@@ -998,9 +999,9 @@ window.studioAnalyze = async function (pid) {
 const PLAN_T = { demo: 'Демо', trial: 'Туршилт', basic: 'Суурь', pro: 'Про' };
 async function owner() {
   const d = await api('/owner/overview');
-  if (d.error) { $('#main').innerHTML = `<div class="page-head"><h2>👑 Эзэн самбар</h2></div><p style="color:var(--accent-2)">${esc(d.error)}</p>`; return; }
+  if (d.error) { $('#main').innerHTML = `<div class="page-head"><h2><svg class=ic><use href=#i-crown></use></svg>Эзэн самбар</h2></div><p style="color:var(--accent-2)">${esc(d.error)}</p>`; return; }
   $('#main').innerHTML = `
-  <div class="page-head"><h2>👑 Эзэн самбар</h2><span class="demo-note">Платформын нийт тойм — бүх компани</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-crown></use></svg>Эзэн самбар</h2><span class="demo-note">Платформын нийт тойм — бүх компани</span></div>
   <div class="tiles">
     <div class="tile"><div class="v">${d.totals.companies}</div><div class="k">Бүртгэлтэй компани</div></div>
     <div class="tile"><div class="v">${d.totals.users}</div><div class="k">Нийт хэрэглэгч</div></div>
@@ -1063,7 +1064,7 @@ const ROLE_T = { zahiral: 'Захирал', agent: 'Агент' };
 async function team() {
   const rows = await api('/users');
   $('#main').innerHTML = `
-  <div class="page-head"><h2>⚙️ Баг · ${esc(ME.company || '')}</h2><button class="primary" onclick="userForm()">+ Ажилтан нэмэх</button></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-settings></use></svg>Баг · ${esc(ME.company || '')}</h2><button class="primary" onclick="userForm()">+ Ажилтан нэмэх</button></div>
   <div class="tablebox"><table>
     <thead><tr><th>#</th><th>Нэр</th><th>Нэвтрэх нэр</th><th>Утас</th><th>Роль</th><th></th></tr></thead>
     <tbody>${rows.map((u) => `<tr><td>${u.id}</td><td><b>${esc(u.name)}</b></td><td>${esc(u.username)}</td>
@@ -1095,10 +1096,10 @@ window.delUser = async (id) => { if (!confirm('Ажилтныг устгах у�
 
 // ---------- Цуглуулагч (Шат 2 демо) ----------
 const KIND_T = { listing_site: 'Зарын сайт', broker: 'Брокер вэб', rss: 'Мэдээ', fb: 'FB групп' };
-const TIER_BADGE = (t) => ({ green: '🟢 ногоон', yellow: '🟡 шар', red: '🔴 улаан' }[t] || t || '—');
+const TIER_BADGE = (t) => ({ green: '<span class="dot g"></span>ногоон', yellow: '<span class="dot y"></span>шар', red: '<span class="dot r"></span>улаан' }[t] || t || '—');
 async function collector() {
   $('#main').innerHTML = `
-  <div class="page-head"><h2>🤖 Цуглуулах хөдөлгүүр</h2>
+  <div class="page-head"><h2><svg class=ic><use href=#i-bot></use></svg>Цуглуулах хөдөлгүүр</h2>
     <span class="demo-note" id="col-mode">…</span></div>
   <div id="col-body">Ачааллаж байна…</div>`;
   async function render() {
@@ -1108,7 +1109,7 @@ async function collector() {
       ? `Шат 2 БОДИТ — unegui.mn ажиглах горим · ${Math.round((li.intervalSec || 600) / 60)} мин тутам · хүсэлт ${li.adapter ? li.adapter.requests : 0} / ${li.adapter ? (li.adapter.bytes / 1048576).toFixed(1) : 0} MB`
       : 'Шат 2 демо — симуляц эх сурвалж (жинхэнэ сайт руу хандахгүй)';
     const liveLine = s.live ? `<div style="background:color-mix(in srgb,var(--accent) 10%,var(--surface));border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">
-      📡 <b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> · дараагийн мөчлөг: <b>${li.nextCycleIn != null ? (li.nextCycleIn > 0 ? Math.floor(li.nextCycleIn / 60) + ':' + String(li.nextCycleIn % 60).padStart(2, '0') : 'одоо') : '—'}</b> (ботууд мөчлөг хооронд сул зогсдог — хэвийн) ·
+      <svg class=ic><use href=#i-radio-tower></use></svg><b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> · дараагийн мөчлөг: <b>${li.nextCycleIn != null ? (li.nextCycleIn > 0 ? Math.floor(li.nextCycleIn / 60) + ':' + String(li.nextCycleIn % 60).padStart(2, '0') : 'одоо') : '—'}</b> (ботууд мөчлөг хооронд сул зогсдог — хэвийн) ·
       дахин харагдсан: <b>${li.updated || 0}</b> · үнэ өөрчлөгдсөн: <b>${li.priceChanges || 0}</b> · дэлгэрэнгүй татсан: <b>${li.detailFetched || 0}</b> ·
       сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${li.adapter && li.adapter.cooldownUntil && li.adapter.cooldownUntil > Date.now() ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
       ${li.byCat ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${Object.values(li.byCat).map((c) => `<span class="badge mut" title="${Math.round((Date.now() - c.at) / 60000)} мин өмнө">${esc(c.label)}: ${c.adverts}</span>`).join('')}</div>` : ''}
@@ -1117,7 +1118,7 @@ async function collector() {
       const busy = w.status !== 'сул';
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:${busy ? 'color-mix(in srgb,var(--accent) 12%,var(--surface))' : 'var(--surface)'}">
         <div style="font-size:11px;color:var(--muted)">Бот ${w.id}</div>
-        <div style="font-weight:600;font-size:12.5px">${busy ? '⚙️ ' + w.status : '💤 сул'}</div>
+        <div style="font-weight:600;font-size:12.5px">${busy ? '<svg class=ic><use href=#i-settings></use></svg>' + w.status : '<svg class=ic><use href=#i-moon></use></svg>сул'}</div>
         <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.source || '—')}</div></div>`;
     }).join('');
     const rej = Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]);
@@ -1136,13 +1137,13 @@ async function collector() {
         <span class="badge ${e.price < e.prev ? 'ok' : 'warn'}">${e.price < e.prev ? '▼' : '▲'} үнэ</span> <b>${esc(e.title)}</b> — ${fmt(e.prev)} → <b>${fmt(e.price)}</b> сая ₮${link}
         <span style="color:var(--muted)">· ${ago}с</span>${e.lid ? ' <span style="color:var(--accent);font-size:12px">→</span>' : ''}</div>`;
       if (e.kind === 'delisted') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
-        <span class="badge mut">✔ хасагдсан</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
+        <span class="badge mut"><svg class=ic><use href=#i-check></use></svg>хасагдсан</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
       if (e.kind === 'error') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--accent-2)">
-        ⚠ ${esc(e.reason || '')} <span style="color:var(--muted)">· ${esc(e.source || '')} · ${ago}с</span></div>`;
+        <svg class=ic><use href=#i-triangle-alert></use></svg>${esc(e.reason || '')} <span style="color:var(--muted)">· ${esc(e.source || '')} · ${ago}с</span></div>`;
       if (e.kind === 'retired') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)">
-        🗄 <b>${e.count}</b> зар хугацаагаар устгагдав <span>— ${esc(e.reason)} · ${ago}с</span></div>`;
+        <svg class=ic><use href=#i-archive></use></svg><b>${e.count}</b> зар хугацаагаар устгагдав <span>— ${esc(e.reason)} · ${ago}с</span></div>`;
       if (e.kind === 'takedown') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
-        <span class="badge warn">🗑 хасалт</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
+        <span class="badge warn"><svg class=ic><use href=#i-trash-2></use></svg>хасалт</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
       return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;opacity:.75">
         <span class="badge mut">✕ ${e.score}</span> ${esc(e.title)}
         <span style="color:var(--accent-2)">— ${esc(e.reason)}</span>
@@ -1152,17 +1153,17 @@ async function collector() {
     $('#col-body').innerHTML = `
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
       ${s.running
-        ? `<button onclick="colAct('stop')">⏸ Зогсоох</button>`
-        : `<button class="primary" onclick="colAct('start')">▶ Эхлүүлэх</button>`}
+        ? `<button onclick="colAct('stop')"><svg class=ic><use href=#i-pause></use></svg>Зогсоох</button>`
+        : `<button class="primary" onclick="colAct('start')"><svg class=ic><use href=#i-play></use></svg>Эхлүүлэх</button>`}
       <button onclick="colAct('reset')">↺ Reset</button>
-      <button onclick="colAct('takedown')" title="Сүүлийн цуглуулсан бүлгийг устгаж, дахин цуглуулахыг блоклоно">🗑 Жишиг хасалт</button>
+      <button onclick="colAct('takedown')" title="Сүүлийн цуглуулсан бүлгийг устгаж, дахин цуглуулахыг блоклоно"><svg class=ic><use href=#i-trash-2></use></svg>Жишиг хасалт</button>
       <span class="badge ${s.running ? 'ok' : 'mut'}">${s.running ? '● Ажиллаж байна' : '○ Зогссон'}</span>
       <span style="color:var(--muted);font-size:12.5px">Босго: <b>${s.threshold}</b> · дараалалд: <b>${s.queued}</b> · хасалт: <b>${s.takedownCount || 0}</b></span>
       ${s.note ? `<span class="badge warn">${esc(s.note)}</span>` : ''}
     </div>
     ${liveLine}
     <div style="background:var(--surface-2);border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12.5px;color:var(--muted)">
-      🛡️ <b>Ажиглах горим</b> — зөвхөн баримт хадгална (зураг/тайлбар/жинхэнэ утас БИШ) · утас = давсласан хэш ·
+      <svg class=ic><use href=#i-shield-check></use></svg><b>Ажиглах горим</b> — зөвхөн баримт хадгална (зураг/тайлбар/жинхэнэ утас БИШ) · утас = давсласан хэш ·
       хадгалалт ${s.retentionDays} хоног · улаан tier автоматаар хөндөгдөхгүй · UA: <code style="font-size:11px">${esc(s.ua || '')}</code>
     </div>
     <div class="tiles">
@@ -1183,13 +1184,13 @@ async function collector() {
           <td>${TIER_BADGE(src.tier)}</td>
           <td>${KIND_T[src.kind] || src.kind}</td><td class="num">${src.trust.toFixed(2)}</td>
           <td class="num" style="color:var(--accent)">${src.collected}</td><td class="num" style="color:var(--accent-2)">${src.rejected}</td></tr>`).join('')}</tbody></table></div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">🟢 ногоон = API/түншлэл · 🟡 шар = ил HTML, эелдэг · 🔴 улаан = автоматаар хөндөхгүй (FB, robots хориотой)</div></div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px"><span class="dot g"></span>ногоон = API/түншлэл · <span class="dot y"></span>шар = ил HTML, эелдэг · <span class="dot r"></span>улаан = автоматаар хөндөхгүй (FB, robots хориотой)</div></div>
       <div class="card"><h3>Татгалзсан шалтгаан</h3>
         ${rej.length ? rej.map(([r, c]) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px"><span>${esc(r)}</span><b>${c}</b></div>`).join('') : '<span style="color:var(--muted)">—</span>'}
       </div>
     </div>
     <div class="card"><h3 style="display:flex;align-items:center;gap:10px">Амьд урсгал (сүүлийн үйл явдлууд)
-      <button class="small ${COL_PAUSED ? 'primary' : ''}" onclick="colPause()">${COL_PAUSED ? '▶ Үргэлжлүүлэх' : '⏸ Түр зогсоох'}</button>
+      <button class="small ${COL_PAUSED ? 'primary' : ''}" onclick="colPause()">${COL_PAUSED ? '<svg class=ic><use href=#i-play></use></svg>Үргэлжлүүлэх' : '<svg class=ic><use href=#i-pause></use></svg>Түр зогсоох'}</button>
       <span style="font-size:11.5px;color:var(--muted);font-weight:400">${reading ? 'уншиж байна — шинэчлэлт түр зогссон' : 'мөр дээр дарж бүрэн мэдээлэл'}</span></h3>
       <div id="col-events" style="max-height:420px;overflow:auto">${keepHtml != null ? keepHtml : ev}</div></div>`;
     if (keepTop) $('#col-events').scrollTop = keepTop;

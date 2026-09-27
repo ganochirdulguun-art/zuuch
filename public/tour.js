@@ -489,10 +489,10 @@ function showPano(a, exterior) {
     panoMesh = new THREE.Mesh(new THREE.SphereGeometry(8, 64, 40), new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide }));
     panoMesh.position.set(cam.x, EYE, cam.z); scene.add(panoMesh); panoActive = true; panoMesh.userData.exterior = exterior;
     $('#bPano').classList.add('on'); $('#bPano').textContent = '✕ 360° хаах'; $('#bPano').style.display = '';
-    if (exterior) { $('#rName').textContent = '🌍 ' + (a.label || 'Гадаах орчин'); $('#rArea').textContent = '360° панорам'; }
+    if (exterior) { $('#rName').textContent = a.label || 'Гадаах орчин'; $('#rArea').textContent = '360° панорам'; }
   };
   if (panoTexCache[a.id]) return apply(panoTexCache[a.id]);
-  $('#bPano').textContent = '⏳ 360°';
+  $('#bPano').textContent = '360° ачаалж…';
   texLoader.load(assetUrl(a.id), (t) => { t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearFilter; panoTexCache[a.id] = t; apply(t); }, undefined, () => { $('#bPano').textContent = '360° панорам'; });
 }
 function hidePano(keepCam) {

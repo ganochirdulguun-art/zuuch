@@ -80,7 +80,8 @@ h1 .g{background:linear-gradient(120deg,#38BDF8,#EAF4FF);-webkit-background-clip
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:52px 0}
 .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;backdrop-filter:blur(6px);transition:.18s}
 .feat:hover{transform:translateY(-4px);border-color:var(--accent-soft);box-shadow:0 14px 40px rgba(56,189,248,.16)}
-.feat .ic{font-size:22px;margin-bottom:12px;display:inline-grid;place-items:center;width:44px;height:44px;border-radius:11px;background:rgba(56,189,248,.12);border:1px solid var(--line)}
+.feat .ic svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.feat .ic{color:var(--accent);margin-bottom:12px;display:inline-grid;place-items:center;width:44px;height:44px;border-radius:11px;background:rgba(56,189,248,.12);border:1px solid var(--line)}
 .feat h3{font-family:"Montserrat",sans-serif;font-weight:600;font-size:16px;margin:0 0 8px}
 .feat p{font-size:14px;color:var(--muted);line-height:1.55;margin:0}
 
@@ -139,12 +140,12 @@ footer b{color:var(--ink)}
   </section>
 
   <section class="features" id="features">
-    <div class="feat"><div class="ic">🏢</div><h3>Дотоод CRM</h3><p>Объект, харилцагч, хүсэлт, гэрээг нэг дор. Агент бүрийн ажил, гэрээний хугацаа, сануулга автоматаар.</p></div>
-    <div class="feat"><div class="ic">📈</div><h3>Зах зээлийн AI мониторинг</h3><p>Зарын сувгуудыг ажиглаж үнийн индекс, боломжит хямд байр, үнэ буурсан заруудыг автоматаар илрүүлнэ.</p></div>
-    <div class="feat"><div class="ic">📍</div><h3>Байршлын шинжилгээ</h3><p>Сургууль, тээвэр, дэд бүтэц, ирээдүйн төслөөр байр бүрийн байршлын оноо, өсөх үнэ цэнийг тооцно.</p></div>
-    <div class="feat"><div class="ic">🎯</div><h3>Ухаалаг тохирол</h3><p>Худалдан авагчийн хүсэлтийг бүх зартай жинтэй оноогоор тулгаж, тохирох байрыг агентад шууд өгнө.</p></div>
-    <div class="feat"><div class="ic">🤝</div><h3>Брокерын сүлжээ</h3><p>Компани хоорондын нэгдсэн листинг, referral хуваалт — зах зээлийг эдийн засгийн эргэлтэд хурдан оруулна.</p></div>
-    <div class="feat"><div class="ic">🛡️</div><h3>Найдвартай, хуульд нийцсэн</h3><p>Олон компанийн өгөгдөл бүрэн тусгаарлагдсан, зөвхөн ажиглах горим, хувийн мэдээллийг хамгаалсан.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-building-2"/></svg></div><h3>Дотоод CRM</h3><p>Объект, харилцагч, хүсэлт, гэрээг нэг дор. Агент бүрийн ажил, гэрээний хугацаа, сануулга автоматаар.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-trending-up"/></svg></div><h3>Зах зээлийн AI мониторинг</h3><p>Зарын сувгуудыг ажиглаж үнийн индекс, боломжит хямд байр, үнэ буурсан заруудыг автоматаар илрүүлнэ.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-map-pin"/></svg></div><h3>Байршлын шинжилгээ</h3><p>Сургууль, тээвэр, дэд бүтэц, ирээдүйн төслөөр байр бүрийн байршлын оноо, өсөх үнэ цэнийг тооцно.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-target"/></svg></div><h3>Ухаалаг тохирол</h3><p>Худалдан авагчийн хүсэлтийг бүх зартай жинтэй оноогоор тулгаж, тохирох байрыг агентад шууд өгнө.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-handshake"/></svg></div><h3>Брокерын сүлжээ</h3><p>Компани хоорондын нэгдсэн листинг, referral хуваалт — зах зээлийг эдийн засгийн эргэлтэд хурдан оруулна.</p></div>
+    <div class="feat"><div class="ic"><svg aria-hidden="true"><use href="#i-shield-check"/></svg></div><h3>Найдвартай, хуульд нийцсэн</h3><p>Олон компанийн өгөгдөл бүрэн тусгаарлагдсан, зөвхөн ажиглах горим, хувийн мэдээллийг хамгаалсан.</p></div>
   </section>
 
   <section class="band">
@@ -159,6 +160,7 @@ footer b{color:var(--ink)}
   </footer>
 </div>
 
+<script src="/icons.js?v=1"></script>
 <script>
 (function () {
   const cv = document.getElementById('bg'), ctx = cv.getContext('2d');

@@ -39,6 +39,9 @@
   #load { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:var(--bg); z-index:9; font-size:14px; }
   .spin { width:34px; height:34px; border:3px solid rgba(255,255,255,.2); border-top-color:#60a5fa; border-radius:50%; animation:sp 1s linear infinite; }
   @keyframes sp { to { transform:rotate(360deg); } }
+  .ic { width:15px; height:15px; vertical-align:-3px; margin-right:6px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .ic.solo { margin:0; }
+  .pad .ic { width:22px; height:22px; vertical-align:middle; }
   .fade { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .35s; z-index:4; }
 </style>
 </head>
@@ -48,20 +51,21 @@
   <a class="brand" href="/"><img src="/brand/zuuch-mark.svg?v=2" alt="" width="24" height="24" style="vertical-align:middle;margin-right:6px;margin-top:-4px">Зууч<b>.</b></a>
   <span class="title" id="title">Virtual POV Tour</span>
   <span class="sp"></span>
-  <button id="bAuto" class="on">▶ Автомат аялал</button>
-  <button id="bFree">🧭 Өөрөө явах</button>
-  <button id="bPhotos" disabled>📷 Зураг</button>
+  <button id="bAuto" class="on"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg>Автомат аялал</button>
+  <button id="bFree"><svg class="ic" aria-hidden="true"><use href="#i-compass"/></svg>Өөрөө явах</button>
+  <button id="bPhotos" disabled><svg class="ic" aria-hidden="true"><use href="#i-images"/></svg>Зураг</button>
   <button id="bPano" style="display:none">360° панорам</button>
-  <button id="bFurn" class="on" title="Тавилгын санал (жишиг) асаах/унтраах">🪑 Тавилга</button>
-  <button id="bFull">⤢</button>
+  <button id="bFurn" class="on" title="Тавилгын санал (жишиг) асаах/унтраах"><svg class="ic" aria-hidden="true"><use href="#i-armchair"/></svg>Тавилга</button>
+  <button id="bFull" title="Бүтэн дэлгэц"><svg class="ic solo" aria-hidden="true"><use href="#i-maximize"/></svg></button>
 </div>
 <div class="room"><div class="n" id="rName">—</div><div class="a" id="rArea"></div></div>
 <canvas id="map" width="440" height="340"></canvas>
 <div class="help">Чирж хар · W/A/S/D эсвэл сумаар яв · план дээр өрөө дарж очно</div>
-<div class="pad"><button data-k="a">◀</button><button data-k="w">▲</button><button data-k="s">▼</button><button data-k="d">▶</button></div>
-<div id="photos"><button class="x" id="bClosePhotos">✕ Хаах</button><div class="grid" id="photoGrid"></div></div>
+<div class="pad"><button data-k="a"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-left"/></svg></button><button data-k="w"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-up"/></svg></button><button data-k="s"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-down"/></svg></button><button data-k="d"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-right"/></svg></button></div>
+<div id="photos"><button class="x" id="bClosePhotos"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>Хаах</button><div class="grid" id="photoGrid"></div></div>
 <div class="fade" id="fade"></div>
 <div id="load"><div class="spin"></div><div>Аялал бэлдэж байна…</div></div>
+<script src="/icons.js?v=1"></script>
 <script type="importmap">{"imports":{"three":"/vendor/three.module.min.js"}}</script>
 <script type="module" src="/tour.js"></script>
 </body>

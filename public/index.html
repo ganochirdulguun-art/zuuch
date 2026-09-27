@@ -64,7 +64,7 @@ h1,h2,h3{font-family:"Montserrat","Segoe UI",sans-serif;font-weight:500}
 
 /* Апп бүтэц */
 #app-view{display:flex;min-height:100vh}
-aside{width:212px;flex-shrink:0;background:var(--side);border-right:1px solid var(--side-line);padding:20px 0;display:flex;flex-direction:column;color:var(--side-ink)}
+aside{width:234px;flex-shrink:0;background:var(--side);border-right:1px solid var(--side-line);padding:20px 0;display:flex;flex-direction:column;color:var(--side-ink)}
 .brand{font-family:"Montserrat",sans-serif;font-weight:700;font-size:19px;padding:0 20px 18px;border-bottom:1px solid var(--side-line);color:var(--side-brand)}
 .brand span{color:var(--side-accent)}
 nav.menu{display:flex;flex-direction:column;padding:12px 10px;gap:2px;flex:1}
@@ -124,6 +124,23 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
   .form-grid{grid-template-columns:1fr}
   .col-grid{grid-template-columns:1fr!important}
 }
+/* Дүрслэл (Lucide SVG) — C хувилбар: шугам + зөөлөн дэвсгэр */
+.ic{width:1.15em;height:1.15em;vertical-align:-.2em;margin-right:.35em;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none;display:inline-block}
+.ic.solo{margin-right:0}
+.ic.vf{color:var(--accent);margin:0 0 0 1px;width:1.05em;height:1.05em}
+.badge .ic{width:1.1em;height:1.1em;margin-right:.3em;vertical-align:-.22em}
+.ic.spin{animation:icspin 1s linear infinite}@keyframes icspin{to{transform:rotate(360deg)}}
+nav.menu button{display:flex;align-items:center;gap:10px;padding:6px 10px}
+nav.menu button .ic{width:30px;height:30px;padding:6px;margin:0;border-radius:8px;background:color-mix(in srgb,var(--side-accent) 13%, transparent);color:color-mix(in srgb,var(--side-accent) 85%, #fff);stroke-width:1.9;vertical-align:0;transition:background .16s ease,color .16s ease}
+nav.menu button:hover .ic{background:color-mix(in srgb,var(--side-accent) 22%, transparent);color:var(--side-brand)}
+nav.menu button.active .ic{background:rgba(11,22,38,.14);color:var(--side-accent-ink)}
+.page-head h2{display:flex;align-items:center;gap:10px}
+.page-head h2 .ic{margin:0;width:34px;height:34px;padding:7px;border-radius:9px;background:color-mix(in srgb,var(--accent) 12%, transparent);color:var(--accent);stroke-width:1.9;vertical-align:0}
+.card h3 .ic,.modal h3 .ic{color:var(--accent);margin-right:6px}
+.hint-card .ic,.subscores .ic{color:var(--accent);margin-right:4px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot.g{background:#16A34A}.dot.y{background:#EAB308}.dot.r{background:#DC2626}
+@media(max-width:760px){nav.menu button .ic{width:26px;height:26px;padding:5px}}
 </style>
 </head>
 <body>
@@ -162,32 +179,33 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
   <aside>
     <div class="brand"><img src="/brand/zuuch-mark.svg?v=2" alt="" width="28" height="28" style="vertical-align:middle;margin-right:6px;margin-top:-4px">Зууч<span>.</span></div>
     <nav class="menu" id="menu">
-      <button data-view="dashboard" class="active">📊 Хянах самбар</button>
-      <button data-view="properties">🏢 Объект</button>
-      <button data-view="clients">👥 Харилцагч</button>
-      <button data-view="deals">🤝 Хэлцэл</button>
-      <button data-view="market">📈 Зах зээл</button>
+      <button data-view="dashboard" class="active"><svg class="ic" aria-hidden="true"><use href="#i-layout-dashboard"/></svg>Хянах самбар</button>
+      <button data-view="properties"><svg class="ic" aria-hidden="true"><use href="#i-building-2"/></svg>Объект</button>
+      <button data-view="clients"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg>Харилцагч</button>
+      <button data-view="deals"><svg class="ic" aria-hidden="true"><use href="#i-handshake"/></svg>Хэлцэл</button>
+      <button data-view="market"><svg class="ic" aria-hidden="true"><use href="#i-trending-up"/></svg>Зах зээл</button>
       <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 14px 4px">Агентын хэрэгсэл</div>
-      <button data-view="mylist">📌 Миний лист</button>
-      <button data-view="studio">🎨 AI Студи</button>
-      <button data-view="tours">🎥 POV Tour</button>
-      <button data-view="buyers">🧑‍💼 Buyer бүртгэл</button>
-      <button data-view="findbuyers">🔎 Худалдан авагч хайх</button>
-      <button data-view="leads">🎯 Гэрээний боломж</button>
+      <button data-view="mylist"><svg class="ic" aria-hidden="true"><use href="#i-bookmark"/></svg>Миний лист</button>
+      <button data-view="studio"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI Студи</button>
+      <button data-view="tours"><svg class="ic" aria-hidden="true"><use href="#i-rotate-3d"/></svg>POV Tour</button>
+      <button data-view="buyers"><svg class="ic" aria-hidden="true"><use href="#i-contact"/></svg>Buyer бүртгэл</button>
+      <button data-view="findbuyers"><svg class="ic" aria-hidden="true"><use href="#i-user-search"/></svg>Худалдан авагч хайх</button>
+      <button data-view="leads"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>Гэрээний боломж</button>
       <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 14px 4px">Систем</div>
-      <button data-view="collector">🤖 Цуглуулагч</button>
-      <button data-view="team" id="menu-team" hidden>⚙️ Баг</button>
-      <button data-view="owner" id="menu-owner" hidden>👑 Эзэн самбар</button>
+      <button data-view="collector"><svg class="ic" aria-hidden="true"><use href="#i-bot"/></svg>Цуглуулагч</button>
+      <button data-view="team" id="menu-team" hidden><svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg>Баг</button>
+      <button data-view="owner" id="menu-owner" hidden><svg class="ic" aria-hidden="true"><use href="#i-crown"/></svg>Эзэн самбар</button>
     </nav>
     <div class="userbox"><b id="user-company" style="color:var(--side-accent);font-size:12px"></b><b id="user-name"></b><span id="user-role"></span><br>
       <button class="small" style="margin-top:8px" onclick="pwForm()">Нууц үг</button>
       <button class="small" style="margin-top:8px" onclick="logout()">Гарах</button>
-      <button class="small" style="margin-top:8px" id="theme-btn" title="Гэгээлэг / бараан" onclick="toggleTheme()">🌗</button></div>
+      <button class="small" style="margin-top:8px" id="theme-btn" title="Гэгээлэг / бараан" onclick="toggleTheme()"><svg class="ic solo" aria-hidden="true"><use href="#i-sun-moon"/></svg></button></div>
   </aside>
   <main id="main"></main>
 </div>
 
 <div id="modal-root"></div>
+<script src="/icons.js?v=1"></script>
 <script src="app.js"></script>
 </body>
 </html>
