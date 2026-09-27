@@ -528,12 +528,12 @@ function bindTourCanvas() {
     }
     // 2) сонгосон өрөөний бариул (хэмжээ өөрчлөх)
     const sel = rooms.find((x) => x.id === TOUR.sel);
-    if (sel) { const X = (x) => p.ox + x * p.sc, Y = (y) => p.oy + y * p.sc; for (const h of HANDLES) { const [hx, hy] = tourHandlePos(sel, h, X, Y, p.sc); if (Math.abs(p.px - hx) <= 9 && Math.abs(p.py - hy) <= 9) { snapshot(); TOUR.drag = { id: sel.id, mode: 'resize', h, start: { ...sel } }; c.setPointerCapture(e.pointerId); return; } } }
+    if (sel) { const X = (x) => p.ox + x * p.sc, Y = (y) => p.oy + y * p.sc; for (const h of HANDLES) { const [hx, hy] = tourHandlePos(sel, h, X, Y, p.sc); if (Math.abs(p.px - hx) <= 9 && Math.abs(p.py - hy) <= 9) { snapshot(); TOUR.drag = { id: sel.id, mode: 'resize', h, start: { ...sel } }; try { c.setPointerCapture(e.pointerId); } catch {} return; } } }
     // 3) өрөө сонгох / зөөх
     const r = [...rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
     if (r) { snapshot(); TOUR.drag = { id: r.id, mode: 'move', dx: p.x - r.x, dy: p.y - r.y }; }
     if ((r ? r.id : null) !== TOUR.sel) { TOUR.sel = r ? r.id : null; renderTour(); }
-    c.setPointerCapture(e.pointerId);
+    try { c.setPointerCapture(e.pointerId); } catch {}
   });
   c.addEventListener('pointermove', (e) => {
     if (!TOUR.drag) { // курсор
