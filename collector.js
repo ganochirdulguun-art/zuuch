@@ -157,21 +157,21 @@ async function process1(raw, source) {
       if (priceChanged) await db.run('UPDATE market_listings SET last_seen=NOW(), active=1, delisted_at=NULL, images=?, ad_type=?, prev_price=price, price=? WHERE id=?', l.images, l.ad_type, l.price, ex.id);
       else await db.run('UPDATE market_listings SET last_seen=NOW(), active=1, delisted_at=NULL, images=?, ad_type=? WHERE id=?', l.images, l.ad_type, ex.id);
       state.live.updated++;
-      if (priceChanged) { state.live.priceChanges++; logEvent({ kind: 'price', source: source.name, title: l.title, district: l.district, price: l.price, prev: Number(ex.price), url: l.url }); }
+      if (priceChanged) { state.live.priceChanges++; logEvent({ kind: 'price', lid: ex.id, source: source.name, title: l.title, district: l.district, price: l.price, prev: Number(ex.price), url: l.url }); }
       return;
     }
   }
   const r = await fitScore(l, source);
   if (r.collect) {
     const group = l._group || 'g' + crypto.randomBytes(4).toString('hex');
-    await db.run(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
+    const ins = await db.one(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
         last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business)
-      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?)`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
       l.prev_price, l.is_new, l.listed_at, r.score, group, new Date().toISOString(), l.contactHash, l.title, l.images,
       l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business);
     state.stats.collected++;
     await db.run('UPDATE sources SET collected=collected+1 WHERE name=?', source.name);
-    logEvent({ kind: 'collected', source: source.name, title: l.title, district: l.district, price: l.price, deal: l.deal_type, score: r.score, flags: r.flags || [], url: l.url });
+    logEvent({ kind: 'collected', lid: ins && ins.id, source: source.name, title: l.title, district: l.district, price: l.price, deal: l.deal_type, score: r.score, flags: r.flags || [], url: l.url });
   } else {
     state.stats.rejected++;
     bump(state.rejectReasons, r.reason);

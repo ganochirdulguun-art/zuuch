@@ -80,7 +80,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests, deals, market, collector, tours, team, owner }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests, deals, market, collector, tours, mylist, studio, buyers, findbuyers, team, owner }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -89,11 +89,11 @@ async function dashboard() {
   $('#main').innerHTML = `
   <div class="page-head"><h2>Хянах самбар</h2><span class="demo-note">Зах зээлийн өгөгдөл = жишиг (цуглуулагч Шат 2-т холбогдоно)</span></div>
   <div class="tiles">
-    <div class="tile"><div class="v">${d.activeProperties}</div><div class="k">Идэвхтэй объект</div></div>
-    <div class="tile"><div class="v">${d.openRequests}</div><div class="k">Нээлттэй хүсэлт</div></div>
-    <div class="tile"><div class="v">${d.monthDeals}</div><div class="k">Энэ сарын хэлцэл</div></div>
-    <div class="tile"><div class="v">${fmt(d.monthCommission)}<small style="font-size:13px"> сая ₮</small></div><div class="k">Энэ сарын шимтгэл</div></div>
-    <div class="tile"><div class="v">${d.marketListings}</div><div class="k">Ажиглаж буй зах зээлийн зар</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('properties')" title="Объектууд руу"><div class="v">${d.activeProperties}</div><div class="k">Идэвхтэй объект →</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('requests')" title="Хүсэлтүүд рүү"><div class="v">${d.openRequests}</div><div class="k">Нээлттэй хүсэлт →</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('deals')" title="Хэлцлүүд рүү"><div class="v">${d.monthDeals}</div><div class="k">Энэ сарын хэлцэл →</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('deals')" title="Хэлцлүүд рүү"><div class="v">${fmt(d.monthCommission)}<small style="font-size:13px"> сая ₮</small></div><div class="k">Энэ сарын шимтгэл →</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('collector')" title="Цуглуулагч руу"><div class="v">${d.marketListings}</div><div class="k">Ажиглаж буй зах зээлийн зар →</div></div>
   </div>
   <div class="card"><h3>⏰ Сануулга (А6)</h3>
     ${d.expiring.map((x) => `<div>📄 Гэрээ <b>${esc(x.district)} ${esc(x.khoroolol || '')}</b> — <b>${x.contract_end}</b>-нд дуусна (сунгах/чөлөөлөх шийдвэр)</div>`).join('') || ''}
@@ -103,9 +103,9 @@ async function dashboard() {
   <div class="card"><h3>💡 Өнөөдрийн боломжууд (А5) — зах зээлээс</h3>
     <div class="tablebox"><table>
       <thead><tr><th>Дүүрэг</th><th class="num">Өрөө</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Пайз</th></tr></thead>
-      <tbody>${d.opportunities.map((o) => `<tr><td>${esc(o.district)}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
+      <tbody>${d.opportunities.map((o) => `<tr style="cursor:pointer" onclick="marketDetail(${o.id})" title="Бүрэн мэдээлэл, судалгаа"><td>${esc(o.district)}${o.khoroolol ? ' · ' + esc(o.khoroolol) : ''}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
         <td class="num">${fmt(o.price)} сая</td><td class="num">${fmt(o.m2)}</td>
-        <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')}</td></tr>`).join('')}</tbody>
+        <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')} <span style="color:var(--accent);font-size:12px">→</span></td></tr>`).join('')}</tbody>
     </table></div>
   </div>`;
 }
@@ -341,6 +341,117 @@ window.dealForm = function (d = {}) {
   });
 };
 
+// ---------- Зах зээлийн зарын бүрэн мэдээлэл + судалгаа ----------
+window.marketDetail = async function (id) {
+  const d = await api('/market/' + id); if (d.error) return alert(d.error);
+  const l = d.listing, v = d.valuation;
+  const pos = d.vsIndex == null ? '' : `<span class="badge ${d.vsIndex <= -8 ? 'ok' : d.vsIndex >= 8 ? 'warn' : 'mut'}">индексээс ${d.vsIndex > 0 ? '+' : ''}${d.vsIndex}%</span>`;
+  modal(`
+  <h3>${esc(l.title || (l.district + ' ' + l.rooms + ' өрөө'))}</h3>
+  <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${esc(l.district)}${l.khoroolol ? ' · ' + esc(l.khoroolol) : ''} · ${l.deal_type === 'rent' ? 'түрээс' : 'зарна'} · эх: ${esc(l.source)} ${l.source_url ? `· <a href="${esc(l.source_url)}" target="_blank" rel="noopener">эх зар ↗</a>` : ''}${l.ad_type ? ' · ' + esc(l.ad_type) : ''}${l.is_business ? ' · бизнес хэрэглэгч' : ''}</div>
+  <div class="tiles" style="margin-bottom:12px">
+    <div class="tile"><div class="v">${fmt(l.price)}<small style="font-size:12px"> сая ₮${l.deal_type === 'rent' ? '/сар' : ''}</small></div><div class="k">Үнэ ${l.prev_price ? `<span class="badge ${l.prev_price > l.price ? 'ok' : 'warn'}">${l.prev_price > l.price ? '▼' : '▲'} өмнө ${fmt(l.prev_price)}</span>` : ''}</div></div>
+    <div class="tile"><div class="v">${l.rooms}ө · ${l.area} м²</div><div class="k">${l.floor ? l.floor + '/' + (l.total_floors || '—') + ' давхар · ' : ''}${l.is_new ? 'шинэ' : 'хуучин'}</div></div>
+    <div class="tile"><div class="v">${d.m2 ? fmt(d.m2) : '—'}</div><div class="k">сая ₮/м² ${pos}</div></div>
+    <div class="tile"><div class="v">${d.days ?? '—'}</div><div class="k">хоног зах зээлд${l.delisted_at ? ' · хасагдсан' : l.active ? '' : ' · идэвхгүй'}</div></div>
+  </div>
+  ${v ? `<div class="card" style="margin-bottom:12px"><h3>📊 Үнэлгээ (А3)</h3><div style="font-size:13.5px">Зах зээлийн бодит үнэ: <b>${fmt(v.low)} – ${fmt(v.high)}</b> сая ₮ (төв <b>${fmt(v.estimate)}</b>) · эх сурвалж: ${esc(v.source || 'индекс')} · итгэлцүүр ${v.confidence || '—'}</div>
+    <div style="font-size:12.5px;color:var(--muted);margin-top:4px">Зар ${l.price < v.low ? '<b style="color:var(--accent)">интервалаас доогуур — боломж</b>' : l.price > v.high ? '<b style="color:var(--accent-2)">интервалаас дээгүүр</b>' : 'интервал дотор'}${d.index ? ` · дүүргийн индекс ${fmt(d.index.median_m2)} сая/м² (${d.index.month})` : ''}</div></div>` : ''}
+  ${d.location ? `<div class="card" style="margin-bottom:12px"><h3>📍 Байршил (А8)</h3><div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px">${['education', 'transport', 'commerce', 'health', 'parking', 'green'].map((k) => d.location[k] != null ? `<span class="badge ${d.location[k] >= 75 ? 'ok' : 'mut'}">${{ education: 'Сургууль', transport: 'Тээвэр', commerce: 'Худалдаа', health: 'Эмнэлэг', parking: 'Зогсоол', green: 'Ногоон' }[k]} ${d.location[k]}</span>` : '').join('')}${d.location.growth ? ` <span class="badge warn">өсөлт: ${esc(d.location.growth)}</span>` : ''}</div>${d.location.growth_note ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(d.location.growth_note)}</div>` : ''}</div>` : ''}
+  <div class="card" style="margin-bottom:12px"><h3>🏘 Ижил төстэй зарууд (${d.similar.length})</h3>
+    ${d.similar.length ? `<div class="tablebox"><table><thead><tr><th>Зар</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Огноо</th></tr></thead><tbody>
+    ${d.similar.map((s) => `<tr style="cursor:pointer" onclick="marketDetail(${s.id})"><td>${esc((s.title || '').slice(0, 50))}${s.khoroolol ? ' <span style="color:var(--muted)">' + esc(s.khoroolol) + '</span>' : ''}</td><td class="num">${s.area}</td><td class="num">${fmt(s.price)}${s.prev_price ? ` <small style="color:var(--muted)">(${fmt(s.prev_price)})</small>` : ''}</td><td class="num">${s.area ? fmt(s.price / s.area) : '—'}</td><td>${s.listed_at || ''}</td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Ижил төстэй зар алга</span>'}</div>
+  <div class="card" style="margin-bottom:12px"><h3>🎯 Тохирох худалдан авагчид (А4, манай хүсэлтүүдээс)</h3>
+    ${d.buyers.length ? d.buyers.map((b) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px"><span><span class="score">${b.score}</span> <b>${esc(b.client_name)}</b> ${esc(b.client_phone || '')} · төсөв ${fmt(b.budget)} сая · ${b.rooms}ө · ${esc(b.districts || '')}</span><button class="small" onclick="showMatches(${b.id});closeModal();show('requests')">Хүсэлт №${b.id}</button></div>`).join('') : '<span style="color:var(--muted)">Одоогоор тохирох нээлттэй хүсэлт алга</span>'}</div>
+  <div style="font-size:11.5px;color:var(--muted)">Ажиглах горим: зөвхөн баримт хадгалсан (тайлбар, зураг, утас байхгүй) — бүрэн зарыг эх сурвалжаас үзнэ. Цуглуулсан: ${l.collected_at ? String(l.collected_at).slice(0, 16).replace('T', ' ') : '—'} · сүүлд харагдсан: ${l.last_seen ? String(l.last_seen).slice(0, 16).replace('T', ' ') : '—'}</div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="closeModal()">Хаах</button></div>`);
+};
+
+// ---------- Агентын хэрэгсэл: Миний лист · AI Студи · Buyer бүртгэл · Худалдан авагч хайх ----------
+const PROP_STATUS_T = { active: 'Идэвхтэй', contracted: 'Гэрээтэй', sold: 'Зарагдсан', archived: 'Архив' };
+async function mylist() {
+  const rows = await api('/properties');
+  const mine = rows.filter((p) => ME && p.agent_id === ME.id);
+  const list = mine.length ? mine : rows;
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>📌 Миний лист</h2><div style="display:flex;gap:8px"><span class="demo-note">${mine.length ? 'Танд хариуцуулсан объектууд' : 'Танд хариуцуулсан объект алга — бүх объект'}</span><button class="primary" onclick="propForm()">+ Объект нэмэх</button></div></div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th>Хэрэгслүүд</th></tr></thead>
+    <tbody>${list.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')}<br><span style="font-size:12px;color:var(--muted)">${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${p.floor ? p.floor + '/' + (p.total_floors || '—') + ' давхар · ' : ''}${p.is_new ? 'шинэ' : 'хуучин'}${p.notes ? ' · ' + esc(p.notes) : ''}</span></td>
+      <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})">🎨 Студи</button> <button class="small" onclick="tourView(${p.id})">🎥 POV</button> <button class="small" onclick="findBuyersFor(${p.id})">🔎 Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+  </table></div>`;
+}
+async function studio() {
+  const rows = await api('/properties');
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🎨 AI Студи</h2><span class="demo-note">Зураг оруул → AI зураг бүрийг үнэлж эрэмбэлнэ, 3 сувгийн зарын текст, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө</span></div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th></th></tr></thead>
+    <tbody>${rows.map((p) => `<tr style="cursor:pointer" onclick="studioView(${p.id})"><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')} <span style="font-size:12px;color:var(--muted)">· ${p.deal_type === 'rent' ? 'түрээс' : 'зарна'}</span></td>
+      <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
+      <td><button class="small primary" onclick="studioView(${p.id});event.stopPropagation()">🎨 Студи нээх</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+  </table></div>`;
+}
+// Buyer бүртгэл: харилцагч + хүсэлтийг нэг маягтаар (2 алхмыг нэг болгосон)
+async function buyers() {
+  const rows = await api('/requests-full');
+  const open = rows.filter((r) => r.status !== 'closed');
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🧑‍💼 Buyer бүртгэл</h2><button class="primary" onclick="buyerForm()">+ Худалдан авагч бүртгэх</button></div>
+  <div class="demo-note" style="margin-bottom:12px">Худалдан авагч (харилцагч) + хайж буй зүйлийг (хүсэлт) нэг маягтаар бүртгэнэ. Бүртгэмэгц А4 тохирол автоматаар ажиллаж, тохирох объект/зах зээлийн зарыг харуулна.</div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Худалдан авагч</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Төлөв</th><th>Агент</th><th></th></tr></thead>
+    <tbody>${open.map((r) => `<tr><td><b>${esc(r.client_name)}</b></td><td>${DEAL_T[r.deal_type]} · ${r.rooms}ө${r.area_min || r.area_max ? ` · ${r.area_min || '?'}–${r.area_max || '?'} м²` : ''}</td>
+      <td class="num">${fmt(r.budget)} сая</td><td>${esc(r.districts)}</td><td>${badge(r.status)}</td><td>${esc(r.agent_name || '—')}</td>
+      <td style="white-space:nowrap"><button class="small primary" onclick="show('requests');setTimeout(()=>showMatches(${r.id}),500)">🎯 Тохирол</button> <button class="small" onclick='reqForm(${JSON.stringify(r)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">Нээлттэй хүсэлт алга</td></tr>'}</tbody>
+  </table></div>`;
+}
+window.buyerForm = function () {
+  modal(`
+  <h3>Худалдан авагч бүртгэх</h3>
+  <form id="f" class="form-grid">
+    <div class="field"><label>Нэр</label><input name="name" required></div>
+    <div class="field"><label>Утас</label><input name="phone" placeholder="9911xxxx"></div>
+    <div class="field"><label>Төрөл</label><select name="deal_type"><option value="sale">Худалдан авах</option><option value="rent">Түрээслэх</option></select></div>
+    <div class="field"><label>Төсөв (сая ₮)</label><input name="budget" type="number" step="0.1" required></div>
+    <div class="field"><label>Өрөө</label><input name="rooms" type="number" min="1" max="6" value="2"></div>
+    <div class="field wide"><label>Дүүргүүд (таслалаар)</label><input name="districts" placeholder="Хан-Уул,Баянгол"></div>
+    <div class="field"><label>Талбай min</label><input name="area_min" type="number"></div>
+    <div class="field"><label>Талбай max</label><input name="area_max" type="number"></div>
+    <div class="field wide"><label>Тэмдэглэл</label><input name="notes" placeholder="Ипотек, яаралтай, хүүхдийн сургууль ойр..."></div>
+    <div class="field"><label>Хариуцах агент</label><select name="agent_id">${AGENT_OPTS(ME && ME.id)}</select></div>
+    <div class="modal-actions wide"><button type="button" onclick="closeModal()">Болих</button><button class="primary">Бүртгэж тохирол хайх</button></div>
+  </form>`);
+  $('#f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = Object.fromEntries(new FormData($('#f')));
+    const c = await api('/clients', { method: 'POST', body: { name: b.name, phone: b.phone, type: 'buyer', notes: b.notes } });
+    if (c.error) return alert(c.error);
+    const r = await api('/requests', { method: 'POST', body: { client_id: c.id, deal_type: b.deal_type, budget: b.budget, rooms: b.rooms, districts: b.districts, area_min: b.area_min, area_max: b.area_max, status: 'open', agent_id: b.agent_id, last_contact: new Date().toISOString() } });
+    if (r.error) return alert(r.error);
+    closeModal(); toast('Бүртгэгдлээ — тохирол хайж байна'); await show('requests'); setTimeout(() => showMatches(r.id), 300);
+  });
+};
+// Худалдан авагч хайх: объект сонго → манай нээлттэй хүсэлтүүдээс тохирох худалдан авагчид (А4 урвуу)
+async function findbuyers() {
+  const rows = await api('/properties');
+  $('#main').innerHTML = `
+  <div class="page-head"><h2>🔎 Худалдан авагч хайх</h2><span class="demo-note">Объект сонгоход бүртгэлтэй худалдан авагчдын хүсэлтүүдээс тохирохыг оноогоор жагсаана (А4)</span></div>
+  <div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label>Объект</label><select id="fb-prop" onchange="findBuyersFor(this.value)"><option value="">— сонгох —</option>${rows.map((p) => `<option value="${p.id}">${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая</option>`).join('')}</select></div></div>
+  <div id="fb-out"></div>`;
+}
+window.findBuyersFor = async function (pid) {
+  if (!pid) return;
+  if (!$('#fb-out')) { await show('findbuyers'); $('#fb-prop').value = pid; }
+  const d = await api('/properties/' + pid + '/buyers'); if (d.error) return alert(d.error);
+  const p = d.property;
+  $('#fb-out').innerHTML = `<div class="card" style="margin-top:12px"><h3>🎯 ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая — тохирох худалдан авагчид (${d.buyers.length} / нээлттэй ${d.total})</h3>
+    ${d.buyers.length ? `<div class="tablebox"><table><thead><tr><th class="num">Оноо</th><th>Худалдан авагч</th><th>Утас</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Агент</th><th></th></tr></thead><tbody>
+    ${d.buyers.map((b) => `<tr><td class="num"><span class="score">${b.score}</span></td><td><b>${esc(b.client_name)}</b></td><td>${esc(b.client_phone || '')}</td><td>${DEAL_T[b.deal_type]} · ${b.rooms}ө</td><td class="num">${fmt(b.budget)} сая</td><td>${esc(b.districts || '')}</td><td>${esc(b.agent_name || '—')}</td>
+      <td><button class="small" onclick="navigator.clipboard.writeText('${esc(p.district)} ${esc(p.khoroolol || '')}, ${p.rooms} өрөө, ${p.area} м², ${fmt(p.price)} сая ₮ — танд тохирох объект байна. Үзэх цаг товлох уу?').then(()=>toast('Санал хуулагдлаа'))">📋 Санал</button></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Оноо ≥40 худалдан авагч олдсонгүй — Buyer бүртгэлээ нэмээрэй</span>'}</div>`;
+};
+
 // ---------- Зах зээл ----------
 async function market() {
   const [idx, opp] = await Promise.all([api('/market/index'), api('/market/opportunities')]);
@@ -360,9 +471,9 @@ async function market() {
   <div class="card"><h3>💡 Боломжийн самбар (А5) — бүх пайзтай зар</h3>
     <div class="tablebox"><table>
       <thead><tr><th>Дүүрэг</th><th class="num">Өрөө</th><th class="num">м²</th><th class="num">Үнэ (сая)</th><th class="num">₮/м²</th><th class="num">Индекс ₮/м²</th><th>Пайз</th></tr></thead>
-      <tbody>${opp.map((o) => `<tr><td>${esc(o.district)}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
+      <tbody>${opp.map((o) => `<tr style="cursor:pointer" onclick="marketDetail(${o.id})" title="Бүрэн мэдээлэл, судалгаа"><td>${esc(o.district)}${o.khoroolol ? ' · ' + esc(o.khoroolol) : ''}</td><td class="num">${o.rooms}</td><td class="num">${o.area}</td>
         <td class="num">${fmt(o.price)}</td><td class="num">${fmt(o.m2)}</td><td class="num">${fmt(o.baseline)}</td>
-        <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')}</td></tr>`).join('')}</tbody>
+        <td>${o.tags.map((t) => `<span class="badge ${t.t === 'under' ? 'ok' : 'warn'}">${t.label}</span>`).join(' ')} <span style="color:var(--accent);font-size:12px">→</span></td></tr>`).join('')}</tbody>
     </table></div></div>`;
 }
 
@@ -903,16 +1014,20 @@ async function collector() {
         <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.source || '—')}</div></div>`;
     }).join('');
     const rej = Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]);
+    // Урсгал: хэрэглэгч уншиж байхад (хулгана дээр нь эсвэл гүйлгэсэн эсвэл ⏸) жагсаалтыг СОЛИХГҮЙ — дээш үсрэхгүй
+    const oldBox = $('#col-events'); const reading = oldBox && (COL_PAUSED || oldBox.matches(':hover') || oldBox.scrollTop > 4);
+    const keepHtml = reading ? oldBox.innerHTML : null, keepTop = oldBox ? oldBox.scrollTop : 0;
     const ev = s.events.map((e) => {
       const ago = Math.max(0, Math.round((Date.now() - e.t) / 1000));
-      const link = e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener" style="font-size:11px">↗ эх</a>` : '';
-      if (e.kind === 'collected') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
+      const link = e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener" style="font-size:11px" onclick="event.stopPropagation()">↗ эх</a>` : '';
+      const open = e.lid ? ` style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer" onclick="marketDetail(${e.lid})" title="Бүрэн мэдээлэл, судалгаа"` : ' style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px"';
+      if (e.kind === 'collected') return `<div${open}>
         <span class="badge ok">✓ ${e.score}</span> <b>${esc(e.title)}</b> — ${fmt(e.price)} сая ₮${e.deal === 'rent' ? '/сар' : ''}${link}
         <span style="color:var(--muted)">· ${esc(e.source)} · ${ago}с</span>
-        ${(e.flags || []).map((f) => `<span class="badge warn">${esc(f)}</span>`).join('')}</div>`;
-      if (e.kind === 'price') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
+        ${(e.flags || []).map((f) => `<span class="badge warn">${esc(f)}</span>`).join('')}${e.lid ? ' <span style="color:var(--accent);font-size:12px">→</span>' : ''}</div>`;
+      if (e.kind === 'price') return `<div${open}>
         <span class="badge ${e.price < e.prev ? 'ok' : 'warn'}">${e.price < e.prev ? '▼' : '▲'} үнэ</span> <b>${esc(e.title)}</b> — ${fmt(e.prev)} → <b>${fmt(e.price)}</b> сая ₮${link}
-        <span style="color:var(--muted)">· ${ago}с</span></div>`;
+        <span style="color:var(--muted)">· ${ago}с</span>${e.lid ? ' <span style="color:var(--accent);font-size:12px">→</span>' : ''}</div>`;
       if (e.kind === 'delisted') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">
         <span class="badge mut">✔ хасагдсан</span> ${esc(e.title || '')} <span style="color:var(--muted)">— ${esc(e.reason)} · ${ago}с</span></div>`;
       if (e.kind === 'error') return `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--accent-2)">
@@ -966,12 +1081,17 @@ async function collector() {
         ${rej.length ? rej.map(([r, c]) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px"><span>${esc(r)}</span><b>${c}</b></div>`).join('') : '<span style="color:var(--muted)">—</span>'}
       </div>
     </div>
-    <div class="card"><h3>Амьд урсгал (сүүлийн үйл явдлууд)</h3>
-      <div style="max-height:340px;overflow:auto">${ev}</div></div>`;
+    <div class="card"><h3 style="display:flex;align-items:center;gap:10px">Амьд урсгал (сүүлийн үйл явдлууд)
+      <button class="small ${COL_PAUSED ? 'primary' : ''}" onclick="colPause()">${COL_PAUSED ? '▶ Үргэлжлүүлэх' : '⏸ Түр зогсоох'}</button>
+      <span style="font-size:11.5px;color:var(--muted);font-weight:400">${reading ? 'уншиж байна — шинэчлэлт түр зогссон' : 'мөр дээр дарж бүрэн мэдээлэл'}</span></h3>
+      <div id="col-events" style="max-height:420px;overflow:auto">${keepHtml != null ? keepHtml : ev}</div></div>`;
+    if (keepTop) $('#col-events').scrollTop = keepTop;
   }
   await render();
   POLL = setInterval(() => render().catch(() => {}), 1200);
 }
+let COL_PAUSED = false;
+window.colPause = () => { COL_PAUSED = !COL_PAUSED; const b = $('#col-events'); if (b && !COL_PAUSED) b.scrollTop = 0; };
 window.colAct = async function (act) {
   await api('/collector/' + act, { method: 'POST' });
 };

@@ -213,6 +213,30 @@ app.get('/api/matches/:id', wrap(async (req, res) => res.json(await A.matchesFor
 app.get('/api/market/index', wrap(async (req, res) => res.json(await db.all('SELECT * FROM price_index ORDER BY median_m2 DESC'))));
 app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.opportunities())));
 app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district)) || { error: 'Оноо олдсонгүй' })));
+// Зах зээлийн нэг зарын бүрэн мэдээлэл + судалгаа (индекс, үнэлгээ, ижил төстэй зарууд, зах зээлд байсан хоног, дотоод тохирох хүсэлтүүд)
+app.get('/api/market/:id', wrap(async (req, res) => {
+  const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.id);
+  if (!l) return res.status(404).json({ error: 'Зар олдсонгүй' });
+  const idx = await db.one('SELECT * FROM price_index WHERE district=? AND is_new=? ORDER BY month DESC LIMIT 1', l.district, l.is_new ? 1 : 0);
+  const val = l.deal_type === 'sale' && l.area > 0 ? await A.valuation({ district: l.district, rooms: l.rooms, area: l.area, isNew: !!l.is_new }) : null;
+  const similar = await db.all(`SELECT id, source, title, rooms, area, price, prev_price, listed_at, khoroolol, source_url, is_new FROM market_listings
+    WHERE active=1 AND id<>? AND deal_type=? AND district=? AND rooms=? AND area BETWEEN ? AND ? ORDER BY ABS(price-?) LIMIT 8`, l.id, l.deal_type, l.district, l.rooms, l.area * 0.8, l.area * 1.2, l.price);
+  const loc = await A.locationScore(l.district);
+  // Дотоод хүсэлтүүдээс тохирох худалдан авагчид (А4)
+  const reqs = await db.all("SELECT r.*, c.name client_name, c.phone client_phone FROM requests r JOIN clients c ON c.id=r.client_id WHERE r.company_id=? AND r.status<>'closed'", req.user.company_id);
+  const buyers = reqs.map((r) => ({ id: r.id, client_name: r.client_name, client_phone: r.client_phone, budget: r.budget, rooms: r.rooms, districts: r.districts, score: A.matchScore(r, { ...l, created_at: l.listed_at }) })).filter((b) => b.score >= 50).sort((a, b) => b.score - a.score).slice(0, 10);
+  const days = l.listed_at ? Math.floor((Date.now() - new Date(l.listed_at).getTime()) / 864e5) : null;
+  const m2 = l.area > 0 ? l.price / l.area : null; const baseline = idx ? idx.median_m2 * ({ 1: 1.06, 2: 1.0, 3: 0.95, 4: 0.92, 5: 0.9 }[l.rooms] || 1) : null;
+  res.json({ listing: l, index: idx, valuation: val, similar, location: loc, buyers, days, m2, baseline, vsIndex: m2 && baseline ? Math.round((m2 / baseline - 1) * 100) : null });
+}));
+// Объектод тохирох худалдан авагчид (А4 урвуу): компанийн нээлттэй хүсэлтүүдийг оноогоор
+app.get('/api/properties/:id/buyers', wrap(async (req, res) => {
+  const p = await db.one('SELECT * FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
+  if (!p) return res.status(404).json({ error: 'Объект олдсонгүй' });
+  const reqs = await db.all("SELECT r.*, c.name client_name, c.phone client_phone, u.name agent_name FROM requests r JOIN clients c ON c.id=r.client_id LEFT JOIN users u ON u.id=r.agent_id WHERE r.company_id=? AND r.status<>'closed'", req.user.company_id);
+  const out = reqs.map((r) => ({ ...r, score: A.matchScore(r, p) })).filter((r) => r.score >= 40).sort((a, b) => b.score - a.score);
+  res.json({ property: p, buyers: out, total: reqs.length });
+}));
 
 // ---- Цуглуулагч ----
 // Ботын ил бодлогын хуудас — UA доторх холбоос энд заана (эх сурвалжийн админ юу, яаж, хэрхэн хасуулахыг харна)
