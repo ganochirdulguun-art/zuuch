@@ -345,6 +345,27 @@ app.post('/api/tour/:pid/pano', auth, wrap(async (req, res, next) => {
     } catch (e) { next(e); }
   });
 }));
+// Бичлэгийн кадрууд (браузер дээр бичлэгээс гаргасан JPEG) — kind='frame', өрөөний шошготой; AI шинжилгээнд орно, студид харагдахгүй
+app.post('/api/tour/:pid/frames', auth, wrap(async (req, res, next) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  upload.array('frames', 24)(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: 'Кадр оруулахад алдаа: ' + err.message });
+    try {
+      const room = String(req.body.room || '').slice(0, 40);
+      if (req.body.replace === '1') { const old = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND kind='frame' AND COALESCE(room,'')=?", req.user.company_id, prop.id, room); for (const a of old) { await db.run('DELETE FROM listing_assets WHERE id=?', a.id); fs.promises.unlink(assetPath(a)).catch(() => {}); } }
+      let n = 0;
+      for (const f of req.files || []) { await db.run("INSERT INTO listing_assets (company_id, property_id, filename, mime, size, kind, room) VALUES (?,?,?,?,?,'frame',?)", req.user.company_id, prop.id, f.filename, f.mimetype, f.size, room || null); n++; }
+      const { c } = await db.one("SELECT COUNT(*)::int c FROM listing_assets WHERE company_id=? AND property_id=? AND kind='frame'", req.user.company_id, prop.id);
+      res.json({ ok: true, added: n, frames: c });
+    } catch (e) { next(e); }
+  });
+}));
+app.delete('/api/tour/:pid/frames', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const old = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND kind='frame'", req.user.company_id, prop.id);
+  for (const a of old) { await db.run('DELETE FROM listing_assets WHERE id=?', a.id); fs.promises.unlink(assetPath(a)).catch(() => {}); }
+  res.json({ ok: true, removed: old.length });
+}));
 app.delete('/api/tour/:pid/pano/:id', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   const a = await db.one("SELECT * FROM listing_assets WHERE id=? AND company_id=? AND property_id=? AND kind='pano'", req.params.id, req.user.company_id, prop.id);
@@ -374,19 +395,21 @@ app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
 app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY тохируулаагүй' });
-  const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id LIMIT 12", req.user.company_id, prop.id);
-  if (!rows.length) return res.status(400).json({ error: 'Эхлээд Студид өрөөнүүдийн зургийг оруулна уу' });
+  // Студийн зураг + бичлэгийн кадрууд (kind='frame', өрөөний шошготой) — өрөө тус бүрийн зөвлөмж гаргана
+  const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo') IN ('photo','frame') ORDER BY (COALESCE(kind,'photo')='frame'), CASE WHEN rank>0 THEN rank ELSE 9999 END, id LIMIT 20", req.user.company_id, prop.id);
+  if (!rows.length) return res.status(400).json({ error: 'Эхлээд Студид зураг эсвэл POV Tour-д бичлэг оруулна уу' });
   const Anthropic = require('@anthropic-ai/sdk'); const ai = new Anthropic();
   const content = [];
   for (let i = 0; i < rows.length; i++) {
     const buf = await fs.promises.readFile(assetPath(rows[i])).catch(() => null); if (!buf) continue;
-    content.push({ type: 'text', text: `Зураг #${i + 1}${rows[i].room ? ' (' + rows[i].room + ')' : ''}` });
+    content.push({ type: 'text', text: `${rows[i].kind === 'frame' ? 'Бичлэгийн кадр' : 'Зураг'} #${i + 1}${rows[i].room ? ' — өрөө: ' + rows[i].room : ''}` });
     content.push({ type: 'image', source: { type: 'base64', media_type: rows[i].mime || 'image/jpeg', data: buf.toString('base64') } });
   }
-  content.push({ type: 'text', text: `Дээрх зургууд нь Улаанбаатар дахь нэг орон сууцны бодит зургууд (${prop.rooms} өрөө, ${prop.area} м², ${prop.floor || '?'}/${prop.total_floors || '?'} давхар). Барилгын хэмжээсийг стандарт лавлагаагаар (хаалга ≈2.0–2.1 м, хавтан 0.6 м, цонхны тавцан 0.8–0.9 м, сандал 0.45 м) тооцоолж, 3D дахин бүтээхэд шаардлагатай параметрүүдийг ТААМАГЛА. Тодорхойгүй бол ердийн УБ-ын орон сууцны утга.
-Дам нуруу зөвхөн зурагт ТОДОРХОЙ харагдаж байвал л бич (өрөөний нэр + тэмдэглэл), үгүй бол beams хоосон.
-ЗӨВХӨН JSON: {"ceiling_m":2.7,"door_h":2.05,"window_sill":0.85,"window_top":2.2,"threshold_cm":2,"beams":[],"floor":"parquet|laminate|tile|carpet","wall_color":"#e3d9cb","ceiling_cove":false,"window_style":"vacuum|wood","condition":"шинэ|сайн|дунд|засвар шаардлагатай","notes":["богино тэмдэглэл"]}` });
-  const r = await ai.messages.create({ model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5', max_tokens: 4000, messages: [{ role: 'user', content }] });
+  content.push({ type: 'text', text: `Дээрх зураг/кадрууд нь Улаанбаатар дахь нэг орон сууцны бодит зургууд (${prop.rooms} өрөө, ${prop.area} м², ${prop.floor || '?'}/${prop.total_floors || '?'} давхар). Барилгын хэмжээсийг стандарт лавлагаагаар (хаалга ≈2.0–2.1 м, хавтан 0.6 м, цонхны тавцан 0.8–0.9 м, сандал 0.45 м, плита 0.3/0.6 м) тооцоолж 3D дахин бүтээхэд шаардлагатай параметрүүдийг ТААМАГЛА. Тодорхойгүй бол ердийн УБ-ын орон сууцны утга.
+Мөн өрөө ТУС БҮРД (зочны, унтлагын, гал тогоо, угаалгын, коридор — зурагт харагдсан өрөөнүүд л): цонхны тоо, цонхны өргөн (м), хаалганы тоо, дам нуруу (зөвхөн ТОДОРХОЙ харагдвал), ханын өнгө (#hex), шал, богино тэмдэглэл.
+ЗӨВХӨН JSON: {"ceiling_m":2.7,"door_h":2.05,"window_sill":0.85,"window_top":2.2,"threshold_cm":2,"beams":[],"floor":"parquet|laminate|tile|carpet","wall_color":"#e3d9cb","ceiling_cove":false,"window_style":"vacuum|wood","condition":"шинэ|сайн|дунд|засвар шаардлагатай","notes":["богино тэмдэглэл"],
+"rooms":[{"room":"зочны","windows":1,"window_w":1.8,"doors":1,"beams":false,"wall_color":"#e3d9cb","floor":"laminate","notes":"…"}]}` });
+  const r = await ai.messages.create({ model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5', max_tokens: 6000, messages: [{ role: 'user', content }] });
   const txt = (r.content || []).map((c) => c.text || '').join('');
   let j = null; try { const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/\{[\s\S]*\}/); j = JSON.parse(m ? (m[1] || m[0]) : txt); } catch { return res.status(502).json({ error: 'AI JSON буцаасангүй — дахин оролдоно уу' }); }
   const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
@@ -395,9 +418,19 @@ app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
     threshold_cm: num(j.threshold_cm, 0, 15, 0), beams: Array.isArray(j.beams) ? j.beams.slice(0, 6) : [], floor: ['parquet', 'laminate', 'tile', 'carpet'].includes(j.floor) ? j.floor : 'laminate',
     wall_color: /^#[0-9a-f]{6}$/i.test(String(j.wall_color || '')) ? j.wall_color : '#e3d9cb', ceiling_cove: !!j.ceiling_cove, window_style: j.window_style || 'vacuum', condition: String(j.condition || ''), notes: Array.isArray(j.notes) ? j.notes.slice(0, 8) : [],
     analyzed_at: new Date().toISOString(), photos: rows.length, model: process.env.ZUUCH_AI_MODEL || 'claude-sonnet-5',
+    // Өрөө тус бүрийн зөвлөмж — finalize() автомат цонхны тоо/өргөнд, үзэгч ханын өнгө/шалд хэрэглэнэ
+    rooms: (Array.isArray(j.rooms) ? j.rooms : []).slice(0, 12).map((h) => ({
+      room: String(h.room || '').slice(0, 30), windows: h.windows == null ? null : num(h.windows, 0, 4, 1), window_w: h.window_w == null ? null : num(h.window_w, 0.5, 4, 1.5),
+      doors: h.doors == null ? null : num(h.doors, 0, 4, 1), beams: !!h.beams, wall_color: /^#[0-9a-f]{6}$/i.test(String(h.wall_color || '')) ? h.wall_color : null,
+      floor: ['parquet', 'laminate', 'tile', 'carpet'].includes(h.floor) ? h.floor : null, notes: String(h.notes || '').slice(0, 200),
+    })),
   };
+  // Өрөөний зөвлөмжийг өрөөнүүдэд (гар оролт байхгүй бол) шууд тусгана: ханын өнгө, шал
+  const hintOf = (r) => style.rooms.find((h) => h.room.toLowerCase().includes(tourLib.TYPE_MN[r.type] || '—'));
   const t = await db.one('SELECT * FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
-  const plan = tourLib.finalize({ ...(t ? t.plan : tourLib.autoPlan(prop)), ceiling: style.ceiling_m, style });
+  const base = t ? t.plan : tourLib.autoPlan(prop);
+  const roomsApplied = (base.rooms || []).map((r) => { const h = hintOf(r); return h ? { ...r, wallColor: r.wallColor || h.wall_color || null, floor: r.floor || h.floor || null } : r; });
+  const plan = tourLib.finalize({ ...base, rooms: roomsApplied, ceiling: style.ceiling_m, style });
   const saved = await saveTour(req.user.company_id, prop.id, plan);
   res.json({ tour: saved, style });
 }));

@@ -118,17 +118,24 @@ function segOnEdge(seg, edge) {
 }
 function buildRoom(r) {
   const H = plan.ceiling; const g = new THREE.Group();
-  const wet = r.type === 'kitchen' || r.type === 'bath' || (STYLE && STYLE.floor === 'tile' && r.type !== 'bedroom');
+  const floorKind = r.floor || (STYLE && STYLE.floor) || null; // өрөөний гар сонголт > AI > анхдагч
+  const wet = r.type === 'bath' || (floorKind ? floorKind === 'tile' : r.type === 'kitchen');
   const floorMat = r.type === 'bath' ? mats.bathFloor.clone() : wet ? mats.tile.clone() : mats.floorWood();
-  if (!wet && STYLE && STYLE.floor === 'carpet') { floorMat.map = null; floorMat.color.set(0xb9b2a6); floorMat.roughness = 1; }
+  if (!wet && floorKind === 'carpet') { floorMat.map = null; floorMat.color.set(0xb9b2a6); floorMat.roughness = 1; }
   if (wet) { floorMat.map = floorMat.map.clone(); floorMat.map.repeat.set(r.w / 1.2, r.h / 1.2); floorMat.map.needsUpdate = true; }
   else { floorMat.map.repeat.set(r.w / 0.8, r.h / 3.2); floorMat.map.needsUpdate = true; floorMat.normalMap = floorMat.normalMap.clone(); floorMat.normalMap.repeat.set(r.w / 1.5, r.h / 1.5); floorMat.normalMap.needsUpdate = true; }
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), floorMat); floor.rotation.x = -Math.PI / 2; floor.position.set(r.x + r.w / 2, 0, r.y + r.h / 2); floor.receiveShadow = true; g.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), mats.ceil); ceil.rotation.x = Math.PI / 2; ceil.position.set(r.x + r.w / 2, H, r.y + r.h / 2); g.add(ceil);
   // Таазны хонхорхой (cove): ханын дагуу 0.3 м өргөн, 0.1 м зузаан цагаан ирмэг + дотор талд нь дулаан LED тууз (лавлагаа рендерийн хэв маяг)
   // Дам нуруу (AI шинжилгээ: style.beams[{room}]) — таазны доор өрөөний богино тэнхлэгийн дагуу 0.3 × 0.25 м
-  const beam = STYLE && Array.isArray(STYLE.beams) && STYLE.beams.find((b) => String(b.room || '').toLowerCase().includes((TYPE_MN[r.type] || '').toLowerCase()) || String(b.room || '') === r.id);
-  if (beam) { const along = r.w >= r.h; const bm = box(along ? 0.3 : r.w, 0.25, along ? r.h : 0.3, mats.ceil); bm.position.set(r.x + r.w / 2, H - 0.125, r.y + r.h / 2); g.add(bm); }
+  // Дам нуруу: гар хэмжээс (r.beams: axis x = зүүнээс баруун тийш урттай, off = хойд/зүүн захаас) давуу; үгүй бол AI (style.beams[{room}])
+  let beamList = Array.isArray(r.beams) && r.beams.length ? r.beams : null;
+  if (!beamList && STYLE && Array.isArray(STYLE.beams) && STYLE.beams.find((b) => String(b.room || '').toLowerCase().includes((TYPE_MN[r.type] || '').toLowerCase()) || String(b.room || '') === r.id)) beamList = [{ axis: r.w >= r.h ? 'y' : 'x', off: (r.w >= r.h ? r.w : r.h) / 2, w: 0.3, h: 0.25 }];
+  const beam = !!beamList;
+  for (const b of beamList || []) {
+    const bm = b.axis === 'x' ? box(r.w, b.h, b.w, mats.ceil) : box(b.w, b.h, r.h, mats.ceil);
+    bm.position.set(b.axis === 'x' ? r.x + r.w / 2 : r.x + Math.min(r.w - b.w / 2, Math.max(b.w / 2, b.off)), H - b.h / 2, b.axis === 'x' ? r.y + Math.min(r.h - b.w / 2, Math.max(b.w / 2, b.off)) : r.y + r.h / 2); g.add(bm);
+  }
   // Довжоо (орцны хаалганы босго) — style.threshold_cm
   if (STYLE && STYLE.threshold_cm > 0) for (const d of plan.doors) if (d.b === 'out' && d.a === r.id) { const th = box(Math.max(Math.abs(d.x2 - d.x1), 0.2), STYLE.threshold_cm / 100, Math.max(Math.abs(d.y2 - d.y1), 0.2), mats.plinth); th.position.set((d.x1 + d.x2) / 2, STYLE.threshold_cm / 200, (d.y1 + d.y2) / 2); g.add(th); }
   if (r.w > 2 && r.h > 2 && r.type !== 'bath' && !beam && (!STYLE || STYLE.ceiling_cove !== false)) {
@@ -140,7 +147,7 @@ function buildRoom(r) {
   }
   const wallMat = r.type === 'bath' ? mats.bathWall.clone() : mats.wall();
   if (r.type === 'bath') { wallMat.map = wallMat.map.clone(); wallMat.map.repeat.set(Math.max(r.w, r.h) / 0.9, 1); wallMat.map.needsUpdate = true; }
-  else { for (const k of ['map', 'normalMap', 'roughnessMap']) { wallMat[k].repeat.set(2.2, 1.4); } if (STYLE && STYLE.wall_color) wallMat.color.set(STYLE.wall_color); }
+  else { for (const k of ['map', 'normalMap', 'roughnessMap']) { wallMat[k].repeat.set(2.2, 1.4); } const wc = r.wallColor || (STYLE && STYLE.wall_color); if (wc) wallMat.color.set(wc); }
   const edges = [
     { side: 'N', axis: 'x', c: r.y, a: r.x, b: r.x + r.w, inward: +1 }, { side: 'S', axis: 'x', c: r.y + r.h, a: r.x, b: r.x + r.w, inward: -1 },
     { side: 'W', axis: 'y', c: r.x, a: r.y, b: r.y + r.h, inward: +1 }, { side: 'E', axis: 'y', c: r.x + r.w, a: r.y, b: r.y + r.h, inward: -1 },
@@ -148,7 +155,7 @@ function buildRoom(r) {
   for (const e of edges) {
     const ops = [];
     for (const d of plan.doors) { if (d.a !== r.id && d.b !== r.id) continue; const o = segOnEdge(d, e); if (o) ops.push({ lo: o[0], hi: o[1], t: 'door', d }); }
-    for (const wn of plan.windows) { if (wn.room !== r.id) continue; const o = segOnEdge(wn, e); if (o) ops.push({ lo: o[0], hi: o[1], t: 'win' }); }
+    for (const wn of plan.windows) { if (wn.room !== r.id) continue; const o = segOnEdge(wn, e); if (o) ops.push({ lo: o[0], hi: o[1], t: 'win', sill: wn.sill || WIN_LO, top: Math.max((wn.sill || WIN_LO) + 0.4, wn.top || WIN_HI) }); }
     ops.sort((p, q) => p.lo - q.lo);
     const cc = e.c + e.inward * WALL_T / 2;
     const put = (lo, hi, y0, y1, m = wallMat) => {
@@ -169,6 +176,7 @@ function buildRoom(r) {
         const fw = 0.06; put(o.lo - fw, o.lo, 0, DOOR_H + fw, mats.frame); put(o.hi, o.hi + fw, 0, DOOR_H + fw, mats.frame); put(o.lo, o.hi, DOOR_H, DOOR_H + fw, mats.frame);
         if (o.d.b === 'out') { const leaf = e.axis === 'x' ? box(o.hi - o.lo, DOOR_H, 0.05, mats.door) : box(0.05, DOOR_H, o.hi - o.lo, mats.door); leaf.position.set(e.axis === 'x' ? (o.lo + o.hi) / 2 : e.c, DOOR_H / 2, e.axis === 'x' ? e.c : (o.lo + o.hi) / 2); g.add(leaf); const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), mats.steel); knob.position.copy(leaf.position).add(new THREE.Vector3(e.axis === 'x' ? (o.hi - o.lo) / 2 - 0.1 : e.inward * 0.05, -0.05, e.axis === 'x' ? e.inward * 0.05 : (o.hi - o.lo) / 2 - 0.1)); g.add(knob); }
       } else {
+        const WIN_LO = o.sill, WIN_HI = o.top; // цонх бүрийн өөрийн тавцан/дээд (гар хэмжээс эсвэл AI)
         put(o.lo, o.hi, 0, WIN_LO); put(o.lo, o.hi, WIN_HI, H);
         const gl = new THREE.Mesh(new THREE.PlaneGeometry(o.hi - o.lo, WIN_HI - WIN_LO), mats.glass);
         gl.position.set(e.axis === 'x' ? (o.lo + o.hi) / 2 : e.c, (WIN_LO + WIN_HI) / 2, e.axis === 'x' ? e.c : (o.lo + o.hi) / 2); if (e.axis === 'y') gl.rotation.y = Math.PI / 2; g.add(gl);
@@ -508,7 +516,7 @@ async function main() {
   for (const d of plan.doors) { if (d.b === 'out') continue; (doorGraph[d.a] ||= []).push(d.b); (doorGraph[d.b] ||= []).push(d.a); }
   for (const a of data.assets) {
     if (a.kind === 'pano') { if (String(a.room_id || '').startsWith('ext:')) extNodes.push({ ...a, label: a.room_id.slice(4) }); else if (a.room_id) panoByRoom[a.room_id] = a; }
-    else (assetsByType[a.type] ||= []).push(a);
+    else if (a.kind !== 'frame') (assetsByType[a.type] ||= []).push(a); // бичлэгийн кадрууд зөвхөн AI шинжилгээнд
   }
   const p = data.property || {};
   $('#title').textContent = `${p.district || ''}${p.khoroolol ? ', ' + p.khoroolol : ''} · ${p.rooms || rooms.length} өрөө · ${p.area || plan.totalArea} м²${p.floor ? ` · ${p.floor}/${p.total_floors || '—'} давхар` : ''}${data.company ? ' · ' + data.company : ''}`;

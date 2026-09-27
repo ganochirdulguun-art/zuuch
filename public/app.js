@@ -406,6 +406,15 @@ function renderTour() {
         <b>🔍 AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
         ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Студид бодит зураг оруулсан бол «AI зургаас шинжлэх» — таазны өндөр, цонх/хаалга, шал, ханын өнгө бодит зурагтай ойртоно.</div>'}
       <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Орц: <b>${esc((plan.rooms.find((r) => r.id === plan.entry) || {}).name || '—')}</b> · таазны өндөр ${plan.ceiling} м · хаалга ${plan.doors.length} · цонх ${plan.windows.length}</div>
+      ${tourRoomDetail(t)}
+      <h3 style="margin-top:16px">🎬 Бичлэг → AI шинжилгээ</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «🔍 AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="tour-vid-room">${plan.rooms.map((r) => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('')}<option value="">(бүх байр)</option></select>
+        <input type="file" id="tour-vid" accept="video/*" style="width:auto;font-size:12px" onchange="tourVideo(this)">
+        <span id="tour-vid-st" style="font-size:12px;color:var(--muted)">кадр: ${(t.assets || []).filter((a) => a.kind === 'frame').length}</span>
+        ${(t.assets || []).some((a) => a.kind === 'frame') ? '<button class="small" onclick="tourFramesClear()">✕ кадрууд устгах</button>' : ''}
+      </div>
       <h3 style="margin-top:16px">📷 360° панорам (бодит орчин)</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
       <div class="tablebox"><table><thead><tr><th>Цэг</th><th>Панорам</th><th></th></tr></thead><tbody>
@@ -454,13 +463,65 @@ function bindTourCanvas() {
   const pt = (e) => { const r = c.getBoundingClientRect(); const { sc, ox, oy } = tourXform(); return { x: ((e.clientX - r.left) / r.width * c.width - ox) / sc, y: ((e.clientY - r.top) / r.height * c.height - oy) / sc }; };
   c.addEventListener('pointerdown', (e) => { const p = pt(e); const r = [...TOUR.plan.rooms].reverse().find((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h); TOUR.sel = r ? r.id : null; TOUR.drag = r ? { id: r.id, dx: p.x - r.x, dy: p.y - r.y } : null; c.setPointerCapture(e.pointerId); drawTourPlan(); });
   c.addEventListener('pointermove', (e) => { if (!TOUR.drag) return; const p = pt(e); const r = TOUR.plan.rooms.find((r) => r.id === TOUR.drag.id); r.x = Math.round((p.x - TOUR.drag.dx) * 2) / 2; r.y = Math.round((p.y - TOUR.drag.dy) * 2) / 2; drawTourPlan(); });
-  c.addEventListener('pointerup', () => { TOUR.drag = null; });
+  c.addEventListener('pointerup', () => { TOUR.drag = null; renderTour(); }); // сонгосон өрөөний маягтыг харуулна
 }
-window.tourSel = (id) => { TOUR.sel = id; drawTourPlan(); };
+window.tourSel = (id) => { if (TOUR.sel === id) return; TOUR.sel = id; renderTour(); };
 window.tourEdit = (i, k, v) => { const r = TOUR.plan.rooms[i]; if (k === 'w' || k === 'h') r[k] = Math.max(1, Math.min(20, Math.round(Number(v) * 10) / 10)); else r[k] = v; drawTourPlan(); };
 window.tourAddRoom = () => { const plan = TOUR.plan; const maxX = Math.max(...plan.rooms.map((r) => r.x + r.w), 0); plan.rooms.push({ id: 'r' + Date.now().toString(36), type: 'bedroom', name: 'Шинэ өрөө', x: maxX, y: 0, w: 3, h: 3 }); renderTour(); };
 window.tourDelRoom = (i) => { TOUR.plan.rooms.splice(i, 1); renderTour(); };
 window.tourAuto = async () => { const d = await api('/tour/' + TOUR.pid + '/auto', { method: 'POST' }); if (d.error) return alert(d.error); TOUR.plan = d.tour.plan; toast('Автомат план үүслээ'); renderTour(); };
+// ---- Ш3д-2: сонгосон өрөөний бодит хэмжээс (цонх/хаалга/дам нуруу/хана/шал) ----
+const SIDE_MN = { N: 'Хойд (дээд)', S: 'Урд (доод)', W: 'Баруун (зүүн тал)', E: 'Зүүн (баруун тал)' };
+const FLOOR_MN = { '': '(авто)', parquet: 'Паркет', laminate: 'Ламинат', tile: 'Плита', carpet: 'Хивсэнцэр' };
+function tourRoomDetail(t) {
+  const r = t.plan.rooms.find((x) => x.id === t.sel); if (!r) return '<div style="margin-top:12px;font-size:12px;color:var(--muted)">Планд эсвэл хүснэгтэд өрөө сонгоход бодит хэмжээсийн маягт гарна (цонх, хаалга, дам нуруу, ханын өнгө, шал).</div>';
+  const i = t.plan.rooms.indexOf(r);
+  const sideSel = (v, on) => `<select onchange="${on}">${Object.entries(SIDE_MN).map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const numIn = (v, on, step = 0.05, w = 58) => `<input type="number" step="${step}" value="${v}" style="width:${w}px" onchange="${on}">`;
+  const wins = (r.win || []).map((w, k) => `<tr><td>${sideSel(w.side, `tourOp(${i},'win',${k},'side',this.value)`)}</td><td>${numIn(w.off, `tourOp(${i},'win',${k},'off',this.value)`)}</td><td>${numIn(w.w, `tourOp(${i},'win',${k},'w',this.value)`)}</td><td>${numIn(w.sill, `tourOp(${i},'win',${k},'sill',this.value)`)}</td><td>${numIn(w.top, `tourOp(${i},'win',${k},'top',this.value)`)}</td><td><button class="small" onclick="tourOpDel(${i},'win',${k})">✕</button></td></tr>`).join('');
+  const doors = (r.door || []).map((d, k) => `<tr><td>${sideSel(d.side, `tourOp(${i},'door',${k},'side',this.value)`)}</td><td>${numIn(d.off, `tourOp(${i},'door',${k},'off',this.value)`)}</td><td>${numIn(d.w, `tourOp(${i},'door',${k},'w',this.value)`)}</td><td><select onchange="tourOp(${i},'door',${k},'to',this.value)"><option value="auto" ${d.to !== 'out' ? 'selected' : ''}>хөрш өрөө рүү</option><option value="out" ${d.to === 'out' ? 'selected' : ''}>гадагш (орц/тагт)</option></select></td><td><button class="small" onclick="tourOpDel(${i},'door',${k})">✕</button></td></tr>`).join('');
+  const beams = (r.beams || []).map((b, k) => `<tr><td><select onchange="tourOp(${i},'beams',${k},'axis',this.value)"><option value="x" ${b.axis === 'x' ? 'selected' : ''}>зүүн→баруун (off = дээд захаас)</option><option value="y" ${b.axis === 'y' ? 'selected' : ''}>дээш→доош (off = зүүн захаас)</option></select></td><td>${numIn(b.off, `tourOp(${i},'beams',${k},'off',this.value)`)}</td><td>${numIn(b.w, `tourOp(${i},'beams',${k},'w',this.value)`)}</td><td>${numIn(b.h, `tourOp(${i},'beams',${k},'h',this.value)`)}</td><td><button class="small" onclick="tourOpDel(${i},'beams',${k})">✕</button></td></tr>`).join('');
+  return `<div class="card" style="margin-top:12px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))"><h3>📐 ${esc(r.name)} — бодит хэмжээс (м)</h3>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Хана: хойд = планы дээд тал. «Зайд» = тухайн хананы зүүн (эсвэл дээд) захаас нээлхийн эхлэл хүртэл. Хоосон = автомат.</div>
+    <b style="font-size:12.5px">Цонх</b> <button class="small" onclick="tourOpAdd(${i},'win')">+ цонх</button>
+    ${wins ? `<div class="tablebox"><table><thead><tr><th>Хана</th><th>Зайд</th><th>Өргөн</th><th>Тавцан</th><th>Дээд</th><th></th></tr></thead><tbody>${wins}</tbody></table></div>` : '<div style="font-size:12px;color:var(--muted)">автомат</div>'}
+    <b style="font-size:12.5px">Хаалга</b> <button class="small" onclick="tourOpAdd(${i},'door')">+ хаалга</button>
+    ${doors ? `<div class="tablebox"><table><thead><tr><th>Хана</th><th>Зайд</th><th>Өргөн</th><th>Хаашаа</th><th></th></tr></thead><tbody>${doors}</tbody></table></div>` : '<div style="font-size:12px;color:var(--muted)">автомат (коридороос)</div>'}
+    <b style="font-size:12.5px">Дам нуруу</b> <button class="small" onclick="tourOpAdd(${i},'beams')">+ дам нуруу</button>
+    ${beams ? `<div class="tablebox"><table><thead><tr><th>Чиглэл</th><th>Зайд</th><th>Өргөн</th><th>Өндөр</th><th></th></tr></thead><tbody>${beams}</tbody></table></div>` : ''}
+    <div style="display:flex;gap:12px;align-items:center;margin-top:8px;font-size:12.5px;flex-wrap:wrap">
+      <label>Ханын өнгө <input type="color" value="${r.wallColor || '#e3d9cb'}" onchange="tourEdit(${i},'wallColor',this.value)"> <button class="small" onclick="tourEdit(${i},'wallColor',null)">авто</button></label>
+      <label>Шал <select onchange="tourEdit(${i},'floor',this.value||null)">${Object.entries(FLOOR_MN).map(([k, l]) => `<option value="${k}" ${(r.floor || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Өөрчлөлт «💾 Хадгалах + 3D шинэчлэх» дармагц 3D-д орно.</div></div>`;
+}
+window.tourOpAdd = (i, kind) => { const r = TOUR.plan.rooms[i]; r[kind] = r[kind] || []; r[kind].push(kind === 'win' ? { side: 'N', off: 0.5, w: 1.4, sill: 0.85, top: 2.2 } : kind === 'door' ? { side: 'S', off: 0.5, w: 0.9, to: 'auto' } : { axis: 'x', off: Math.round(r.h / 2 * 10) / 10, w: 0.3, h: 0.25 }); renderTour(); };
+window.tourOp = (i, kind, k, key, v) => { const o = TOUR.plan.rooms[i][kind][k]; o[key] = (key === 'side' || key === 'to' || key === 'axis') ? v : Number(v); drawTourPlan(); };
+window.tourOpDel = (i, kind, k) => { TOUR.plan.rooms[i][kind].splice(k, 1); renderTour(); };
+// Бичлэг → 12 кадр (браузер дээр) → /api/tour/:pid/frames
+window.tourVideo = async (input) => {
+  const f = input.files && input.files[0]; if (!f) return;
+  const room = $('#tour-vid-room').value; const st = $('#tour-vid-st'); st.textContent = 'кадр гаргаж байна…';
+  try {
+    const url = URL.createObjectURL(f); const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.src = url;
+    await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('бичлэг нээгдсэнгүй')); });
+    const N = 12, dur = v.duration; const c = document.createElement('canvas'); const scale = Math.min(1, 1280 / v.videoWidth); c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    const fd = new FormData(); fd.append('room', room); fd.append('replace', '1');
+    for (let i = 0; i < N; i++) {
+      v.currentTime = Math.min(dur - 0.1, (i + 0.5) * dur / N);
+      await new Promise((res) => { v.onseeked = res; });
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
+      fd.append('frames', blob, `frame_${i + 1}.jpg`); st.textContent = `кадр ${i + 1}/${N}…`;
+    }
+    URL.revokeObjectURL(url);
+    st.textContent = 'илгээж байна…';
+    const res = await fetch('/api/tour/' + TOUR.pid + '/frames', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const d = await res.json(); if (d.error) throw new Error(d.error);
+    toast(`${d.added} кадр орлоо (нийт ${d.frames}) — одоо «🔍 AI зургаас шинжлэх»`); tourView(TOUR.pid);
+  } catch (e) { st.textContent = 'алдаа: ' + e.message; }
+};
+window.tourFramesClear = async () => { await api('/tour/' + TOUR.pid + '/frames', { method: 'DELETE' }); tourView(TOUR.pid); };
 window.tourAnalyze = async () => {
   toast('AI зургуудыг шинжилж байна (30–90 сек)…');
   const d = await api('/tour/' + TOUR.pid + '/analyze', { method: 'POST' });
