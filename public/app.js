@@ -215,7 +215,7 @@ window.commuteView = async function (pid, force = false) {
   if (d.needLocation) { alert('Эхлээд объектыг «Засах» дараад газрын зураг дээр байршлыг нь заана уу'); return; }
   let prof = d.profile;
   if (!prof) {
-    if (!d.hasKey) { modal(`<h3>🚦 Замын / түгжрэлийн профайл</h3><div class="demo-note" style="margin-bottom:10px">GOOGLE_MAPS_KEY тохируулаагүй байна. Google Cloud → Routes API идэвхжүүлж түлхүүрээ Railway-д <code>GOOGLE_MAPS_KEY</code> нэрээр тавимагц энэ хуудас бодит хугацаагаар (өглөө/өдөр/оройн оргил, чөлөөт урсгал) бөглөгдөнө. Сард 10 000 тооцоо үнэгүй ≈ 200 объект.</div><div class="modal-actions"><button type="button" onclick="closeModal()">Хаах</button></div>`); return; }
+    if (!d.hasKey) { modal(`<h3>🚦 Замын / түгжрэлийн профайл</h3><div class="demo-note" style="margin-bottom:10px">Замын API түлхүүр тохируулаагүй байна. Railway-д <code>TOMTOM_KEY</code> (developer.tomtom.com — карт шаардахгүй, өдөрт 2 500 тооцоо үнэгүй) эсвэл <code>GOOGLE_MAPS_KEY</code> тавимагц энэ хуудас бодит хугацаагаар (өглөө/оройн оргил, өдөр, чөлөөт урсгал) бөглөгдөнө. Нэг объект = 44 тооцоо, 30 хоног кэшлэнэ.</div><div class="modal-actions"><button type="button" onclick="closeModal()">Хаах</button></div>`); return; }
     modal('<h3>🚦 Тооцоолж байна…</h3><div style="color:var(--muted);font-size:13px">11 цэг × 4 цагийн цонх — 20–40 сек. Нэг удаа тооцоод 30 хоног хадгална (ойролцоох объектуудад хамт).</div>');
     const r = await api('/properties/' + pid + '/commute', { method: 'POST' }); if (r.error) { closeModal(); return alert(r.error); } prof = r.profile;
   }

@@ -4,6 +4,8 @@
 const { db } = require('./db');
 
 const KEY = () => process.env.GOOGLE_MAPS_KEY || '';
+const TT = () => process.env.TOMTOM_KEY || ''; // TomTom Routing API (карт шаардахгүй, өдөрт 2 500 тооцоо үнэгүй) — Google түлхүүргүй бол үүнийг ашиглана
+const provider = () => (KEY() ? 'google' : TT() ? 'tomtom' : null);
 // Худалдан авагчийн гол судлагдахуун (УБ). Координатыг эзэн засварлаж болно (COMMUTE_DESTINATIONS env JSON давуу).
 const DEFAULT_DESTS = [
   { id: 'center', name: 'Хотын төв (Сүхбаатарын талбай)', lat: 47.9187, lng: 106.9176, w: 3 },
@@ -39,7 +41,17 @@ function nextTuesdayAt(hour, minute) {
 }
 const cellOf = (lat, lng) => `${lat.toFixed(3)},${lng.toFixed(3)}`; // ~110 м × ~75 м
 
+// TomTom: calculateRoute + traffic=true + departAt (ирээдүйн цаг → түүхэн түгжрэлийн урьдчилсан тооцоо)
+async function routeTomTom(origin, dest, departure) {
+  const url = `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lng}:${dest.lat},${dest.lng}/json?key=${encodeURIComponent(TT())}&traffic=true&travelMode=car&routeType=fastest&computeTravelTimeFor=all&departAt=${encodeURIComponent(departure.toISOString())}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error('TomTom ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  const j = await r.json(); const s = j.routes && j.routes[0] && j.routes[0].summary; if (!s) return null;
+  const withTraffic = s.historicTrafficTravelTimeInSeconds || s.travelTimeInSeconds || 0;
+  return { min: Math.round(withTraffic / 60), freeMin: Math.round((s.noTrafficTravelTimeInSeconds || s.travelTimeInSeconds || 0) / 60), km: Math.round((s.lengthInMeters || 0) / 100) / 10 };
+}
 async function routeOnce(origin, dest, departure) {
+  if (provider() === 'tomtom') return routeTomTom(origin, dest, departure);
   const body = {
     origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
     destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
@@ -71,7 +83,7 @@ async function profile(lat, lng, { force = false } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const cell = cellOf(lat, lng);
   if (!force) { const c = await db.one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cell); if (c) return { ...c.profile, score: c.score, cached: true, computed_at: c.computed_at }; }
-  if (!KEY()) throw new Error('GOOGLE_MAPS_KEY тохируулаагүй — Routes API түлхүүр хэрэгтэй');
+  if (!provider()) throw new Error('Замын API түлхүүр тохируулаагүй — TOMTOM_KEY (карт шаардахгүй) эсвэл GOOGLE_MAPS_KEY');
   const dests = destinations(); const rows = [];
   for (const d of dests) {
     const row = { id: d.id, name: d.name, w: d.w || 1 };
@@ -79,10 +91,10 @@ async function profile(lat, lng, { force = false } = {}) {
     rows.push(row);
   }
   const sc = scoreProfile(rows);
-  const prof = { lat, lng, cell, slots: SLOTS, rows, ...sc, provider: 'Google Routes API (TRAFFIC_AWARE_OPTIMAL, Мягмар)', computed_at: new Date().toISOString() };
+  const prof = { lat, lng, cell, slots: SLOTS, rows, ...sc, provider: provider() === 'tomtom' ? 'TomTom Routing API (түүхэн түгжрэл, Мягмар)' : 'Google Routes API (TRAFFIC_AWARE_OPTIMAL, Мягмар)', computed_at: new Date().toISOString() };
   await db.run(`INSERT INTO commute_cells (cell, lat, lng, profile, score, computed_at) VALUES (?,?,?,?,?,NOW())
     ON CONFLICT (cell) DO UPDATE SET profile=EXCLUDED.profile, score=EXCLUDED.score, computed_at=NOW()`, cell, lat, lng, JSON.stringify(prof), sc.score);
   return { ...prof, cached: false };
 }
 // Гэрээс гараад ГОЛ ЗАМ хүртэл: хамгийн ойрын гол цэг рүү чөлөөт урсгалын анхны 1–2 км — тусдаа маягаар хойшлуулав; одоо профайлд «хамгийн ойр 4 зам» гэж харуулна
-module.exports = { profile, destinations, SLOTS, cellOf, hasKey: () => !!KEY() };
+module.exports = { profile, destinations, SLOTS, cellOf, hasKey: () => !!provider(), provider };
