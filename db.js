@@ -343,6 +343,14 @@ CREATE TABLE IF NOT EXISTS posters (
   last_seen TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS market_listings_poster ON market_listings(poster_key);
+-- Ш1.3: сесс Postgres-д (redeploy/олон instance-д нэвтрэлт тасрахгүй)
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  data JSONB NOT NULL,
+  exp TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_exp ON sessions(exp);
 -- Гэрээний боломж (lead): компани бүр өөрийн ажиллаж буй зараа тэмдэглэнэ
 CREATE TABLE IF NOT EXISTS leads (
   id SERIAL PRIMARY KEY,

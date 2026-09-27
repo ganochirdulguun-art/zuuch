@@ -29,14 +29,24 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 // Async route алдааг барих туслах
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// ---- Сесс (санах ойд, хугацаатай) ----
+// ---- Сесс: Postgres-д хадгална (Ш1.3) + санах ойн кэш — redeploy, олон instance-д нэвтрэлт тасрахгүй ----
 const sessions = new Map();
 const SESSION_TTL = 12 * 3600 * 1000;
-function newSession(user) {
+async function newSession(user) {
   const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { id: user.id, role: user.role, name: user.name, company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, exp: Date.now() + SESSION_TTL });
+  const data = { id: user.id, role: user.role, name: user.name, company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, exp: Date.now() + SESSION_TTL };
+  sessions.set(token, data);
+  await db.run('INSERT INTO sessions (token, user_id, data, exp) VALUES (?,?,?,?)', token, user.id, JSON.stringify(data), new Date(data.exp).toISOString()).catch((e) => console.error('[session save]', e.message));
   return token;
 }
+async function loadSession(token) {
+  if (!token) return null;
+  const cached = sessions.get(token); if (cached) return cached;
+  const row = await db.one('SELECT data FROM sessions WHERE token=? AND exp > NOW()', token).catch(() => null);
+  if (!row) return null;
+  const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data; sessions.set(token, data); return data;
+}
+setInterval(() => { db.run('DELETE FROM sessions WHERE exp < NOW()').catch(() => {}); for (const [t, s] of sessions) if (Date.now() > s.exp) sessions.delete(t); }, 3600 * 1000).unref();
 const attempts = new Map();
 function rateLimited(ip) { const a = attempts.get(ip); return !!(a && Date.now() - a.ts < 15 * 60000 && a.n >= 8); }
 function noteFail(ip) { const a = attempts.get(ip) || { n: 0, ts: Date.now() }; if (Date.now() - a.ts >= 15 * 60000) { a.n = 0; a.ts = Date.now(); } a.n++; attempts.set(ip, a); }
@@ -52,7 +62,7 @@ app.post('/api/login', wrap(async (req, res) => {
     const co = await db.one('SELECT status FROM companies WHERE id=?', user.company_id);
     if (co && co.status !== 'active') return res.status(403).json({ error: 'Таны компанийн хандалт түр хаагдсан. Платформын админтай холбогдоно уу.' });
   }
-  const token = newSession(user);
+  const token = await newSession(user);
   const company = await db.one('SELECT name FROM companies WHERE id=?', user.company_id);
   res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0 } });
 }));
@@ -65,21 +75,23 @@ app.post('/api/register', wrap(async (req, res) => {
   if (await db.one('SELECT 1 FROM users WHERE username=?', username)) return res.status(409).json({ error: 'Энэ нэвтрэх нэр бүртгэлтэй байна' });
   const cid = (await db.one("INSERT INTO companies (name, license_no, plan) VALUES (?, ?, 'trial') RETURNING id", company, String(b.license || ''))).id;
   const uid = (await db.one("INSERT INTO users (company_id, username, pass_hash, name, role, phone) VALUES (?,?,?,?,'zahiral',?) RETURNING id", cid, username, hash(password), name, String(b.phone || ''))).id;
-  const token = newSession({ id: uid, role: 'zahiral', name, company_id: cid });
+  const token = await newSession({ id: uid, role: 'zahiral', name, company_id: cid });
   res.json({ token, user: { id: uid, name, role: 'zahiral', company, company_id: cid, is_owner: 0 } });
 }));
 
-function auth(req, res, next) {
-  const token = (req.headers.authorization || '').replace('Bearer ', '') || String(req.query.token || '');
-  const s = sessions.get(token);
-  if (!s) return res.status(401).json({ error: 'Нэвтрээгүй байна' });
-  if (Date.now() > s.exp) { sessions.delete(token); return res.status(401).json({ error: 'Сесс дууссан' }); }
-  req.user = s; req.token = token; next();
+async function auth(req, res, next) {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '') || String(req.query.token || '');
+    const s = await loadSession(token);
+    if (!s) return res.status(401).json({ error: 'Нэвтрээгүй байна' });
+    if (Date.now() > s.exp) { sessions.delete(token); db.run('DELETE FROM sessions WHERE token=?', token).catch(() => {}); return res.status(401).json({ error: 'Сесс дууссан' }); }
+    req.user = s; req.token = token; next();
+  } catch (e) { next(e); }
 }
 const OPEN = new Set(['/login', '/register']);
 app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res, next)));
 
-app.post('/api/logout', (req, res) => { sessions.delete(req.token); res.json({ ok: true }); });
+app.post('/api/logout', (req, res) => { sessions.delete(req.token); db.run('DELETE FROM sessions WHERE token=?', req.token).catch(() => {}); res.json({ ok: true }); });
 app.get('/api/me', wrap(async (req, res) => {
   const company = await db.one('SELECT name FROM companies WHERE id=?', req.user.company_id);
   res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0 });
