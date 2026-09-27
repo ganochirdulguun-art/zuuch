@@ -1,24 +1,28 @@
 <!DOCTYPE html>
 <html lang="mn">
 <head>
+<script>(function(){try{var t=localStorage.getItem('zuuch_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}
+window.toggleTheme=function(){var d=document.documentElement.getAttribute('data-theme')==='dark';if(d)document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme','dark');try{localStorage.setItem('zuuch_theme',d?'light':'dark');}catch(e){}};})();</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Зууч — үл хөдлөхийн систем</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <style>
+/* Анхдагч = «C · Хосолсон»: гэгээлэг агуулга + цайвар цэнхэр (navy) цэс. data-theme="dark" = «B · Зөөлөн бараан». OS-ийн горимыг дагахгүй (хэрэглэгчийн сонголт). */
 :root{
   --ground:#F3F6FC; --surface:#FFFFFF; --surface-2:#EAEFF9;
   --ink:#131A2B; --muted:#58627A; --accent:#2563EB; --accent-ink:#FFFFFF;
   --accent-2:#C2560F; --line:#DBE2F1; --ok:#2563EB; --warn:#C2560F;
-  color-scheme:light dark;
+  --side:#1F2A47; --side-2:#2A3760; --side-ink:#AEBAD3; --side-line:#334369; --side-brand:#F1F5FC; --side-accent:#5AB0FF; --side-accent-ink:#0B1626;
+  color-scheme:light;
 }
-@media (prefers-color-scheme: dark){
-  :root{
-    --ground:#0C1322; --surface:#141C2E; --surface-2:#1B2438;
-    --ink:#E6ECF7; --muted:#93A0BC; --accent:#38BDF8; --accent-ink:#08131F;
-    --accent-2:#E0975E; --line:#29324A; --ok:#38BDF8; --warn:#E0975E;
-  }
+:root[data-theme="dark"]{
+  --ground:#1A2238; --surface:#243051; --surface-2:#2C3A5E;
+  --ink:#F1F5FC; --muted:#AEBAD3; --accent:#5AB0FF; --accent-ink:#0B1626;
+  --accent-2:#F0A86B; --line:#3A4A70; --ok:#5AB0FF; --warn:#F0A86B;
+  --side:#1F2A47; --side-2:#2A3760; --side-ink:#AEBAD3; --side-line:#334369; --side-brand:#F1F5FC; --side-accent:#5AB0FF; --side-accent-ink:#0B1626;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:"Inter","Segoe UI",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -44,15 +48,18 @@ h1,h2,h3{font-family:"Montserrat","Segoe UI",sans-serif;font-weight:500}
 
 /* Апп бүтэц */
 #app-view{display:flex;min-height:100vh}
-aside{width:212px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:20px 0;display:flex;flex-direction:column}
-.brand{font-family:"Montserrat",sans-serif;font-weight:700;font-size:19px;padding:0 20px 18px;border-bottom:1px solid var(--line)}
-.brand span{color:var(--accent)}
+aside{width:212px;flex-shrink:0;background:var(--side);border-right:1px solid var(--side-line);padding:20px 0;display:flex;flex-direction:column;color:var(--side-ink)}
+.brand{font-family:"Montserrat",sans-serif;font-weight:700;font-size:19px;padding:0 20px 18px;border-bottom:1px solid var(--side-line);color:var(--side-brand)}
+.brand span{color:var(--side-accent)}
 nav.menu{display:flex;flex-direction:column;padding:12px 10px;gap:2px;flex:1}
-nav.menu button{border:1px solid transparent;background:none;text-align:left;padding:9px 12px;border-radius:8px;font-size:14.5px;color:var(--muted);transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease}
-nav.menu button:hover{background:var(--surface-2);color:var(--ink);transform:translateX(2px)}
-nav.menu button.active{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 78%, #000));color:var(--accent-ink);font-weight:600;transform:translateX(4px);box-shadow:0 6px 20px color-mix(in srgb,var(--accent) 40%, transparent);border-color:color-mix(in srgb,var(--accent) 60%, transparent)}
-.userbox{padding:14px 20px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
-.userbox b{color:var(--ink);display:block}
+nav.menu button{border:1px solid transparent;background:none;text-align:left;padding:9px 12px;border-radius:8px;font-size:14.5px;color:var(--side-ink);transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease}
+nav.menu button:hover{background:var(--side-2);color:var(--side-brand);transform:translateX(2px)}
+nav.menu button.active{background:linear-gradient(135deg,var(--side-accent),color-mix(in srgb,var(--side-accent) 72%, #0B1626));color:var(--side-accent-ink);font-weight:600;transform:translateX(4px);box-shadow:0 6px 20px color-mix(in srgb,var(--side-accent) 40%, transparent);border-color:color-mix(in srgb,var(--side-accent) 60%, transparent)}
+nav.menu div{color:color-mix(in srgb,var(--side-ink) 70%, transparent)!important}
+.userbox{padding:14px 20px;border-top:1px solid var(--side-line);font-size:13px;color:var(--side-ink)}
+.userbox b{color:var(--side-brand);display:block}
+.userbox button{background:var(--side-2);border-color:var(--side-line);color:var(--side-brand)}
+.userbox button:hover{border-color:var(--side-accent)}
 main{flex:1;padding:26px 30px;min-width:0}
 .page-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
 .page-head h2{font-size:21px;margin:0}
@@ -152,9 +159,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
       <button data-view="team" id="menu-team" hidden>⚙️ Баг</button>
       <button data-view="owner" id="menu-owner" hidden>👑 Эзэн самбар</button>
     </nav>
-    <div class="userbox"><b id="user-company" style="color:var(--accent);font-size:12px"></b><b id="user-name"></b><span id="user-role"></span><br>
+    <div class="userbox"><b id="user-company" style="color:var(--side-accent);font-size:12px"></b><b id="user-name"></b><span id="user-role"></span><br>
       <button class="small" style="margin-top:8px" onclick="pwForm()">Нууц үг</button>
-      <button class="small" style="margin-top:8px" onclick="logout()">Гарах</button></div>
+      <button class="small" style="margin-top:8px" onclick="logout()">Гарах</button>
+      <button class="small" style="margin-top:8px" id="theme-btn" title="Гэгээлэг / бараан" onclick="toggleTheme()">🌗</button></div>
   </aside>
   <main id="main"></main>
 </div>
