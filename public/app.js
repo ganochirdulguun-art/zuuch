@@ -488,7 +488,7 @@ function renderTour() {
   }
   $('#main').innerHTML = `
   <div class="page-head"><h2>🎥 POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
-    <div style="display:flex;gap:8px"><button onclick="nav('tours')">← POV Tour</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
+    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="studioView(${p.id})">🎨 Студи</button></div></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '✨ Автомат план')}${tab('measure', '📐 Хэмжээс + AI + 360°')}${tab('build', '🧱 Блок өрж бүтээх')}</div>
   ${body}
   ${shareBox}`;
