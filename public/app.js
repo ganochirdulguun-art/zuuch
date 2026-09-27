@@ -443,7 +443,8 @@ async function findbuyers() {
 }
 window.findBuyersFor = async function (pid) {
   if (!pid) return;
-  if (!$('#fb-out')) { await show('findbuyers'); $('#fb-prop').value = pid; }
+  if (!$('#fb-out')) { document.querySelectorAll('#menu button').forEach((x) => x.classList.toggle('active', x.dataset.view === 'findbuyers')); await findbuyers(); }
+  if ($('#fb-prop')) $('#fb-prop').value = pid;
   const d = await api('/properties/' + pid + '/buyers'); if (d.error) return alert(d.error);
   const p = d.property;
   $('#fb-out').innerHTML = `<div class="card" style="margin-top:12px"><h3>🎯 ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая — тохирох худалдан авагчид (${d.buyers.length} / нээлттэй ${d.total})</h3>
