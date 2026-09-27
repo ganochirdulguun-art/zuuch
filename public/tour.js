@@ -15,7 +15,7 @@ const TYPE_MN = { living: 'зочны', kitchen: 'гал тогоо', bedroom: '
 // ---------- Текстур: Poly Haven (CC0, /textures) + процедур нөөц ----------
 const texLoader = new THREE.TextureLoader();
 function tex(url, repeat = [1, 1], srgb = true) {
-  const t = texLoader.load(url); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+  const t = texLoader.load(url); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 function pbr(name, repeat, extra = {}) {
   return new THREE.MeshStandardMaterial({ map: tex(`/textures/${name}_diff.jpg`, repeat), normalMap: tex(`/textures/${name}_nor.jpg`, repeat, false), roughnessMap: tex(`/textures/${name}_rough.jpg`, repeat, false), roughness: 1, ...extra });
@@ -32,6 +32,7 @@ const texTile = (base = '#eeece8', n = 4) => canvasTex((g, s) => {
 let data, plan, scene, camera, renderer, rooms = [], byId = {}, doorGraph = {};
 const mats = {};
 const furnGroup = new THREE.Group();
+const roomLights = []; // өрөө бүрийн цэгэн гэрэл — зайгаар хасна (FPS)
 // Цайвар царс банзан шал (процедур): 0.2 × 1.6 м банз, шаталсан, нарийн зүүн шугам, зөөлөн ширхэг — лавлагаа рендерийн хэв маяг
 const texOakPlanks = () => canvasTex((g, s) => {
   g.fillStyle = '#d8c3a3'; g.fillRect(0, 0, s, s);
@@ -178,7 +179,7 @@ function buildRoom(r) {
     put(cur, e.b, 0, H);
   }
   // Хавтгай шалны хөвөө (plinth)
-  const pl = new THREE.PointLight(0xfff1dc, r.w * r.h > 14 ? 9 : 5, 0, 1.7); pl.position.set(r.x + r.w / 2, H - 0.3, r.y + r.h / 2); g.add(pl);
+  const pl = new THREE.PointLight(0xfff1dc, r.w * r.h > 14 ? 9 : 5, 0, 1.7); pl.position.set(r.x + r.w / 2, H - 0.3, r.y + r.h / 2); g.add(pl); roomLights.push(pl);
   if (r.type === 'bath' || r.type === 'hall' || r.type === 'kitchen' || r.type === 'other') { const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 20), mats.matteWhite); lamp.position.copy(pl.position).setY(H - 0.02); g.add(lamp); }
   furnish(r);
   return g;
@@ -511,7 +512,7 @@ async function main() {
   $('#title').textContent = `${p.district || ''}${p.khoroolol ? ', ' + p.khoroolol : ''} · ${p.rooms || rooms.length} өрөө · ${p.area || plan.totalArea} м²${p.floor ? ` · ${p.floor}/${p.total_floors || '—'} давхар` : ''}${data.company ? ' · ' + data.company : ''}`;
   document.title = `POV Tour — ${p.district || 'Зууч'}`;
   // FPS: pixel ratio ≤1.5, статик сүүдэр (зөвхөн тавилга гарч ирэх үед шинэчилнэ), high-performance GPU
-  renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+  renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
   const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
   initMats(); outdoors(); scene.add(furnGroup);
@@ -529,7 +530,7 @@ async function main() {
   // Загварууд ачаалагдтал (≤6с) хүлээнэ, дараа нь эхэлнэ
   const t0 = Date.now(); while (loadedN < pending && Date.now() - t0 < 6000) { $('#load').lastElementChild.textContent = `Тавилга ачаалж байна… ${loadedN}/${pending}`; await new Promise((r) => setTimeout(r, 120)); }
   $('#load').style.display = 'none';
-  let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1; // эхний frame-д минимап зурагдана
+  let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1, fpsAcc = 0, fpsN = 0; // эхний frame-д минимап зурагдана
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (mode === 'auto') stepAuto(dt); else if (!panoActive) stepFree(dt);
@@ -541,6 +542,10 @@ async function main() {
     mapT += dt; if (mapT > 0.08) { mapT = 0; drawMap(); }
     // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/загвар ачаалагдах үед л шинэчилнэ
     if (staging || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; shadowLoaded = loadedN; } frameN++;
+    // Гэрлийн хасалт: 9 м-ээс хол өрөөний цэгэн гэрлийг унтраана (fragment бүр бүх гэрлийг тооцдог)
+    if (frameN % 10 === 0) for (const l of roomLights) l.visible = Math.hypot(l.position.x - cam.x, l.position.z - cam.z) < 9;
+    // Адаптив нягтрал: FPS < 28 бол pixel ratio-г бууруулна (доод 0.7), > 55 бол өсгөнө (дээд 1.25)
+    fpsAcc += dt; fpsN++; if (fpsAcc >= 2) { const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; const pr = renderer.getPixelRatio(); if (fps < 28 && pr > 0.7) renderer.setPixelRatio(Math.max(0.7, pr - 0.15)); else if (fps > 55 && pr < Math.min(devicePixelRatio, 1.25)) renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25, pr + 0.1)); if (renderer.getPixelRatio() !== pr) renderer.setSize(innerWidth, innerHeight, false); }
     renderer.render(scene, camera); requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
