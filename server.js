@@ -309,7 +309,7 @@ app.post('/api/leads/:lid/claim', wrap(async (req, res) => {
   const ex = await db.one('SELECT * FROM leads WHERE company_id=? AND listing_id=?', req.user.company_id, l.id);
   if (ex) return res.json({ ok: true, lead: ex, existed: true });
   // Харилцагч (эзэн) — утасгүй; агент холбогдсоны дараа зөвшөөрөлтэйгээр нөхнө
-  const c = await db.one("INSERT INTO clients (company_id, name, phone, type, notes) VALUES (?,?,?,?,?) RETURNING id", req.user.company_id, (p && p.name) || 'Зарын эзэн', '', 'owner', `Зарын эзэн (lead): ${l.title || ''} · ${l.district} ${l.khoroolol || ''} · ${l.rooms}ө ${l.area}м² · ${l.price} сая · эх: ${l.source_url || l.source}. Утас — эх зарын «Дугаар харах»-аар холбогдож, зөвшөөрөлтэйгээр бүртгэнэ.`);
+  const c = await db.one("INSERT INTO clients (company_id, name, phone, type, notes) VALUES (?,?,?,?,?) RETURNING id", req.user.company_id, (p && p.name) || 'Зарын эзэн', '', l.deal_type === 'rent' ? 'landlord' : 'seller', `Зарын эзэн (lead): ${l.title || ''} · ${l.district} ${l.khoroolol || ''} · ${l.rooms}ө ${l.area}м² · ${l.price} сая · эх: ${l.source_url || l.source}. Утас — эх зарын «Дугаар харах»-аар холбогдож, зөвшөөрөлтэйгээр бүртгэнэ.`);
   const lead = await db.one("INSERT INTO leads (company_id, listing_id, status, agent_id, client_id, note) VALUES (?,?,'working',?,?,?) RETURNING *", req.user.company_id, l.id, req.user.id, c.id, String(req.body && req.body.note || ''));
   res.json({ ok: true, lead, client_id: c.id });
 }));
