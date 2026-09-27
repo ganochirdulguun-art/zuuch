@@ -80,7 +80,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests, deals, market, collector, tours, mylist, studio, buyers, findbuyers, team, owner }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, team, owner }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -90,7 +90,7 @@ async function dashboard() {
   <div class="page-head"><h2>Хянах самбар</h2><span class="demo-note">Зах зээлийн өгөгдөл = жишиг (цуглуулагч Шат 2-т холбогдоно)</span></div>
   <div class="tiles">
     <div class="tile" style="cursor:pointer" onclick="show('properties')" title="Объектууд руу"><div class="v">${d.activeProperties}</div><div class="k">Идэвхтэй объект →</div></div>
-    <div class="tile" style="cursor:pointer" onclick="show('requests')" title="Хүсэлтүүд рүү"><div class="v">${d.openRequests}</div><div class="k">Нээлттэй хүсэлт →</div></div>
+    <div class="tile" style="cursor:pointer" onclick="show('buyers')" title="Buyer бүртгэл рүү"><div class="v">${d.openRequests}</div><div class="k">Нээлттэй хүсэлт (Buyer) →</div></div>
     <div class="tile" style="cursor:pointer" onclick="show('deals')" title="Хэлцлүүд рүү"><div class="v">${d.monthDeals}</div><div class="k">Энэ сарын хэлцэл →</div></div>
     <div class="tile" style="cursor:pointer" onclick="show('deals')" title="Хэлцлүүд рүү"><div class="v">${fmt(d.monthCommission)}<small style="font-size:13px"> сая ₮</small></div><div class="k">Энэ сарын шимтгэл →</div></div>
     <div class="tile" style="cursor:pointer" onclick="show('collector')" title="Цуглуулагч руу"><div class="v">${d.marketListings}</div><div class="k">Ажиглаж буй зах зээлийн зар →</div></div>
@@ -291,7 +291,7 @@ window.reqForm = function (r = {}) {
     body.last_contact = new Date().toISOString();
     if (r.id) await api('/requests/' + r.id, { method: 'PUT', body });
     else await api('/requests', { method: 'POST', body });
-    closeModal(); requests();
+    closeModal(); buyers();
   });
 };
 
@@ -362,7 +362,7 @@ window.marketDetail = async function (id) {
     ${d.similar.length ? `<div class="tablebox"><table><thead><tr><th>Зар</th><th class="num">м²</th><th class="num">Үнэ</th><th class="num">₮/м²</th><th>Огноо</th></tr></thead><tbody>
     ${d.similar.map((s) => `<tr style="cursor:pointer" onclick="marketDetail(${s.id})"><td>${esc((s.title || '').slice(0, 50))}${s.khoroolol ? ' <span style="color:var(--muted)">' + esc(s.khoroolol) + '</span>' : ''}</td><td class="num">${s.area}</td><td class="num">${fmt(s.price)}${s.prev_price ? ` <small style="color:var(--muted)">(${fmt(s.prev_price)})</small>` : ''}</td><td class="num">${s.area ? fmt(s.price / s.area) : '—'}</td><td>${s.listed_at || ''}</td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Ижил төстэй зар алга</span>'}</div>
   <div class="card" style="margin-bottom:12px"><h3>🎯 Тохирох худалдан авагчид (А4, манай хүсэлтүүдээс)</h3>
-    ${d.buyers.length ? d.buyers.map((b) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px"><span><span class="score">${b.score}</span> <b>${esc(b.client_name)}</b> ${esc(b.client_phone || '')} · төсөв ${fmt(b.budget)} сая · ${b.rooms}ө · ${esc(b.districts || '')}</span><button class="small" onclick="showMatches(${b.id});closeModal();show('requests')">Хүсэлт №${b.id}</button></div>`).join('') : '<span style="color:var(--muted)">Одоогоор тохирох нээлттэй хүсэлт алга</span>'}</div>
+    ${d.buyers.length ? d.buyers.map((b) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px"><span><span class="score">${b.score}</span> <b>${esc(b.client_name)}</b> ${esc(b.client_phone || '')} · төсөв ${fmt(b.budget)} сая · ${b.rooms}ө · ${esc(b.districts || '')}</span><button class="small" onclick="closeModal();show('buyers');setTimeout(()=>showMatches(${b.id}),500)">Хүсэлт №${b.id}</button></div>`).join('') : '<span style="color:var(--muted)">Одоогоор тохирох нээлттэй хүсэлт алга</span>'}</div>
   <div style="font-size:11.5px;color:var(--muted)">Ажиглах горим: зөвхөн баримт хадгалсан (тайлбар, зураг, утас байхгүй) — бүрэн зарыг эх сурвалжаас үзнэ. Цуглуулсан: ${l.collected_at ? String(l.collected_at).slice(0, 16).replace('T', ' ') : '—'} · сүүлд харагдсан: ${l.last_seen ? String(l.last_seen).slice(0, 16).replace('T', ' ') : '—'}</div>
   <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="closeModal()">Хаах</button></div>`);
 };
@@ -404,8 +404,9 @@ async function buyers() {
     <thead><tr><th>Худалдан авагч</th><th>Хайж буй</th><th class="num">Төсөв</th><th>Дүүрэг</th><th>Төлөв</th><th>Агент</th><th></th></tr></thead>
     <tbody>${open.map((r) => `<tr><td><b>${esc(r.client_name)}</b></td><td>${DEAL_T[r.deal_type]} · ${r.rooms}ө${r.area_min || r.area_max ? ` · ${r.area_min || '?'}–${r.area_max || '?'} м²` : ''}</td>
       <td class="num">${fmt(r.budget)} сая</td><td>${esc(r.districts)}</td><td>${badge(r.status)}</td><td>${esc(r.agent_name || '—')}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="show('requests');setTimeout(()=>showMatches(${r.id}),500)">🎯 Тохирол</button> <button class="small" onclick='reqForm(${JSON.stringify(r)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">Нээлттэй хүсэлт алга</td></tr>'}</tbody>
-  </table></div>`;
+      <td style="white-space:nowrap"><button class="small primary" onclick="showMatches(${r.id})">🎯 Тохирол (А4)</button> <button class="small" onclick='reqForm(${JSON.stringify(r)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">Нээлттэй хүсэлт алга</td></tr>'}</tbody>
+  </table></div>
+  <div id="match-area"></div>`;
 }
 window.buyerForm = function () {
   modal(`
@@ -1006,6 +1007,7 @@ async function collector() {
       📡 <b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> ·
       дахин харагдсан: <b>${li.updated || 0}</b> · үнэ өөрчлөгдсөн: <b>${li.priceChanges || 0}</b> · дэлгэрэнгүй татсан: <b>${li.detailFetched || 0}</b> ·
       сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${li.adapter && li.adapter.cooldownUntil && li.adapter.cooldownUntil > Date.now() ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
+      ${li.byCat ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${Object.values(li.byCat).map((c) => `<span class="badge mut" title="${Math.round((Date.now() - c.at) / 60000)} мин өмнө">${esc(c.label)}: ${c.adverts}</span>`).join('')}</div>` : ''}
     </div>` : '';
     const wcard = s.workers.map((w) => {
       const busy = w.status !== 'сул';

@@ -13,6 +13,7 @@ const RECHECK_PER_CYCLE = 5;    // «сайтад хэвээр байна уу»
 const DELIST_CHECK_DAYS = 7;    // толгой хуудсанд 7 хоног харагдаагүй зарыг дахин шалгана
 const WORKER_COUNT = 10;
 const FIT_THRESHOLD = 55;
+const COLLECT_CATS = new Set(['apartment', 'house', 'office', 'commercial', 'object', 'warehouse', 'land']);
 const COLLECT_CAP = LIVE ? 50000 : 400;
 const MONITORING_MODE = true;
 const SALT = process.env.ZUUCH_SALT || 'zuuch-monitor-salt-2026';
@@ -84,7 +85,7 @@ function normalize(raw) {
   const phone = String(raw.phone || '').replace(/[^\d+]/g, '');
   const daysAgo = raw.postedDaysAgo == null ? 30 : raw.postedDaysAgo;
   return {
-    source: raw.source, source_id: raw.source_id, title: raw.title, category: raw.category, is_new: raw.is_new ? 1 : 0,
+    source: raw.source, source_id: raw.source_id, title: raw.title, category: raw.category || 'apartment', is_new: raw.is_new ? 1 : 0,
     deal_type: raw.deal_type === 'rent' ? 'rent' : 'sale',
     district: DISTRICTS.includes(raw.districtText) ? raw.districtText : null, khoroolol: raw.khoroolol || '',
     rooms: num(raw.roomsText), area: num(raw.areaText), price: num(raw.priceText),
@@ -119,8 +120,10 @@ async function enrich(l) {
 }
 
 async function fitScore(l, source) {
-  if (l.category !== 'apartment') return { collect: false, reason: 'ангилал таарахгүй', score: 0 };
+  // Хүлээн авах ангиллууд: орон сууц, хаус/хашаа байшин, оффис, худалдаа үйлчилгээ, объект, агуулах, газар; «хажуу өрөө»/бусад — татгалзана
+  if (!COLLECT_CATS.has(l.category)) return { collect: false, reason: 'ангилал таарахгүй', score: 0 };
   if (!l.district) return { collect: false, reason: 'байршил тодорхойгүй', score: 0 };
+  const isApt = l.category === 'apartment';
   l.contactHash = contactOf(l);
   if (await db.one('SELECT 1 FROM takedown WHERE key=?', tdKey(l))) return { collect: false, reason: 'хасалтын жагсаалтад', score: 0 };
   const dd = await dedup(l);
@@ -128,14 +131,14 @@ async function fitScore(l, source) {
 
   const flags = [];
   // Үнийн индекс зөвхөн зарах зах зээлийнх — түрээст харьцаа тооцохгүй
-  const ratio = l.deal_type === 'sale' && l.m2 && l.indexM2 ? l.m2 / l.indexM2 : 1;
+  const ratio = isApt && l.deal_type === 'sale' && l.m2 && l.indexM2 ? l.m2 / l.indexM2 : 1; // индекс = зөвхөн орон сууц зарах
   if (ratio < 0.35) flags.push('хэт хямд');
   if (/урьдчилгаа/i.test(l.descr || '')) return { collect: false, reason: 'скам сэжигтэй (урьдчилгаа)', score: 0, flags: ['урьдчилгаа_шаардсан'] };
   if (l.contactHash && !l.is_business) {
     const { c } = await db.one('SELECT COUNT(*)::int c FROM market_listings WHERE contact_hash=? AND active=1', l.contactHash);
     if (c >= 4) flags.push('олон байр 1 холбоо');
   }
-  const complete = 0.3 * (l.price ? 1 : 0) + 0.2 * (l.area ? 1 : 0) + 0.2 * (l.rooms ? 1 : 0) + 0.15 * (l.district ? 1 : 0) + 0.15 * (l.contactHash ? 1 : 0);
+  const complete = 0.3 * (l.price ? 1 : 0) + 0.2 * (l.area ? 1 : 0) + 0.2 * (isApt ? (l.rooms ? 1 : 0) : 1) + 0.15 * (l.district ? 1 : 0) + 0.15 * (l.contactHash ? 1 : 0);
   const priceHealthy = ratio >= 0.4 && ratio <= 2.5 ? 1 : Math.max(0, 1 - Math.abs(ratio - 1.4) / 2);
   const imageScore = l.images >= 3 ? 1 : l.images >= 1 ? 0.6 : 0;
   const fresh = l.postedDaysAgo <= 7 ? 1 : Math.max(0, 1 - (l.postedDaysAgo - 7) / 83);
@@ -165,10 +168,10 @@ async function process1(raw, source) {
   if (r.collect) {
     const group = l._group || 'g' + crypto.randomBytes(4).toString('hex');
     const ins = await db.one(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
-        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business)
-      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
+        last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?, NOW(),?,?,?,?,?,?,?) RETURNING id`, l.source, l.source_id, l.deal_type, l.district, l.rooms || 0, l.area || 0, l.price || 0,
       l.prev_price, l.is_new, l.listed_at, r.score, group, new Date().toISOString(), l.contactHash, l.title, l.images,
-      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business);
+      l.url || null, l.khoroolol || null, l.floor, l.total_floors, l.ad_type || null, l.is_business, l.category);
     state.stats.collected++;
     await db.run('UPDATE sources SET collected=collected+1 WHERE name=?', source.name);
     logEvent({ kind: 'collected', lid: ins && ins.id, source: source.name, title: l.title, district: l.district, price: l.price, deal: l.deal_type, score: r.score, flags: r.flags || [], url: l.url });
@@ -197,8 +200,14 @@ async function orchestrate() {
       const intervalSec = LIVE ? LIVE_INTERVAL_SEC : s.interval_sec;
       const due = !lastRun[s.name] || Date.now() - lastRun[s.name] >= intervalSec * 1000;
       if (!due) continue;
-      if (LIVE && (state.activePerSource[s.name] || 0) > 0) continue; // өмнөх мөчлөг дуусаагүй
+      if (LIVE && q.c > 0) continue; // өмнөх мөчлөгийн ажлууд дуусаагүй
       lastRun[s.name] = Date.now();
+      if (LIVE && s.name === 'unegui') {
+        // Ангилал бүр = тусдаа ажил → олон бот зэрэг (адаптерийн 4 сек зай нийтлэг тул сайтад ачаалал нэмэгдэхгүй)
+        for (const key of Object.keys(unegui.CATS)) await db.run('INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, ?, ?)', s.name, key, key === 'sale' || key === 'rent' ? 9 : 5);
+        await db.run("INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, 'recheck', 3)", s.name);
+        continue;
+      }
       await db.run("INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, 'delta', ?)", s.name, Math.round(s.trust * 10));
     }
   } catch (e) { console.error('[collector orchestrate]', e.message); }
@@ -224,38 +233,37 @@ async function takedownLatest() {
 }
 
 // ---- Бодит горим: unegui.mn нэг мөчлөг (зарна + түрээс толгой хуудсууд → шүүлт → сан) ----
-async function liveCycle(source, w) {
-  const live = state.live;
-  for (const dealType of ['sale', 'rent']) {
-    w.status = 'unegui ' + (dealType === 'sale' ? 'зарна' : 'түрээс');
-    let r;
-    try { r = await unegui.cycle(dealType, { knownIds: live.known }); }
-    catch (e) { live.errors++; logEvent({ kind: 'error', source: source.name, reason: e.message }); continue; }
-    state.stats.fetched += r.pages.length;
-    for (const p of r.pages) {
-      const key = dealType + ':' + p.page;
-      if (p.hash && live.pageHash[key] === p.hash) state.stats.skipped304++; // агуулга өөрчлөгдөөгүй (304-тэй адил утга)
-      live.pageHash[key] = p.hash;
-    }
-    let detailBudget = DETAIL_PER_CYCLE;
-    w.status = 'боловсруулж';
-    for (const raw of r.adverts) {
-      const isNew = !live.known.has(raw.source_id);
-      if (isNew && raw.category === 'apartment' && !raw.areaText && detailBudget > 0 && raw.url) {
-        detailBudget--;
-        try {
-          const d = await unegui.detail(raw.url); live.detailFetched++;
-          if (d.area) raw.areaText = String(d.area);
-          raw.floor = d.floor; raw.total_floors = d.total_floors;
-          if (d.built_year && d.built_year >= new Date().getFullYear() - 1) raw.is_new = 1;
-        } catch (e) { live.errors++; }
-      }
-      try { await process1(raw, source); } catch (e) { live.errors++; console.error('[collector live process1]', e.message); }
-      live.known.set(raw.source_id, raw.priceText);
-    }
+// Нэг ангиллын ажил (catKey: sale/rent/office_sale/…) — ботууд ангилал бүрийг зэрэг авна; адаптерийн 4 сек зай нийтлэг
+async function liveCycle(source, w, catKey) {
+  const live = state.live; const cat = unegui.CATS[catKey]; if (!cat) return;
+  w.status = 'unegui · ' + cat.label; w.source = cat.label;
+  let r;
+  try { r = await unegui.cycle(catKey, { knownIds: live.known }); }
+  catch (e) { live.errors++; logEvent({ kind: 'error', source: source.name, reason: cat.label + ': ' + e.message }); return; }
+  state.stats.fetched += r.pages.length;
+  for (const p of r.pages) {
+    const key = catKey + ':' + p.page;
+    if (p.hash && live.pageHash[key] === p.hash) state.stats.skipped304++; // агуулга өөрчлөгдөөгүй (304-тэй адил утга)
+    live.pageHash[key] = p.hash;
   }
-  await recheckDelisted(source, w);
-  live.cycles++; live.lastCycleAt = Date.now();
+  let detailBudget = cat.category === 'apartment' ? DETAIL_PER_CYCLE : 3;
+  w.status = 'боловсруулж · ' + cat.label;
+  for (const raw of r.adverts) {
+    const isNew = !live.known.has(raw.source_id);
+    if (isNew && raw.category === 'apartment' && !raw.areaText && detailBudget > 0 && raw.url) {
+      detailBudget--;
+      try {
+        const d = await unegui.detail(raw.url); live.detailFetched++;
+        if (d.area) raw.areaText = String(d.area);
+        raw.floor = d.floor; raw.total_floors = d.total_floors;
+        if (d.built_year && d.built_year >= new Date().getFullYear() - 1) raw.is_new = 1;
+      } catch (e) { live.errors++; }
+    }
+    try { await process1(raw, source); } catch (e) { live.errors++; console.error('[collector live process1]', e.message); }
+    live.known.set(raw.source_id, raw.priceText);
+  }
+  live.byCat = live.byCat || {}; live.byCat[catKey] = { label: cat.label, adverts: r.adverts.length, pages: r.pages.length, at: Date.now() };
+  if (catKey === 'sale') { live.cycles++; live.lastCycleAt = Date.now(); }
 }
 // Толгой хуудсанд удаан харагдаагүй зар сайтад хэвээр байна уу — 404 бол «хасагдсан» (зарагдсан/буцаасан): зах зээлд байсан хоног = баримт
 async function recheckDelisted(source, w) {
@@ -296,7 +304,7 @@ async function worker(w) {
       w.status = 'татаж байна'; w.source = source.label; w.since = Date.now();
       try {
         if (LIVE) {
-          if (source.name === 'unegui') await liveCycle(source, w);
+          if (source.name === 'unegui') { if (job.kind === 'recheck') await recheckDelisted(source, w); else await liveCycle(source, w, job.kind); }
           await db.run("UPDATE fetch_jobs SET status='done' WHERE id=?", job.id);
           continue;
         }

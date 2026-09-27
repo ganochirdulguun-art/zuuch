@@ -4,7 +4,23 @@
 const crypto = require('node:crypto');
 
 const BASE = 'https://www.unegui.mn';
-const CATS = { sale: '/l-hdlh/l-hdlh-zarna/oron-suuts-zarna/', rent: '/l-hdlh/l-hdlh-treesllne/oron-suuts/' };
+// Ангиллууд: key → зам, хэлцлийн төрөл, объектын ангилал, нэр (2026-09-27 сайтаас)
+const CATS = {
+  sale: { path: '/l-hdlh/l-hdlh-zarna/oron-suuts-zarna/', dealType: 'sale', category: 'apartment', label: 'Орон сууц зарна', regStart: 6 },
+  rent: { path: '/l-hdlh/l-hdlh-treesllne/oron-suuts/', dealType: 'rent', category: 'apartment', label: 'Орон сууц түрээс', regStart: 4 },
+  house_sale: { path: '/l-hdlh/l-hdlh-zarna/a-o-s-hauszuslan/', dealType: 'sale', category: 'house', label: 'АОС/хаус/зуслан зарна', regStart: 2 },
+  house_rent: { path: '/l-hdlh/l-hdlh-treesllne/aos-haus/', dealType: 'rent', category: 'house', label: 'АОС/хаус түрээс', regStart: 2 },
+  hashaa_sale: { path: '/l-hdlh/l-hdlh-zarna/hashaa-bajshin/', dealType: 'sale', category: 'house', label: 'Хашаа байшин зарна', regStart: 2 },
+  hashaa_rent: { path: '/l-hdlh/l-hdlh-treesllne/hashaa-bajshinger/', dealType: 'rent', category: 'house', label: 'Хашаа байшин/гэр түрээс', regStart: 2 },
+  office_sale: { path: '/l-hdlh/l-hdlh-zarna/azhlyin-bajroffis-zarna/', dealType: 'sale', category: 'office', label: 'Оффис зарна', regStart: 2 },
+  office_rent: { path: '/l-hdlh/l-hdlh-treesllne/azhlyin-bajroffis/', dealType: 'rent', category: 'office', label: 'Оффис түрээс', regStart: 2 },
+  commerce_sale: { path: '/l-hdlh/l-hdlh-zarna/hudaldaa-jlchilgeenij-talbaj-zarna/', dealType: 'sale', category: 'commercial', label: 'Худалдаа үйлчилгээ зарна', regStart: 2 },
+  commerce_rent: { path: '/l-hdlh/l-hdlh-treesllne/hudaldaa-jlchilgeenij-talbaj-treesllne/', dealType: 'rent', category: 'commercial', label: 'Худалдаа үйлчилгээ түрээс', regStart: 2 },
+  object_sale: { path: '/l-hdlh/l-hdlh-zarna/obekt/', dealType: 'sale', category: 'object', label: 'Объект зарна', regStart: 2 },
+  warehouse_sale: { path: '/l-hdlh/l-hdlh-zarna/garazhskladkont-r/', dealType: 'sale', category: 'warehouse', label: 'Гараж/склад/контейнер зарна', regStart: 2 },
+  warehouse_rent: { path: '/l-hdlh/l-hdlh-treesllne/jldver-aguulah-treesllne/', dealType: 'rent', category: 'warehouse', label: 'Үйлдвэр/агуулах түрээс', regStart: 2 },
+  land_sale: { path: '/l-hdlh/l-hdlh-zarna/gazar/', dealType: 'sale', category: 'land', label: 'Газар зарна', regStart: 2 },
+};
 const CONTACT = process.env.ZUUCH_BOT_CONTACT || 'holboo@zuuch.mn';
 // HTTP толгой = зөвхөн ASCII (кирилл бичвэл fetch ByteString алдаа өгнө)
 const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot; ${CONTACT}; read-only monitoring)`;
@@ -123,7 +139,8 @@ function roomsFromSlug(slug) {
 const hashKey = (k, salt) => crypto.createHash('sha256').update(salt + '|' + k).digest('hex').slice(0, 20);
 
 // ---- Жагсаалтын хуудас → түүхий зарууд (баримт л) ----
-function parseList(html, dealType = 'sale') {
+function parseList(html, catKey = 'sale') {
+  const cat = CATS[catKey] || CATS.sale; const dealType = cat.dealType;
   const blob = rscBlob(html);
   const k = blob.indexOf('"adverts":[');
   if (k < 0) return { adverts: [], hash: null };
@@ -133,10 +150,12 @@ function parseList(html, dealType = 'sale') {
     const slug = a.rubric && a.rubric.slug;
     const rooms = roomsFromSlug(slug);
     const isRoom = slug === 'hazhuu-r';
+    // Орон сууцны ангилалд өрөөний slug (N-r) шаардана; бусад ангилалд (оффис, объект, газар…) ангиллыг замаас авна
+    const category = cat.category === 'apartment' ? (isRoom ? 'room' : rooms ? 'apartment' : 'other') : cat.category;
     return {
-      source: 'unegui', source_id: String(a.id), deal_type: dealType,
+      source: 'unegui', source_id: String(a.id), deal_type: dealType, cat: catKey,
       title: String(a.title || '').trim(),
-      category: isRoom ? 'room' : (rooms ? 'apartment' : 'other'),
+      category,
       districtText: loc[1] || '', khoroolol: loc[2] || '',
       roomsText: rooms ? String(rooms) : '',
       areaText: areaFromTitle(a.title) != null ? String(areaFromTitle(a.title)) : '',
@@ -180,35 +199,38 @@ function parseDetail(html) {
 }
 
 // ---- Нэг мөчлөг: ангилал бүрд VIP толгой (1-р хуудас) + энгийн зарын толгой хуудас ----
-const regStart = { sale: 6, rent: 4 };
-async function fetchPage(dealType, page) {
-  const path = CATS[dealType] + (page > 1 ? `?page=${page}` : '');
+const regStart = Object.fromEntries(Object.entries(CATS).map(([k, c]) => [k, c.regStart || 2]));
+async function fetchPage(catKey, page) {
+  const cat = CATS[catKey]; if (!cat) throw new Error('ангилал алга: ' + catKey);
+  const path = cat.path + (page > 1 ? `?page=${page}` : '');
   const r = await politeFetch(path);
-  const parsed = parseList(r.html, dealType);
+  const parsed = parseList(r.html, catKey);
   return { page, status: r.status, ...parsed };
 }
-async function cycle(dealType, opts = {}) {
+// Нэг ангиллын мөчлөг: VIP толгой (1-р хуудас) + энгийн зарын эхний хуудас (+1 бүгд шинэ бол)
+async function cycle(catKey, opts = {}) {
+  const cat = CATS[catKey]; if (!cat) throw new Error('ангилал алга: ' + catKey);
   const maxPages = opts.maxPages || 4;
   const pages = []; const seen = new Set(); const adverts = [];
   const push = (p) => { pages.push({ page: p.page, n: p.adverts.length, hash: p.hash, status: p.status }); for (const a of p.adverts) if (!seen.has(a.source_id)) { seen.add(a.source_id); adverts.push(a); } };
-  push(await fetchPage(dealType, 1));
-  // Энгийн зарын эхний хуудсыг олно (VIP/top хуудсууд өөрчлөгддөг)
-  let p = Math.max(2, regStart[dealType]); let found = null;
-  for (let tries = 0; tries < 3 && pages.length < maxPages; tries++) {
-    const pg = await fetchPage(dealType, p);
+  const first = await fetchPage(catKey, 1); push(first);
+  // Жижиг ангилалд 1-р хуудсанд энгийн зар шууд байдаг → нэмэлт хуудас хэрэггүй
+  if (first.adverts.some((a) => a.ad_type === 'regular') && first.adverts.length < 60) return { catKey, dealType: cat.dealType, category: cat.category, label: cat.label, pages, adverts };
+  let p = Math.max(2, regStart[catKey]); let found = first.adverts.some((a) => a.ad_type === 'regular') ? first : null;
+  for (let tries = 0; !found && tries < 3 && pages.length < maxPages; tries++) {
+    const pg = await fetchPage(catKey, p);
     push(pg);
     const firstRegular = pg.adverts.findIndex((a) => a.ad_type === 'regular');
-    if (firstRegular === 0 && p > 2) { regStart[dealType] = p - 1; found = pg; break; } // магадгүй өмнөх хуудсанд ч энгийн зар байгаа — дараагийн мөчлөгт нэг хуудас урагш
-    if (firstRegular > 0) { regStart[dealType] = p; found = pg; break; }
+    if (firstRegular === 0 && p > 2) { regStart[catKey] = p - 1; found = pg; break; }
+    if (firstRegular > 0) { regStart[catKey] = p; found = pg; break; }
     if (!pg.adverts.length) break;
     p++;
   }
-  // Бүгд шинэ (өмнө нь хараагүй) бол дараагийн хуудсыг ч авна
   if (found && opts.knownIds && pages.length < maxPages) {
     const regs = found.adverts.filter((a) => a.ad_type === 'regular');
-    if (regs.length && regs.every((a) => !opts.knownIds.has(a.source_id))) push(await fetchPage(dealType, p + 1));
+    if (regs.length && regs.every((a) => !opts.knownIds.has(a.source_id))) push(await fetchPage(catKey, p + 1));
   }
-  return { dealType, pages, adverts };
+  return { catKey, dealType: cat.dealType, category: cat.category, label: cat.label, pages, adverts };
 }
 async function detail(url) {
   const path = String(url || '').replace(BASE, '');
@@ -225,6 +247,6 @@ async function stillListed(url) {
   if (r.status !== 200) return null;
   return !/зар идэвхгүй|зар олдсонгүй|устгагдсан/i.test(r.html.slice(0, 200000)) ;
 }
-function stats() { return { ua: UA, requests: net.requests, bytes: net.bytes, lastStatus: net.lastStatus, cooldownUntil: net.cooldownUntil || null, regStart: { ...regStart }, gapMs: MIN_GAP_MS, cats: CATS }; }
+function stats() { return { ua: UA, requests: net.requests, bytes: net.bytes, lastStatus: net.lastStatus, cooldownUntil: net.cooldownUntil || null, regStart: { ...regStart }, gapMs: MIN_GAP_MS, cats: Object.fromEntries(Object.entries(CATS).map(([k, c]) => [k, c.label])) }; }
 
-module.exports = { allowed, rscBlob, balancedJson, relDays, areaFromTitle, roomsFromSlug, parseList, parseDetail, cycle, detail, stillListed, stats, hashKey, DISTRICTS, BASE, UA };
+module.exports = { allowed, rscBlob, balancedJson, relDays, areaFromTitle, roomsFromSlug, parseList, parseDetail, cycle, detail, stillListed, stats, hashKey, DISTRICTS, BASE, UA, CATS };

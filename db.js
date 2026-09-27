@@ -323,6 +323,7 @@ ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS floor INTEGER;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS total_floors INTEGER;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS ad_type TEXT;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS is_business INTEGER DEFAULT 0;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'apartment';
 DELETE FROM market_listings a USING market_listings b
   WHERE a.id < b.id AND a.source = b.source AND a.source_id = b.source_id AND a.source_id <> '' AND a.collected_at IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source, source_id) WHERE source_id <> '';

@@ -11,7 +11,7 @@ async function valuation({ district, rooms, area, isNew, floor, totalFloors }) {
   if (!idx) return null;
 
   const comps = await db.all(`SELECT price, area FROM market_listings
-    WHERE active=1 AND deal_type='sale' AND district=? AND rooms=? AND area BETWEEN ? AND ?`, district, rooms, area * 0.8, area * 1.2);
+    WHERE active=1 AND deal_type='sale' AND COALESCE(category,'apartment')='apartment' AND district=? AND rooms=? AND area BETWEEN ? AND ?`, district, rooms, area * 0.8, area * 1.2);
 
   let baseM2 = idx.median_m2 * (ROOMS_K[rooms] || 1);
   let source = 'индекс';
@@ -75,7 +75,7 @@ async function matchesForRequest(reqId, companyId) {
     ? await db.all("SELECT * FROM properties WHERE status='active' AND company_id=?", companyId)
     : await db.all("SELECT * FROM properties WHERE status='active'");
   const internal = props.map(p => ({ ...p, score: matchScore(req, p) })).filter(p => p.score >= 50).sort((a, b) => b.score - a.score).slice(0, 10);
-  const mls = await db.all('SELECT * FROM market_listings WHERE active=1');
+  const mls = await db.all("SELECT * FROM market_listings WHERE active=1 AND COALESCE(category,'apartment')='apartment'");
   const market = mls.map(m => ({ ...m, created_at: m.listed_at, score: matchScore(req, m) })).filter(m => m.score >= 60).sort((a, b) => b.score - a.score).slice(0, 10);
   return { request: req, internal, market };
 }
@@ -83,7 +83,7 @@ async function matchesForRequest(reqId, companyId) {
 // ---- А5: Боломж илрүүлэгч ----
 async function opportunities() {
   // Бодит зарын талбай тодорхойгүй (0) байж болно — м² үнэ тооцохгүй
-  const rows = await db.all("SELECT * FROM market_listings WHERE active=1 AND deal_type='sale' AND area > 0 AND price > 0");
+  const rows = await db.all("SELECT * FROM market_listings WHERE active=1 AND deal_type='sale' AND COALESCE(category,'apartment')='apartment' AND area > 0 AND price > 0");
   const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
   const idxMap = new Map(idxRows.map(i => [i.district + '|' + i.is_new, i]));
   const out = [];
