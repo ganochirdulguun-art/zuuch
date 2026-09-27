@@ -29,9 +29,24 @@ const texTile = (base = '#eeece8', n = 4) => canvasTex((g, s) => {
 let data, plan, scene, camera, renderer, rooms = [], byId = {}, doorGraph = {};
 const mats = {};
 const furnGroup = new THREE.Group();
+// Цайвар царс банзан шал (процедур): 0.2 × 1.6 м банз, шаталсан, нарийн зүүн шугам, зөөлөн ширхэг — лавлагаа рендерийн хэв маяг
+const texOakPlanks = () => canvasTex((g, s) => {
+  g.fillStyle = '#d8c3a3'; g.fillRect(0, 0, s, s);
+  const cols = 4, rows = 8; // 4 банз өргөнөөр (0.8 м), 1 давталт = 0.8 × 3.2 м
+  for (let c = 0; c < cols; c++) {
+    const off = (c % 2) * (s / rows / 2);
+    for (let r = -1; r <= rows; r++) {
+      const x = c * (s / cols), y = r * (s / rows) + off; const l = 0.93 + Math.random() * 0.12;
+      g.fillStyle = `rgb(${Math.round(216 * l)},${Math.round(195 * l)},${Math.round(163 * l)})`; g.fillRect(x + 1, y + 1, s / cols - 2, s / rows - 2);
+      for (let k = 0; k < 6; k++) { g.strokeStyle = `rgba(120,90,55,${0.05 + Math.random() * 0.07})`; g.lineWidth = 1 + Math.random(); const gx = x + 4 + Math.random() * (s / cols - 8); g.beginPath(); g.moveTo(gx, y + 2); g.bezierCurveTo(gx + 6, y + s / rows / 3, gx - 6, y + s / rows / 1.5, gx + 3, y + s / rows - 2); g.stroke(); }
+      g.strokeStyle = 'rgba(70,50,30,.35)'; g.lineWidth = 1.2; g.strokeRect(x + 1, y + 1, s / cols - 2, s / rows - 2);
+    }
+  }
+}, 1024);
 function initMats() {
-  mats.floorWood = () => pbr('floor_wood', [1, 1]);
-  mats.wall = () => pbr('wall', [1, 1], { color: 0xf5f3ee });
+  const planks = texOakPlanks();
+  mats.floorWood = () => { const m = new THREE.MeshStandardMaterial({ map: planks.clone(), roughness: 0.55, normalMap: tex('/textures/wood_nor.jpg', [2, 2], false), normalScale: new THREE.Vector2(0.35, 0.35) }); m.map.needsUpdate = true; return m; };
+  mats.wall = () => pbr('wall', [1, 1], { color: 0xe3d9cb }); // бежевэр (greige) хана
   mats.wood = pbr('wood', [1, 1]);
   mats.marble = pbr('marble', [1, 1], { roughness: 0.35 });
   mats.fabricNor = tex('/textures/fabric_nor.jpg', [3, 3], false); mats.fabricRough = tex('/textures/fabric_rough.jpg', [3, 3], false);
@@ -43,8 +58,9 @@ function initMats() {
     const cols = 4, rows = 12; for (let i = 0; i <= cols; i++) { g.beginPath(); g.moveTo(i * s / cols, 0); g.lineTo(i * s / cols, s); g.stroke(); } for (let i = 0; i <= rows; i++) { g.beginPath(); g.moveTo(0, i * s / rows); g.lineTo(s, i * s / rows); g.stroke(); }
     const band = s * (1 - 1.2 / 2.7); g.fillStyle = '#7c93a8'; g.fillRect(0, band - s / rows, s, s / rows);
   }, 512, [1, 1]), roughness: 0.2 });
-  mats.plinth = new THREE.MeshStandardMaterial({ color: 0x4b4238, roughness: 0.6 });
-  mats.ceil = new THREE.MeshStandardMaterial({ color: 0xfdfdfb, roughness: 0.95 });
+  mats.plinth = new THREE.MeshStandardMaterial({ color: 0xf6f4f0, roughness: 0.5 }); // цагаан хөвөө (лавлагаа шиг)
+  mats.ceil = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
+  mats.led = new THREE.MeshBasicMaterial({ color: 0xfff0d2 }); // таазны хонхорхойн LED тууз (өөрөө гэрэлтэнэ)
   mats.glass = new THREE.MeshPhysicalMaterial({ color: 0xcfe8ff, transmission: 0.9, transparent: true, opacity: 0.5, roughness: 0.03, side: THREE.DoubleSide });
   mats.frame = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
   mats.door = new THREE.MeshStandardMaterial({ map: tex('/textures/wood_diff.jpg', [1, 2]), roughness: 0.55 });
@@ -90,9 +106,18 @@ function buildRoom(r) {
   const wet = r.type === 'kitchen' || r.type === 'bath';
   const floorMat = r.type === 'bath' ? mats.bathFloor.clone() : wet ? mats.tile.clone() : mats.floorWood();
   if (wet) { floorMat.map = floorMat.map.clone(); floorMat.map.repeat.set(r.w / 1.2, r.h / 1.2); floorMat.map.needsUpdate = true; }
-  else { for (const k of ['map', 'normalMap', 'roughnessMap']) { floorMat[k] = floorMat[k].clone(); floorMat[k].repeat.set(r.w / 2.5, r.h / 2.5); floorMat[k].needsUpdate = true; } }
+  else { floorMat.map.repeat.set(r.w / 0.8, r.h / 3.2); floorMat.map.needsUpdate = true; floorMat.normalMap = floorMat.normalMap.clone(); floorMat.normalMap.repeat.set(r.w / 1.5, r.h / 1.5); floorMat.normalMap.needsUpdate = true; }
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), floorMat); floor.rotation.x = -Math.PI / 2; floor.position.set(r.x + r.w / 2, 0, r.y + r.h / 2); floor.receiveShadow = true; g.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), mats.ceil); ceil.rotation.x = Math.PI / 2; ceil.position.set(r.x + r.w / 2, H, r.y + r.h / 2); g.add(ceil);
+  // Таазны хонхорхой (cove): ханын дагуу 0.3 м өргөн, 0.1 м зузаан цагаан ирмэг + дотор талд нь дулаан LED тууз (лавлагаа рендерийн хэв маяг)
+  if (r.w > 2 && r.h > 2 && r.type !== 'bath') {
+    const bw = 0.3, bh = 0.1, led = 0.025;
+    const ring = [[r.x + r.w / 2, r.y + bw / 2, r.w, bw], [r.x + r.w / 2, r.y + r.h - bw / 2, r.w, bw], [r.x + bw / 2, r.y + r.h / 2, bw, r.h], [r.x + r.w - bw / 2, r.y + r.h / 2, bw, r.h]];
+    for (const [px, pz, sx, sz] of ring) { const b = box(sx, bh, sz, mats.ceil); b.position.set(px, H - bh / 2, pz); g.add(b); }
+    const inner = [[r.x + r.w / 2, r.y + bw + led / 2, r.w - 2 * bw, led], [r.x + r.w / 2, r.y + r.h - bw - led / 2, r.w - 2 * bw, led], [r.x + bw + led / 2, r.y + r.h / 2, led, r.h - 2 * bw], [r.x + r.w - bw - led / 2, r.y + r.h / 2, led, r.h - 2 * bw]];
+    for (const [px, pz, sx, sz] of inner) { const s = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.02, sz), mats.led); s.position.set(px, H - bh + 0.01, pz); g.add(s); }
+    const glow = new THREE.PointLight(0xffe6c0, 3.5, 0, 1.8); glow.position.set(r.x + r.w / 2, H - 0.12, r.y + r.h / 2); g.add(glow);
+  }
   const wallMat = r.type === 'bath' ? mats.bathWall.clone() : mats.wall();
   if (r.type === 'bath') { wallMat.map = wallMat.map.clone(); wallMat.map.repeat.set(Math.max(r.w, r.h) / 0.9, 1); wallMat.map.needsUpdate = true; }
   else for (const k of ['map', 'normalMap', 'roughnessMap']) { wallMat[k].repeat.set(2.2, 1.4); }
@@ -113,8 +138,6 @@ function buildRoom(r) {
       b.position.set(e.axis === 'x' ? mid : cc, y0 + hgt / 2, e.axis === 'x' ? cc : mid); g.add(b);
       // Шалны хөвөө (plinth) — хана/шалны зааг тодорхой харагдана (хаалганы нээлхийд байхгүй)
       if (y0 === 0 && m === wallMat) { const p = e.axis === 'x' ? box(len, 0.08, WALL_T + 0.03, mats.plinth) : box(WALL_T + 0.03, 0.08, len, mats.plinth); p.position.set(e.axis === 'x' ? mid : cc, 0.04, e.axis === 'x' ? cc : mid); g.add(p); }
-      // Таазны хөвөө (crown) — хана/таазны зааг
-      if (y1 === H && m === wallMat) { const p = e.axis === 'x' ? box(len, 0.06, WALL_T + 0.03, mats.matteWhite) : box(WALL_T + 0.03, 0.06, len, mats.matteWhite); p.position.set(e.axis === 'x' ? mid : cc, H - 0.03, e.axis === 'x' ? cc : mid); g.add(p); }
     };
     let cur = e.a;
     for (const o of ops) {
@@ -184,8 +207,7 @@ function furnish(r) {
     place(flat(2.4, 1.7, mats.rug), 0, 0.15, 0.004);
     model('modern_coffee_table_01', 0, 0.1, Math.PI / 2);
     if (width > 3.4) model('modern_arm_chair_01', width / 2 - 0.75, 0.3, -Math.PI / 2);
-    model('hanging_picture_frame_01', width / 2 - 0.1, 0.9, Math.PI / 2, 1.5);
-    model('wall_clock', -width / 2 + 0.1, 0.5, -Math.PI / 2, 1.9);
+    model('wall_clock', -1.4, backV - 0.03, 0, 1.95); // ТВ-ийн хананд, дэлгэцийн хажууд
     if (width > 4.6) model('Shelf_01', -width / 2 + 0.62, backV - 0.14, 0);
   } else if (T === 'bedroom') {
     const bw = width > 3.2 ? 1.7 : 1.45;
