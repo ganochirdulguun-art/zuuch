@@ -51,7 +51,7 @@ h1,h2,h3{font-family:"Montserrat","Segoe UI",sans-serif;font-weight:500}
 #login-view{min-height:100vh;display:flex;align-items:stretch}
 /* Зүүн: хөдөлгөөнт брэнд самбар · Баруун: нэвтрэх маягт */
 .login-hero{flex:1.35;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px;background:radial-gradient(ellipse at 50% 45%,#1E6BE6 0%,#0F3FB0 45%,#031245 100%);overflow:hidden}
-.login-hero img{width:min(100%,980px);height:auto;display:block;border-radius:14px;box-shadow:0 20px 60px rgba(0,10,40,.45)}
+.login-hero img,.login-hero video{width:min(100%,980px);height:auto;display:block;border-radius:14px;box-shadow:0 20px 60px rgba(0,10,40,.45);background:#031245}
 .login-hero p{color:#BFE9FF;font-size:15px;margin:0;text-align:center;max-width:560px;line-height:1.6}
 .login-side{flex:1;display:flex;align-items:center;justify-content:center;padding:20px;min-width:360px}
 @media(max-width:900px){.login-hero{display:none}.login-side{min-width:0}}
@@ -146,7 +146,7 @@ nav.menu button.active .ic{background:rgba(11,22,38,.14);color:var(--side-accent
 <body>
 
 <div id="login-view">
-  <div class="login-hero" aria-hidden="true"><img src="/brand/zuuch-logo-live.svg" alt="Зууч — ухаалаг систем" width="980" height="560">
+  <div class="login-hero" aria-hidden="true"><video class="logo-vid" muted loop playsinline preload="none" width="1920" height="1080" poster="/brand/zuuch-logo-loop-poster.webp" aria-label="Зууч — ухаалаг систем"><source src="/brand/zuuch-logo-loop-av1.mp4" type='video/mp4; codecs="av01.0.09M.10"'><source src="/brand/zuuch-logo-loop.mp4" type='video/mp4; codecs="avc1.64002A"'></video>
     <p>Зах зээлийг өдөр шөнөгүй ажиглаж, үнэ, байршил, боломжийг AI-аар шинжилдэг үл хөдлөх хөрөнгийн ухаалаг систем.</p></div>
   <div class="login-side">
   <form class="login-card" id="login-form">
@@ -205,6 +205,17 @@ nav.menu button.active .ic{background:rgba(11,22,38,.14);color:var(--side-accent
 </div>
 
 <div id="modal-root"></div>
+<script>
+/* Хөдөлгөөнт лого (давталтын видео): харагдах үедээ л ачаалж тоглуулна, харагдахгүй болоход зогсооно; reduced-motion үед зөвхөн poster */
+(function () {
+  var vids = document.querySelectorAll('video.logo-vid'); if (!vids.length) return;
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function start(v) { if (reduce) return; v.muted = true; v.preload = 'auto'; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  if (!('IntersectionObserver' in window)) { vids.forEach(start); return; }
+  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) start(e.target); else if (!e.target.paused) e.target.pause(); }); }, { threshold: 0.15 });
+  vids.forEach(function (v) { io.observe(v); });
+})();
+</script>
 <script src="/icons.js?v=1"></script>
 <script src="app.js"></script>
 </body>

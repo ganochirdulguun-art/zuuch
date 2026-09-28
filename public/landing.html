@@ -90,7 +90,7 @@ h1 .g{background:linear-gradient(120deg,#38BDF8,#EAF4FF);-webkit-background-clip
 .band p{color:var(--muted);max-width:56ch;margin:0 auto 22px}
 
 .brand-show{margin:34px 0 10px;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,20,70,.55),0 0 0 1px rgba(90,200,255,.18)}
-.brand-show img{display:block;width:100%;height:auto}
+.brand-show img,.brand-show video{display:block;width:100%;height:auto;background:#031245}
 footer{border-top:1px solid var(--line);padding:26px 0 40px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 footer b{color:var(--ink)}
 @media(max-width:560px){ .hero{padding:44px 0 20px} .stats{margin:40px 0 10px;gap:22px} }
@@ -129,7 +129,7 @@ footer b{color:var(--ink)}
   </header>
 
   <section class="brand-show" aria-label="Зууч — ухаалаг систем">
-    <img src="/brand/zuuch-logo-live.svg" alt="Зууч — ухаалаг систем" width="1100" height="629" loading="lazy">
+    <video class="logo-vid" muted loop playsinline preload="none" width="1920" height="1080" poster="/brand/zuuch-logo-loop-poster.webp" aria-label="Зууч — ухаалаг систем"><source src="/brand/zuuch-logo-loop-av1.mp4" type='video/mp4; codecs="av01.0.09M.10"'><source src="/brand/zuuch-logo-loop.mp4" type='video/mp4; codecs="avc1.64002A"'></video>
   </section>
 
   <section class="stats" aria-label="Зах зээлийн үзүүлэлт">
@@ -263,6 +263,17 @@ footer b{color:var(--ink)}
     const el = document.getElementById('live-count'); let n = 3340;
     setInterval(() => { n += Math.floor(Math.random() * 4); el.textContent = n.toLocaleString('en-US'); }, 2600);
   }
+})();
+</script>
+<script>
+/* Хөдөлгөөнт лого (давталтын видео): харагдах үедээ л ачаалж тоглуулна, харагдахгүй болоход зогсооно; reduced-motion үед зөвхөн poster */
+(function () {
+  var vids = document.querySelectorAll('video.logo-vid'); if (!vids.length) return;
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function start(v) { if (reduce) return; v.muted = true; v.preload = 'auto'; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  if (!('IntersectionObserver' in window)) { vids.forEach(start); return; }
+  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) start(e.target); else if (!e.target.paused) e.target.pause(); }); }, { threshold: 0.15 });
+  vids.forEach(function (v) { io.observe(v); });
 })();
 </script>
 </body>
