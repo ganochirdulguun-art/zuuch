@@ -272,8 +272,10 @@ footer b{color:var(--ink)}
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function start(v) { if (reduce) return; v.muted = true; v.preload = 'auto'; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
   if (!('IntersectionObserver' in window)) { vids.forEach(start); return; }
-  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) start(e.target); else if (!e.target.paused) e.target.pause(); }); }, { threshold: 0.15 });
+  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { e.target._inView = e.isIntersecting; if (e.isIntersecting) start(e.target); else if (!e.target.paused) e.target.pause(); }); }, { threshold: 0.15 });
   vids.forEach(function (v) { io.observe(v); });
+  // таб ард орход хөтөч дуугүй видеог зогсоодог — буцаж харагдахад үргэлжлүүлнэ
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) vids.forEach(function (v) { if (v._inView && v.paused) start(v); }); });
 })();
 </script>
 </body>
