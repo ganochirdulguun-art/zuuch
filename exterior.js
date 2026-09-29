@@ -152,28 +152,209 @@ function plainPrior(q) {
 const HIGHER_ED = /(дээд сургууль|их сургууль|институт|коллеж|university|college|institute)/i;
 // OSM-д «college» гэж тэмдэглэсэн ч нэрээрээ ерөнхий боловсролын сургууль (жишээ: «Хүрээ дунд сургууль»)
 const GENERAL_ED = /(дунд сургууль|бага сургууль|ерөнхий боловсрол|ЕБС|цогцолбор сургууль|secondary|high school|elementary)/i;
+// Цэгийн ангилалд (барилгын category()-д нөлөөлөхгүйгээр) өргөтгөсөн хувилбар
+const POI_HIGHER = /(дээд сургууль|их сургууль|институт|коллеж|академи|university|college|institute|academy)/i;
+const POI_GENERAL = /(дунд сургууль|бага сургууль|ахлах сургууль|ерөнхий боловсрол|ЕБС|цогцолбор сургууль|secondary|high school|elementary)/i;
+// OSM-д олон цэцэрлэг/сургууль/хороо зөвхөн НЭРТЭЙ БАРИЛГА (building=yes/school/kindergarten, amenity таггүй) — amenity-гоор л хайвал
+// орхигдоно (2026-09-30: 15, 30-р цэцэрлэг, 28, 40-р сургууль гэрээс 410 м дотор байсан ч аялалд ороогүй). Тиймээс таг + барилгын таг + нэрээр.
+const LATIN = /^[\x00-\x7F’‘`´–—]*$/;
+// Монгол интерфэйст: name нь латин, name:mn нь кирилл бол name:mn («Bichil Manal» → «Бичилманал-ӨЭМТ»)
+const poiName = (t) => { const n = String(t.name || '').replace(/\s+/g, ' ').trim(), mn = String(t['name:mn'] || '').replace(/\s+/g, ' ').trim(); return (mn && (!n || (LATIN.test(n) && !LATIN.test(mn))) ? mn : n || mn).slice(0, 60); };
+const NM = { // нэрээр ангилах
+  kinder: /цэцэрлэг(?!т)|kindergarten|детский сад/i,
+  school: /сургууль|school|лицей|гимнази/i,
+  health: /эмнэлэг|эмнэлг|клиник|поликлиник|ӨЭМТ|өрхийн|эрүүл мэндийн төв|төрөх|hospital|clinic|dental|шүдний/i,
+  pharmacy: /эмийн сан|pharm|аптек/i,
+  bank: /банк|bank/i,
+  post: /шуудан|post office/i,
+  gov: /хороо(?!лол)|khoroo|horoo|цагдаа|police|засаг дарга|нийгмийн даатгал|татварын|иргэний бүртгэл|бүртгэлийн|халамж|хөдөлмөр|төрийн үйлчилгээ|онцгой байдал|гал команд/i,
+  mall: /худалдаа(ны)?,? ?(үйлчилгээний )?төв|их дэлгүүр|их дэлүүр|плаза|plaza|(^|[\s"«])зах($|[\s"»])|market(?!.*mini)|молл|(^|\s)mall($|\s)|megastore|department store|shopping|центр|(^|\s)cent(er|re)($|\s)|(^|\s)төв$/i,
+};
+const NOT = { // нэрээр хасах (ангиллын таг байсан ч): лаборатори, ББСБ, сургалтын төв, биллиард, ресторан г.м.
+  health: /лаборатори|laborator|бариа|массаж|massage|гоо сайхан|тураах|салон|(^|\s)spa($|\s)|мал эмнэлэг|малын|амьтны|(^|\s)vet|эмийн сан|pharm|аптек|тоног төхөөрөмж|сургалт|халдварын сэргийлэлт|хяналт/i,
+  bank: /банк бус|ББСБ|финанс|financ|кредит|credit|ХЗХ|хадгаламж зээлийн|(^|\s)ATM($|\s)|АТМ|даатгал|ломбард/i,
+  school: /сургалтын|сургалт|авто сургууль|жолооч|бүжг|dance|ballet|балет|art school|хөгжим|music|хэлний|language|educat|organization|холбоо|байгууллага|спорт/i,
+  college: /сургалтын төв|тэнхим|практик сургалт/i,
+  sport: /биллиард|billiard|караоке|karaoke|компьютер|тоглоомын газар|бүжиг|бүжг|dance|ballet|балет|тураах|гоо сайхан|салон/i,
+  mall: /ресторан|restaurant|шашлык|shashlik|кафе|(^|\s)cafe|паб|(^|\s)pub($|\s)|караоке|karaoke|lounge|зочид буудал|hotel|сэлбэг|(^|\s)auto($|\s)|авто|ХХК|LLC|AVON|соёлын|ордон|palace|палас|спорт|сургалтын|эрүүл мэнд|эмнэлэг|эмнэлг|шүдний|оношилгоо/i,
+  grocery: /барилг|barilga|гутал|гутл|хувцас|гар утас|электрон|сэлбэг|тавилг|цэцгийн|номын|бичиг хэрэг|гоо сайхан|косметик|эмийн сан|оёдол|хими цэвэрлэгээ|үсчин|салон|ресторан|кафе|паб|билет|касс|(^|\s)pc($|\s)/i,
+  gov: /нотариат|notary|(^|\s)сан$|чөлөөт бүс|зохицуулалтын газар|хяналт хэрэгжүүлэх|ерөнхий зөвлөл|council|суралцахуй/i,
+  pharmacy: /малын|(^|\s)vet/i,
+  post: /даатгал|insurance|unitel|юнител|mobicom|мобиком|skytel|скайтел|банк|bank/i, // OSM-д post_office гэж алдаатай тэмдэглэсэн оффисууд
+};
+// t = OSM таг → ангилал (CAT-ийн түлхүүр) эсвэл null
 function poiCat(t) {
-  const am = t.amenity || '', sh = t.shop || '', le = t.leisure || '', hw = t.highway || '', pt = t.public_transport || '';
-  if (am === 'kindergarten') return 'kinder';
-  if (am === 'school') return HIGHER_ED.test(t.name || '') ? 'college' : 'school';
-  if (am === 'university' || am === 'college') return GENERAL_ED.test(t.name || '') && !HIGHER_ED.test(t.name || '') ? 'school' : 'college';
+  const am = t.amenity || '', sh = t.shop || '', le = t.leisure || '', hw = t.highway || '', pt = t.public_transport || '', hc = t.healthcare || '', b = t.building || '', of = t.office || '';
+  const nm = poiName(t);
   if (hw === 'bus_stop' || (pt === 'platform' && t.bus !== 'no')) return 'bus';
+  if (am === 'kindergarten' || b === 'kindergarten') return 'kinder';
+  if (am === 'school' || b === 'school') return POI_HIGHER.test(nm) && !POI_GENERAL.test(nm) ? 'college' : 'school';
+  if (['university', 'college'].includes(am) || ['university', 'college'].includes(b)) return POI_GENERAL.test(nm) && !POI_HIGHER.test(nm) ? 'school' : 'college';
   if (['mall', 'department_store'].includes(sh) || am === 'marketplace') return 'mall';
-  if (['supermarket', 'convenience'].includes(sh)) return 'grocery';
-  if (am === 'pharmacy') return 'pharmacy';
-  if (['hospital', 'clinic', 'doctors'].includes(am)) return 'health';
+  if (['supermarket', 'convenience', 'greengrocer', 'butcher', 'bakery', 'general', 'food'].includes(sh)) return 'grocery';
+  if (am === 'pharmacy' || hc === 'pharmacy') return 'pharmacy';
+  if (['hospital', 'clinic', 'doctors', 'dentist'].includes(am) || ['hospital', 'clinic', 'doctor', 'dentist', 'centre'].includes(hc) || ['hospital', 'clinic'].includes(b)) return 'health';
+  if (am === 'bank') return 'bank';
+  if (am === 'post_office') return 'post';
+  if (['police', 'townhall'].includes(am) || of === 'government' || (am === 'community_centre' && NM.gov.test(nm))) return am !== 'police' && NM.health.test(nm) ? 'health' : am !== 'police' && NM.kinder.test(nm) ? 'kinder' : am !== 'police' && NM.school.test(nm) ? 'school' : 'gov';
   if (le === 'playground') return 'playground';
   if (['park', 'garden'].includes(le)) return 'park';
-  if (['pitch', 'sports_centre', 'fitness_station'].includes(le)) return 'sport';
+  if (['pitch', 'sports_centre', 'fitness_station', 'fitness_centre', 'sports_hall', 'stadium'].includes(le)) return 'sport';
   if (am === 'parking') return 'parking';
+  if (!nm || am || sh || le) return null; // өөр төрлийн тагтай (ресторан, зочид буудал…) → нэрээр ангилахгүй
+  if (NM.kinder.test(nm)) return 'kinder';
+  if (NM.school.test(nm) || POI_HIGHER.test(nm)) return POI_HIGHER.test(nm) && !POI_GENERAL.test(nm) ? 'college' : 'school';
+  if (NM.pharmacy.test(nm)) return 'pharmacy';
+  if (NM.health.test(nm)) return 'health';
+  if (NM.post.test(nm)) return 'post';
+  if (NM.bank.test(nm)) return 'bank';
+  if (NM.gov.test(nm)) return 'gov';
+  if (b && NM.mall.test(nm)) return 'mall';
   return null;
 }
-const CAT = { // дараалал = нислэгийн дараалал; n = хэдэн цэг сонгох
-  grocery: { mn: 'Хүнсний дэлгүүр', n: 1 }, pharmacy: { mn: 'Эмийн сан', n: 1 }, parking: { mn: 'Авто зогсоол', n: 2 },
-  playground: { mn: 'Хүүхдийн тоглоомын талбай', n: 2 }, park: { mn: 'Ногоон байгууламж', n: 1 }, sport: { mn: 'Спорт талбай', n: 1 },
-  bus: { mn: 'Автобусны буудал', n: 2 }, kinder: { mn: 'Цэцэрлэг', n: 2 }, school: { mn: 'Ерөнхий боловсролын сургууль', n: 2 },
-  health: { mn: 'Эмнэлэг', n: 1 }, mall: { mn: 'Худалдаа, үйлчилгээний төв', n: 2 }, college: { mn: 'Их, дээд сургууль', n: 1 },
+// Нэрээр засах/хасах: cat → cat | null. t: {building, office, amenity, strong} (strong = эх сурвалжийн найдвартай ангилал)
+function poiRefine(cat, nm, t = {}) {
+  if (!cat) return null; const n = String(nm || '');
+  if (cat === 'school' && POI_HIGHER.test(n) && !POI_GENERAL.test(n)) cat = 'college';
+  if (cat === 'college' && POI_GENERAL.test(n) && !POI_HIGHER.test(n)) cat = 'school';
+  if (cat === 'college' && /эрүүл мэндийн төв/i.test(n)) cat = 'health'; // «МУБИС-Эрүүл мэндийн төв»
+  if (cat === 'health' && NM.pharmacy.test(n) && !/эмнэлэг|клиник|clinic|hospital/i.test(n)) cat = 'pharmacy';
+  if (cat === 'grocery' && ((/худалдааны төв|их дэлгүүр|плаза|plaza|megastore|(^|\s)төв$/i.test(n) && !/хүнс/i.test(n)) || /(^|\s)зах($|\s)/i.test(n))) cat = 'mall'; // «зурагт зах» shop=supermarket → зах = худалдааны төв
+  if (cat === 'mall' && !n) return null; // нэргүй худалдааны барилга ≠ худалдааны төв
+  if (NOT[cat] && NOT[cat].test(n)) {
+    if (cat === 'health' && /эмнэлэг|клиник|clinic|hospital/i.test(n) && !/мал|амьтны|(^|\s)vet/i.test(n)) return cat;
+    if (cat === 'grocery' && /хүнс/i.test(n)) return cat;
+    return null;
+  }
+  // mall: таг л (shop=mall/department_store) бөгөөд нэр нь худалдааны төв биш, бүтэн барилга ч биш → жижиг дэлгүүр (Adidas, CAN DO…)
+  if (cat === 'mall' && !NM.mall.test(n) && !t.building && !t.strong) return null;
+  if (cat === 'gov' && n && !NM.gov.test(n) && !(t.office === 'government' || ['police', 'townhall'].includes(t.amenity) || t.strong)) return null;
+  return cat;
+}
+// Дэд төрөл (жагсаалтад тайлбар): health → family (ӨЭМТ) | dental | hospital | clinic; gov → khoroo | police | office
+function poiSub(cat, nm, t = {}) {
+  const n = String(nm || '');
+  if (cat === 'health') {
+    if (t['healthcare_facility:type'] === 'family_clinic' || /ӨЭМТ|өрхийн|family/i.test(n)) return 'family';
+    if (t.amenity === 'dentist' || t.healthcare === 'dentist' || /шүд|dent/i.test(n)) return 'dental';
+    if (t.amenity === 'hospital' || t.healthcare === 'hospital' || t.building === 'hospital' || /эмнэлэг|hospital|үндэсний төв/i.test(n)) return 'hospital';
+    return 'clinic';
+  }
+  if (cat === 'gov') return /цагдаа|police/i.test(n) || t.amenity === 'police' ? 'police' : /хороо(?!лол)|khoroo|horoo/i.test(n) ? 'khoroo' : 'office';
+  return null;
+}
+
+// ---------- Нэг байгууллагыг таних (олон эх сурвалжийн давхардал) ----------
+// Нэрийг хэвийн болгох: «-р», «дугаар», «№», том/жижиг үсэг, хоосон зай, цэг таслал хасна; кирилл/латиныг нэг «араг» болгоно
+// (Bichil Manal ≈ Бичилманал-ӨЭМТ, 28th school ≈ 28-р сургууль, Moskva Ikh Delguur ≈ Москва их дэлгүүр). Дугаар заавал таарна.
+const CYR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'j', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', ө: 'u', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ү: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: 'i', э: 'e', ю: 'yu', я: 'ya' };
+const SYN = { school: 'сургууль', schools: 'сургууль', secondary: 'дунд', elementary: 'бага', kindergarten: 'цэцэрлэг', hospital: 'эмнэлэг', clinic: 'эмнэлэг', klinik: 'эмнэлэг', клиник: 'эмнэлэг', поликлиник: 'эмнэлэг', emneleg: 'эмнэлэг', dental: 'шүдний', bank: 'банк', khoroo: 'хороо', horoo: 'хороо', center: 'төв', centre: 'төв', центр: 'төв', tuv: 'төв', moscow: 'москва', state: 'төрийн', pharmacy: 'эмийн сан', university: 'сургууль', college: 'сургууль', institute: 'сургууль', store: 'дэлгүүр', department: 'их', police: 'цагдаа' };
+const STEM_RE = /(ийн|ын|ийг|ний|ны|ий|ь)$/;
+const STEM_LAT = /(iin|iyn|yn|nii)$/; // латин галиглал: Turiin → Tur (≈ Төрийн → Төр)
+const stem = (w) => { const re = /[а-яёөү]/.test(w) ? STEM_RE : STEM_LAT; const s = w.replace(re, ''); return s.length >= 3 ? s : w; };
+const skel = (w) => [...w].map((c) => (CYR[c] != null ? CYR[c] : c)).join('').replace(/kh/g, 'h').replace(/zh/g, 'j').replace(/o/g, 'u').replace(/y/g, 'i').replace(/w/g, 'v').replace(/q/g, 'k').replace(/c(?!h)/g, 'k').replace(/(.)\1+/g, '$1');
+const wordKey = (w) => (SYN[w] || w).split(' ').map((x) => skel(stem(x)));
+// Ерөнхий үг (нэрийн «ялгах» хэсэгт тооцохгүй): ангиллын үг, дүүрэг, салбар, ХХК г.м.
+const GEN = new Set('дэлгүүр хүнсний хүнс супермаркет супер маркет минимаркет мини market mini mart minimarket supermarket shop эмнэлэг эмнэлгийн эмийн сан цэцэрлэг сургууль сургуулийн тоглоомын талбай хүүхдийн сагсны сагсний спорт автобусны буудал зогсоол авто үйлчилгээний худалдаа худалдааны төв байр байрны хорооны хороо дүүрэг дүүргийн банк банкны салбар branch the of and ххк llc ltd co mongolia улаанбаатар нийслэлийн нийслэл цаг цагийн шүдний fitness фитнесс фитнэсс gym club клуб цогцолбор complex олон улсын international тусламж эрүүл мэндийн өэмт өрхийн эцэс зам гудамж ба болон их дээд'.split(' ').flatMap(wordKey));
+const KW = new Set('сургууль цэцэрлэг хороо эмнэлэг байр эцэс'.split(' ').flatMap(wordKey)); // дугаартай нэрийн төрөл
+function normName(s) {
+  let t = String(s || '').toLowerCase().replace(/№/g, ' ').replace(/\d{4}[-\s]\d{4}/g, ' ').replace(/(^|\s)24\s*цаг\S*/g, ' ');
+  t = t.replace(/(\d+)\s*-?\s*(р|r|th|st|nd|rd|дугаар|дүгээр|дахь|дэх|dugaar)(?![a-zа-яёөү])/g, ' $1 ').replace(/дугаар|дүгээр/g, ' ');
+  const nums = new Set(), toks = [];
+  for (const w of t.split(/[^\p{L}\p{N}]+/u)) {
+    if (!w) continue; const m = w.match(/^(\d+)[a-zа-яёөү]*$/);
+    if (m) { if (m[1].length <= 5) nums.add(String(+m[1])); continue; }
+    for (const k of wordKey(w)) if (k && !toks.includes(k)) toks.push(k);
+  }
+  const dist = toks.filter((k) => !GEN.has(k) && k.length >= 2);
+  return { nums: [...nums].sort().join(','), toks, dist, joined: toks.join('') };
+}
+function nameSim(A, B, strictNum) {
+  if (A.nums || B.nums) {
+    if (A.nums && B.nums) { if (A.nums !== B.nums) return false; if (A.toks.some((w) => KW.has(w) && B.toks.includes(w)) || A.joined === B.joined) return true; } // 28-р сургууль дунд ≈ 28th school
+    else if (strictNum) return false; // цэцэрлэг/сургууль/хороо: нэг талд л дугаартай бол нэрээр таних боломжгүй
+  }
+  const a = A.dist, b = B.dist; if (!a.length || !b.length) return false; // ерөнхий нэр («Хүнсний дэлгүүр») — нэрээр нийлүүлэхгүй
+  if (A.joined === B.joined) return true;
+  const inter = a.filter((w) => b.includes(w)).length;
+  if (inter && inter >= Math.min(a.length, b.length)) return true; // нэг нь нөгөөгийнхөө хэсэг
+  if (inter / (a.length + b.length - inter) >= 0.6) return true;
+  const ja = a.join(''), jb = b.join(''); return Math.min(ja.length, jb.length) >= 6 && (ja.includes(jb) || jb.includes(ja)); // Бичил манал ≈ Бичилманал
+}
+const bigramDice = (s, t) => { if (s.length < 2 || t.length < 2) return 0; const m = new Map(); for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); } let c = 0; for (let i = 0; i < t.length - 1; i++) { const g = t.slice(i, i + 2); const k = m.get(g); if (k) { c++; m.set(g, k - 1); } } return (2 * c) / (s.length + t.length - 2); };
+const STRICT_NUM = new Set(['kinder', 'school', 'gov']);
+const CAMPUS = new Set(['kinder', 'school', 'college']); // нэргүй хавсарга барилга (заал, байр) нэртэй байгууллагадаа нийлнэ
+const OBJ_ID = /^(osm|overture):/; // бодит объектын id (osm:way/1, overture:<GERS>); бусад = судалгааны бүлгийн id
+const genericName = (N) => !N.dist.length && !N.nums; // нэргүй / зөвхөн ерөнхий үгтэй нэр («Хүнсний дэлгүүр», «Цэцэрлэг»)
+// Нэр нийцтэй эсэх (ижил ангилал, d = зай): нэр төстэй (120 м), ижил бүтэн нэр (кампус, 400 м), 25 м дотор ялгах хэсэг төстэй
+const ONE_SITE = new Set(['kinder', 'school', 'college', 'health', 'gov', 'park']); // салбар сүлжээгүй төрөл: ижил бүтэн нэр = нэг байгууллага (том кампус)
+function nameCompat(A, B, cat, d) {
+  if (d <= 120 && nameSim(A, B, STRICT_NUM.has(cat))) return true;
+  if (d <= 400 && ONE_SITE.has(cat) && !genericName(A) && A.joined === B.joined && A.nums === B.nums) return true;
+  return d <= 25 && bigramDice(A.dist.join(''), B.dist.join('')) >= 0.5;
+}
+const compatAt = (A, B, cat, d) => (cat === 'bus' ? d <= 250 && nameCompat(A, B, cat, Math.min(d, 120)) : nameCompat(A, B, cat, d)); // автобус: хоёр чигийн ижил нэртэй буудал (≤ 250 м) = нэг
+const shareObj = (a, b) => { if (a.ids && b.ids) for (const id of b.ids) if (OBJ_ID.test(id) && a.ids.has(id)) return true; return false; };
+// a, b: { cat, x, z, name, nk?, ids: Set } — ижил байгууллага эсэх
+function samePoi(a, b) {
+  if (shareObj(a, b)) return true; // ижил OSM/Overture объект
+  const A = a.nk || (a.nk = normName(a.name)), B = b.nk || (b.nk = normName(b.name));
+  if (A.nums && B.nums && A.nums !== B.nums) return false; // өөр дугаартай цэцэрлэг/сургууль/хороо хэзээ ч нийлэхгүй
+  if (a.cat !== b.cat) return false;
+  if (a.ids && b.ids) for (const id of b.ids) if (a.ids.has(id)) return true; // судалгааны бүлэг (нэг кампус / давхардал)
+  const d = Math.hypot(a.x - b.x, a.z - b.z); if (d > 400) return false;
+  if (compatAt(A, B, a.cat, d)) return true;
+  const gA = genericName(A), gB = genericName(B);
+  if (d <= 25 && (gA || gB)) return true; // ижил ангилал 25 м дотор, нэг нь нэргүй/ерөнхий (өөр тодорхой нэртэй бол тусдаа)
+  return d <= (a.cat === 'kinder' ? 100 : 150) && CAMPUS.has(a.cat) && gA !== gB; // нэргүй хавсарга → тодорхой нэртэй байгууллага (нэргүй хоорондоо 150 м-ээр гинжлэхгүй)
+}
+// p (тодорхой нэртэй) бүлэгт зөвхөн нэргүй/ерөнхий гишүүнээр дамжиж орох гэж байгаа бөгөөд бүлэгт өөр тодорхой нэртэй гишүүн байвал — зөрчил
+// («нэргүй барилга» дамжсан гинжин хэт нийлэлтээс сэргийлнэ: Бөмбөөхөн ↔ «Цэцэрлэг» ↔ …). Аль нэг тодорхой гишүүнтэй нэрээр нийцвэл зөрчилгүй.
+function poiConflict(g, p) {
+  if (genericName(p.nk)) return false; if (g.some((m) => shareObj(m, p))) return false;
+  let spec = false;
+  for (const m of g) { if (m.cat !== p.cat || genericName(m.nk)) continue; spec = true; if (compatAt(m.nk, p.nk, p.cat, Math.hypot(m.x - p.x, m.z - p.z))) return false; }
+  return spec;
+}
+// Бүлгийн төлөөлөгч (өөрийн OSM цэгүүд): нэр — тодорхой нэртэй гишүүн («85-р цэцэрлэг», нэргүй кампусын талбай биш), байрлал — гэрт хамгийн ойр гишүүн (барилга)
+function pickRep(g) {
+  const nm = g.find((m) => !genericName(m.nk || normName(m.name))) || g.find((m) => m.name) || g[0]; const near = g.reduce((a, b) => (b.d0 < a.d0 ? b : a), g[0]);
+  if (nm === near) return nm; const o = { ...nm, x: near.x, z: near.z, d0: near.d0, ids: new Set(g.flatMap((m) => [...(m.ids || [])])) }; if (!o.sub) { const sb = g.find((m) => m.sub); if (sb) o.sub = sb.sub; } return o;
+}
+// Шуналтай бүлэглэл: list (эрэмбэ = давуу эрэмбэ; {cat,x,z,name,ids:Set}) → [[гишүүд]], эхний гишүүн = төлөөлөгч.
+// Шинэ цэг хамгийн ойр тохирох гишүүнтэй бүлэгт орно (бүлгүүдийг хооронд нь нийлүүлэхгүй); ижил бодит объект (OSM/Overture id)-той бүлгүүд л нийлнэ.
+function clusterPois(list) {
+  const cell = 400, grid = new Map(), key = (i, j) => i * 100003 + j, groups = [];
+  for (const p of list) {
+    if (!p.nk) p.nk = normName(p.name); const ci = Math.floor(p.x / cell), cj = Math.floor(p.z / cell); let best = null, bd = Infinity;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const g of grid.get(key(ci + di, cj + dj)) || []) {
+      let gd = Infinity; for (const m of g) { if (!samePoi(m, p)) continue; const d = Math.hypot(m.x - p.x, m.z - p.z); if (d < gd) gd = d; }
+      if (gd < bd && !poiConflict(g, p)) { bd = gd; best = g; }
+    }
+    if (best) best.push(p); else { best = [p]; groups.push(best); }
+    const k = key(ci, cj); if (!grid.has(k)) grid.set(k, []); const L = grid.get(k); if (!L.includes(best)) L.push(best);
+  }
+  const byId = new Map(), out = []; // ижил OSM/Overture объект алслагдсан (том талбайн төв ≠ барилга) бол ч нийлүүлнэ
+  for (const g of groups) {
+    let tgt = null; for (const m of g) for (const id of m.ids || []) if (!tgt && OBJ_ID.test(id) && byId.has(id)) tgt = byId.get(id);
+    if (tgt) tgt.push(...g); else out.push(g);
+    for (const m of g) for (const id of m.ids || []) if (OBJ_ID.test(id) && !byId.has(id)) byId.set(id, tgt || g);
+  }
+  return out;
+}
+// Ангилал бүр: reach = алхах сүлжээгээр хүрэх зай (м) — дотор нь БҮГДИЙГ; cap = маршруттай хадгалах тоо (хамгийн ойр, үлдсэн нь poisMore-д маршрутгүй);
+// fly = нисэх тоо (хамгийн ойр). Дараалал = нислэгийн дараалал.
+const CAT = {
+  grocery: { mn: 'Хүнсний дэлгүүр', reach: 1500, cap: 12, fly: 1 }, pharmacy: { mn: 'Эмийн сан', reach: 1500, cap: 12, fly: 1 },
+  parking: { mn: 'Авто зогсоол', reach: 600, cap: 4, fly: 1 },
+  playground: { mn: 'Хүүхдийн тоглоомын талбай', reach: 1500, cap: 12, fly: 1 }, park: { mn: 'Ногоон байгууламж', reach: 1500, cap: 12, fly: 1 },
+  sport: { mn: 'Спорт талбай', reach: 1500, cap: 12, fly: 1 }, bus: { mn: 'Автобусны буудал', reach: 1500, cap: 12, fly: 1 },
+  kinder: { mn: 'Цэцэрлэг', reach: 1500, cap: 12, fly: 2 }, school: { mn: 'Ерөнхий боловсролын сургууль', reach: 1500, cap: 12, fly: 2 },
+  health: { mn: 'Эмнэлэг', reach: 1500, cap: 12, fly: 1 }, bank: { mn: 'Банк', reach: 1500, cap: 12, fly: 1 },
+  post: { mn: 'Шуудан', reach: 1500, cap: 12, fly: 1 }, gov: { mn: 'Төрийн үйлчилгээ', reach: 1500, cap: 12, fly: 1 },
+  mall: { mn: 'Худалдаа, үйлчилгээний төв', reach: 2000, cap: 12, fly: 1 }, college: { mn: 'Их, дээд сургууль', reach: 2000, cap: 12, fly: 1 },
 };
+const POI_REACH = Math.max(...Object.values(CAT).map((c) => c.reach));
 
 // ---------- Замын сүлжээ + Dijkstra ----------
 const WALK_OK = (hw) => hw && !['motorway', 'motorway_link', 'construction', 'proposed', 'raceway', 'bus_guideway', 'escape', 'abandoned'].includes(hw);
@@ -240,23 +421,40 @@ function pathTo(nodes, prev, dst) { const out = []; for (let c = dst; c != null;
 // ---------- Үндсэн: өгөгдөл цуглуулах ----------
 // heightAt(lat,lng) → GHSL ANBH (м), cellAt(lat,lng) → нүдний түлхүүр (heightAt-тай ижил тор): давхарт нөлөөлөхгүй (зөвхөн debug / ghslRules=true туршилт) —
 // тиймээс server.js (heightAt/cellAt-гүй) болон демо ижил дүрмээр давхар гаргана. overrides = оршин суугчийн засвар [{lat,lng}|{x,z}, lv, k?, rp?, note?]
-async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null } = {}) {
+// extraPois = бусад эх сурвалжаас нэгтгэсэн цэгүүд [{name, cat, lat, lng, src, ids?, sub?}] (жишээ: OSM + Overture Places/Buildings) — өөрийн OSM цэгтэй давхардлыг арилгаж нийлүүлнэ.
+// footprints = GeoJSON барилгын контур (R-ээс гадуурх цэгийн маршрутыг барилгын ханан дээр зогсоох, холбох шугамыг барилга огтлуулахгүй) — заавал биш.
+async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null, extraPois = null, footprints = null } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const P = projector(lat, lng);
-  // 1) Орчны цэгүүд + гол зам (2 км)
+  // 1) Орчны цэгүүд + гол зам (2 км): amenity/healthcare/office/shop/leisure таг + барилгын таг (school/kindergarten/…) + нэртэй барилга
   log('OSM: орчны цэгүүд…');
-  const qPoi = `[out:json][timeout:120];(
-    nwr["amenity"~"^(school|kindergarten|university|college|parking|pharmacy|hospital|clinic|doctors|marketplace)$"](around:2000,${lat},${lng});
-    nwr["shop"~"^(mall|supermarket|department_store|convenience)$"](around:2000,${lat},${lng});
-    nwr["leisure"~"^(park|playground|garden|pitch|sports_centre)$"](around:1500,${lat},${lng});
-    nwr["highway"="bus_stop"](around:1500,${lat},${lng});
+  const AR = `(around:${POI_REACH},${lat},${lng})`, AR2 = `(around:1600,${lat},${lng})`;
+  const NAME_RE = '[Цц]эцэрлэг|[Сс]ургууль|[Ээ]мнэлэг|[Кк]линик|ӨЭМТ|[Хх]ороо|ХОРОО|[Ии]х [Дд]элгүүр|[Хх]удалдааны төв|[Пп]лаза|[Зз]ах|[Бб]анк|[Шш]уудан|[Цц]агдаа';
+  const qPoi = `[out:json][timeout:150];(
+    nwr["amenity"~"^(school|kindergarten|university|college|parking|pharmacy|hospital|clinic|doctors|dentist|marketplace|bank|post_office|police|townhall|community_centre)$"]${AR};
+    nwr["healthcare"~"^(hospital|clinic|doctor|dentist|centre|pharmacy)$"]${AR};
+    nwr["office"="government"]${AR};
+    nwr["shop"~"^(mall|supermarket|department_store|convenience|greengrocer|butcher|bakery|general|food)$"]${AR};
+    nwr["leisure"~"^(park|playground|garden|pitch|sports_centre|fitness_centre|sports_hall|stadium)$"]${AR2};
+    nwr["highway"="bus_stop"]${AR2};
+    wr["building"~"^(school|kindergarten|university|college|hospital|clinic)$"]${AR};
+    wr["building"]["name"~"${NAME_RE}"]${AR};
   );out center tags;`;
   const poiRaw = (await overpass(qPoi)).elements || [];
-  const cands = [];
+  let cands = []; const seenOsm = new Set();
   for (const e of poiRaw) {
-    const c = e.center || e; if (c.lat == null) continue; const t = e.tags || {}; const cat = poiCat(t); if (!cat) continue;
-    const [x, z] = P.f(c.lat, c.lon); cands.push({ cat, name: t.name || '', x, z, d0: Math.hypot(x, z), osm: `${e.type}/${e.id}` });
+    const c = e.center || e; if (c.lat == null) continue; const t = e.tags || {}; const nm = poiName(t); const cat = poiRefine(poiCat(t), nm, t); if (!cat || !CAT[cat]) continue;
+    const id = `osm:${e.type}/${e.id}`; if (seenOsm.has(id)) continue; seenOsm.add(id);
+    const [x, z] = P.f(c.lat, c.lon); const o = { cat, name: nm, x, z, d0: Math.hypot(x, z), src: 'osm', ids: new Set([id]), ver: 1 }; const sb = poiSub(cat, nm, t); if (sb) o.sub = sb; cands.push(o);
   }
+  // Бусад эх сурвалжийн цэгүүд (давуу: нэгтгэсэн жагсаалтын нэр/ангилал) + өөрийн OSM цэг → нэг байгууллага нэг удаа
+  if (Array.isArray(extraPois) && extraPois.length) {
+    const ext = []; for (const q of extraPois) { if (!q || !CAT[q.cat] || !Number.isFinite(q.lat) || !Number.isFinite(q.lng)) continue; const [x, z] = P.f(q.lat, q.lng); const o = { cat: q.cat, name: String(q.name || '').slice(0, 60), x, z, d0: Math.hypot(x, z), src: q.src || 'ext', ids: new Set(q.ids || []), ext: 1, ver: q.verified === false ? 0 : 1 }; if (q.sub) o.sub = q.sub; ext.push(o); }
+    const n0 = cands.length; const groups = clusterPois([...ext.sort((a, b) => a.d0 - b.d0), ...cands.sort((a, b) => a.d0 - b.d0)]);
+    cands = groups.map((g) => { const h = g.find((m) => m.ext) ? g[0] : pickRep(g); if (g.some((m) => !m.ext)) { h.ver = 1; if (!/osm/.test(h.src)) h.src += '+osm'; } return h; });
+    log(`цэг: OSM ${n0} + нэмэлт ${ext.length} → давхардалгүй ${cands.length}`);
+  } else cands = clusterPois(cands.sort((a, b) => a.d0 - b.d0)).map(pickRep);
+  if (debug) debug.cands = cands;
   // Сонгох цэгүүдийн радиус (шулуун зайгаар урьдчилан): ангилал бүрээс хамгийн ойр 4
   const pre = []; for (const cat of Object.keys(CAT)) pre.push(...cands.filter((c) => c.cat === cat).sort((a, b) => a.d0 - b.d0).slice(0, 4));
   const R = Math.max(450, Math.min(950, Math.max(...pre.filter((c) => c.cat !== 'college').map((c) => c.d0), 400) + 160));
@@ -278,6 +476,10 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   log('OSM: алс бүс (хотын төв хүртэл)…');
   const qFar = `[out:json][timeout:170];(way["building"](${bb});way["highway"~"^(trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$"](${bb}););out body geom;`;
   const farRaw = (await overpass(qFar)).elements || [];
+  // 3б) Алхах сүлжээ: хамгийн холын хүрэх зай (POI_REACH) хүртэлх БҮХ зам/явган зам — зөвхөн маршрутад (зурахгүй).
+  // POI_REACH-ээс урт маршрутын бүх цэг гэрээс POI_REACH дотор байна → +100 м хангалттай.
+  log(`OSM: алхах сүлжээ (${POI_REACH + 100} м)…`);
+  const walkRaw = (await overpass(`[out:json][timeout:170];way["highway"](around:${POI_REACH + 100},${lat},${lng});out body geom;`)).elements || [];
 
   // ---- Барилгууд ----
   // pool: бүх барилга (zn 0 = ойр, 1 = алс, 2 = R-ээс гадуурх Overture — зөвхөн нүдний барилгын талбайд, 3 = давхардал) → өндөр → гаралт
@@ -458,24 +660,49 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     const ent = near.filter((e) => e.type === 'node' && e.tags && e.tags.entrance).map((e) => P.f(e.lat, e.lon)).filter(([x, z]) => { const p = home._poly; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (segDist(x, z, p[j][0], p[j][1], p[i][0], p[i][1])[0] < 2) return true; return false; });
     if (ent.length) entrance = ent.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]))[0];
   }
-  // ---- Алхах сүлжээ: орцноос бүх цэг рүү ----
-  const walkG = graph(allWays, (t) => (WALK_OK(t.highway) ? 1 : 0), P);
+  // ---- Алхах сүлжээ: орцноос бүх цэг рүү (ойр бүсийн зам + POI_REACH хүртэлх бүх зам) ----
+  const wayIds = new Set(allWays.map((w) => w.id));
+  const walkWays = allWays.concat(walkRaw.filter((w) => w.type === 'way' && w.tags && w.tags.highway && !wayIds.has(w.id)));
+  const walkG = graph(walkWays, (t) => (WALK_OK(t.highway) ? 1 : 0), P);
   const conn = addConnectors(walkG, buildings.map((b) => b._poly), { within: R + 200 }); log(`алхах сүлжээ: ${walkG.size} цэг, хашааны холболт +${conn}`);
   const BI = bldIndex(buildings.map((b) => ({ p: b._poly, lv: b.lv, home: b === home })));
   const archAt = []; let thruN = 0; // барилга нэвт гарах хэрчмүүд: арк (зөвшөөрнө) эсвэл хаалттай
   for (const [id, n] of walkG) for (const e of n.adj) {
-    const m = walkG.get(e[0]); if (!m) continue; const r = BI.inside(n.x, n.z, m.x, m.z); if (r.len <= 0.5) continue;
+    const m = walkG.get(e[0]); if (!m || segDist(0, 0, n.x, n.z, m.x, m.z)[0] > R + 120) continue; // ойрын бүсийн барилгуудтай л шалгана
+    const r = BI.inside(n.x, n.z, m.x, m.z); if (r.len <= 0.5) continue;
     const arch = r.len <= 18 && r.lv >= 5 && !r.home; e[1] = e[2] * (arch ? 1.3 : 25); thruN++;
     if (arch && String(id) < String(e[0])) archAt.push({ x: r.cx, z: r.cz, dx: m.x - n.x, dz: m.z - n.z, len: r.len });
   }
   log(`барилга нэвт гарах хэрчим ${thruN} (арк байж болох ${archAt.length})`);
+  // R-ээс гадуурх барилгын контур (алс бүсийн OSM + Overture, footprints): холбох шугам барилга огтлохгүй, маршрут барилгын ханан дээр зогсоно
+  const farPolys = [];
+  for (const q of pool) if ((q.zn === 1 || q.zn === 2) && Math.hypot(q.cx, q.cz) > R - 30) farPolys.push({ p: q.p });
+  if (footprints && Array.isArray(footprints.features)) for (const f of footprints.features) {
+    const g = f.geometry; if (!g) continue; const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((c) => c[0]) : [];
+    for (const ring of rings) { if (!ring || ring.length < 4) continue; const p = ring.map(([lo, la]) => P.f(la, lo)); const [cx, cz] = centroid(p); const d = Math.hypot(cx, cz); if (d > R - 30 && d < POI_REACH + 200) farPolys.push({ p }); }
+  }
+  const BF = farPolys.length ? bldIndex(farPolys) : null;
+  const NGC = 100, NG = new Map(); // зангилааны тор (nearestSeg хурдан)
+  for (const [id, n] of walkG) { const k = Math.floor(n.x / NGC) * 100003 + Math.floor(n.z / NGC); if (!NG.has(k)) NG.set(k, []); NG.get(k).push(id); }
   const nearestSeg = (x, z, maxD, allowInside) => { // хамгийн ойрын явган замын ХЭРЧИМ (зангилаа биш) — холбох шугам барилга огтлохгүй
-    let best = null;
-    for (const [uid, u] of walkG) {
-      if (Math.abs(u.x - x) > maxD + 120 || Math.abs(u.z - z) > maxD + 120) continue;
-      for (const [vid, w, len] of u.adj) { const v = walkG.get(vid); if (!v || len < 0.01) continue; const dx = v.x - u.x, dz = v.z - u.z; const t = Math.max(0, Math.min(1, ((x - u.x) * dx + (z - u.z) * dz) / (len * len))); const fx = u.x + dx * t, fz = u.z + dz * t; const d = Math.hypot(x - fx, z - fz); if (d > maxD || (best && d >= best.d) || w > len * 2) continue; if (d > 0.5 && BI.blocked(x, z, fx, fz, allowInside)) continue; best = { uid, vid, t, fx, fz, d, len, wr: w / len }; }
+    let best = null; const rr = maxD + 120;
+    for (let i = Math.floor((x - rr) / NGC); i <= Math.floor((x + rr) / NGC); i++) for (let j = Math.floor((z - rr) / NGC); j <= Math.floor((z + rr) / NGC); j++) for (const uid of NG.get(i * 100003 + j) || []) {
+      const u = walkG.get(uid); if (Math.abs(u.x - x) > rr || Math.abs(u.z - z) > rr) continue;
+      for (const [vid, w, len] of u.adj) { const v = walkG.get(vid); if (!v || len < 0.01) continue; const dx = v.x - u.x, dz = v.z - u.z; const t = Math.max(0, Math.min(1, ((x - u.x) * dx + (z - u.z) * dz) / (len * len))); const fx = u.x + dx * t, fz = u.z + dz * t; const d = Math.hypot(x - fx, z - fz); if (d > maxD || (best && d >= best.d) || w > len * 2) continue; if (d > 0.5 && (BI.blocked(x, z, fx, fz, allowInside) || (BF && BF.blocked(x, z, fx, fz, allowInside)))) continue; best = { uid, vid, t, fx, fz, d, len, wr: w / len }; }
     }
     return best;
+  };
+  // Очих цэгийн холбох хэрчмийн нэр дэвшигчид: хамгийн ойр чөлөөт (барилга огтлохгүй) хэрчмээс +slack м дотор, хэрчим бүрт хамгийн ойр цэг (≤ k).
+  // route() эдгээрээс НИЙТ алхах зай (сүлжээ + холбох шугам) хамгийн богиныг сонгоно — зөвхөн хамгийн ойр хэрчим бол барилгын ар талын замаар тойрох байсан.
+  const nearSegs = (x, z, maxD, allowInside, slack = 60, k = 10) => {
+    const all = []; const rr = maxD + 120;
+    for (let i = Math.floor((x - rr) / NGC); i <= Math.floor((x + rr) / NGC); i++) for (let j = Math.floor((z - rr) / NGC); j <= Math.floor((z + rr) / NGC); j++) for (const uid of NG.get(i * 100003 + j) || []) {
+      const u = walkG.get(uid); if (Math.abs(u.x - x) > rr || Math.abs(u.z - z) > rr) continue;
+      for (const [vid, w, len] of u.adj) { const v = walkG.get(vid); if (!v || len < 0.01 || w > len * 2) continue; const dx = v.x - u.x, dz = v.z - u.z; const t = Math.max(0, Math.min(1, ((x - u.x) * dx + (z - u.z) * dz) / (len * len))); const fx = u.x + dx * t, fz = u.z + dz * t; const d = Math.hypot(x - fx, z - fz); if (d <= maxD) all.push({ uid, vid, t, fx, fz, d, len, wr: w / len }); }
+    }
+    all.sort((a, b) => a.d - b.d); const out = []; let d0 = null;
+    for (const c of all) { if (d0 != null && c.d > d0 + slack) break; if (c.d > 0.5 && (BI.blocked(x, z, c.fx, c.fz, allowInside) || (BF && BF.blocked(x, z, c.fx, c.fz, allowInside)))) continue; if (d0 == null) d0 = c.d; out.push(c); if (out.length >= k) break; }
+    return out;
   };
   let start = null;
   if (entrance) start = nearestNode(walkG, entrance[0], entrance[1], 150);
@@ -498,26 +725,36 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   }
   const walk = start ? dijkstra(walkG, start.id) : null; const usedPaths = [];
   const route = (x, z) => {
-    if (!walk) return null; let pth, lenM; const sg = nearestSeg(x, z, 220, true);
-    const lu = sg && walk.len.has(sg.uid) ? walk.len.get(sg.uid) + sg.t * sg.len : Infinity, lw = sg && walk.len.has(sg.vid) ? walk.len.get(sg.vid) + (1 - sg.t) * sg.len : Infinity;
-    if (sg && Math.min(lu, lw) < Infinity) { const via = lu <= lw ? sg.uid : sg.vid; lenM = Math.min(lu, lw) + sg.d; pth = [...pathTo(walkG, walk.prev, via), [sg.fx, sg.fz], [x, z]]; }
+    if (!walk) return null; let pth, lenM; let sg = null, best = Infinity, via = null;
+    for (const c of nearSegs(x, z, 220, true)) { // нийт зай хамгийн бага холбох хэрчим
+      const lu = walk.len.has(c.uid) ? walk.len.get(c.uid) + c.t * c.len : Infinity, lw = walk.len.has(c.vid) ? walk.len.get(c.vid) + (1 - c.t) * c.len : Infinity;
+      const tot = Math.min(lu, lw) + c.d; if (tot < best) { best = tot; sg = c; via = lu <= lw ? c.uid : c.vid; }
+    }
+    if (sg && best < Infinity) { lenM = best; pth = [...pathTo(walkG, walk.prev, via), [sg.fx, sg.fz], [x, z]]; }
     else { const nn = nearestNode(walkG, x, z, 220); if (!nn || !walk.len.has(nn.id)) return null; pth = [...pathTo(walkG, walk.prev, nn.id), [x, z]]; lenM = walk.len.get(nn.id) + nn.d; }
     if (start && start.id !== 'E') { pth.unshift(entrance); lenM += start.d || 0; }
-    const bi = BI.at(x, z); // очих цэг барилга дотор бол (дэлгүүр, эмнэлэг…) шугам барилгын ханан дээр (хаалган дээр) зогсоно
-    if (bi >= 0 && pth.length >= 2) { const a0 = pth[pth.length - 2]; const P2 = buildings[bi]._poly; let bt = 1; for (let i = 0, j = P2.length - 1; i < P2.length; j = i++) { const rx = x - a0[0], rz = z - a0[1], sx = P2[i][0] - P2[j][0], sz = P2[i][1] - P2[j][1]; const den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((P2[j][0] - a0[0]) * sz - (P2[j][1] - a0[1]) * sx) / den, q = ((P2[j][0] - a0[0]) * rz - (P2[j][1] - a0[1]) * rx) / den; if (t >= 0 && t <= 1 && q >= 0 && q <= 1) bt = Math.min(bt, t); } if (bt < 1) { const ex = a0[0] + (x - a0[0]) * bt, ez = a0[1] + (z - a0[1]) * bt; lenM -= Math.hypot(x - ex, z - ez); pth[pth.length - 1] = [ex, ez]; } }
-    usedPaths.push(pth);
-    return { p: flat(simplify(pth, 0.8)), m: Math.round(lenM), walkMin: Math.max(1, Math.round(lenM / WALK_MS / 60)) };
+    // очих цэг барилга дотор бол (дэлгүүр, эмнэлэг…) шугам барилгын ханан дээр (хаалган дээр) зогсоно — ойр бүс: buildings, алс: farPolys
+    const bi = BI.at(x, z); let P2 = bi >= 0 ? buildings[bi]._poly : null; if (!P2 && BF) { const fi = BF.at(x, z); if (fi >= 0) P2 = farPolys[fi].p; }
+    if (P2 && pth.length >= 2) { const a0 = pth[pth.length - 2]; let bt = 1; for (let i = 0, j = P2.length - 1; i < P2.length; j = i++) { const rx = x - a0[0], rz = z - a0[1], sx = P2[i][0] - P2[j][0], sz = P2[i][1] - P2[j][1]; const den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((P2[j][0] - a0[0]) * sz - (P2[j][1] - a0[1]) * sx) / den, q = ((P2[j][0] - a0[0]) * rz - (P2[j][1] - a0[1]) * rx) / den; if (t >= 0 && t <= 1 && q >= 0 && q <= 1) bt = Math.min(bt, t); } if (bt < 1) { const ex = a0[0] + (x - a0[0]) * bt, ez = a0[1] + (z - a0[1]) * bt; lenM -= Math.hypot(x - ex, z - ez); pth[pth.length - 1] = [ex, ez]; } }
+    return { p: flat(simplify(pth, 0.8)), m: Math.round(lenM), walkMin: Math.max(1, Math.round(lenM / WALK_MS / 60)), pth };
   };
-  // ---- Цэгүүд: ангилал бүрээс сүлжээгээр хамгийн ойр ----
-  const pois = [];
+  // ---- Цэгүүд: ангилал бүрт алхах зай ≤ reach БҮХ байгууллага (сүлжээгээр эрэмбэлсэн). Эхний cap нь маршруттай (pois), үлдсэн нь маршрутгүй (poisMore);
+  //      fly = хамгийн ойр fly ширхэг (үзэгч зөвхөн тэдгээр рүү нисч, бусдыг жагсаана) ----
+  const pois = [], poisMore = []; let nRouted = 0;
   for (const [cat, meta] of Object.entries(CAT)) {
-    const list = cands.filter((c) => c.cat === cat).sort((a, b) => a.d0 - b.d0).slice(0, 6).map((c) => ({ c, r: route(c.x, c.z) })).filter((o) => o.r).sort((a, b) => a.r.m - b.r.m);
-    const used = [];
-    for (const { c, r } of list) {
-      if (used.length >= meta.n) break; if (used.some((u) => Math.hypot(u.x - c.x, u.z - c.z) < 60 || (c.name && u.name === c.name))) continue;
-      const o = { cat, mn: meta.mn, name: c.name || meta.mn, x: r1(c.x), z: r1(c.z), m: r.m, walkMin: r.walkMin, route: r.p }; used.push(o); pois.push(o);
-    }
+    const got = [];
+    for (const c of cands) { if (c.cat !== cat || c.d0 > meta.reach) continue; const r = route(c.x, c.z); nRouted++; if (r && r.m <= meta.reach) got.push({ c, r }); }
+    got.sort((a, b) => a.r.m - b.r.m || a.c.d0 - b.c.d0);
+    // нислэг: хамгийн ойр «баталгаатай» (OSM-д бий / олон эх сурвалж / Overture итгэл ≥ 0.6) fly ширхэг; ганц сул Places цэг рүү нисэхгүй
+    let flyI = got.map((o, i) => (o.c.ver ? i : -1)).filter((i) => i >= 0).slice(0, meta.fly); if (!flyI.length) flyI = got.slice(0, meta.fly).map((_, i) => i);
+    got.forEach(({ c, r }, i) => {
+      const o = { cat, mn: meta.mn, name: c.name || meta.mn, x: r1(c.x), z: r1(c.z), m: r.m, walkMin: r.walkMin };
+      if (i < meta.cap) { o.route = r.p; usedPaths.push(r.pth); }
+      o.src = c.src || 'osm'; if (c.sub) o.sub = c.sub; if (flyI.includes(i)) o.fly = true;
+      (i < meta.cap ? pois : poisMore).push(o);
+    });
   }
+  log(`цэг: ${pois.length} маршруттай + ${poisMore.length} маршрутгүй (${nRouted} маршрут тооцсон)`);
   // ---- Төв зам: гол замын хамгийн ойр цэг (сүлжээгээр) ----
   let mainRoad = null;
   if (walk) {
@@ -527,7 +764,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
       for (const id of w.nodes) { const l = walk.len.get(id); if (l == null) continue; const o = { l, id, name: w.tags.name || w.tags.ref || 'Гол зам', hw }; if (hw === 'secondary') { if (!best2 || l < best2.l) best2 = o; } else if (!best || l < best.l) best = o; }
     }
     if (!best || best.l > 1500) best = best2 || best;
-    if (best) { const n = walkG.get(best.id); const r = route(n.x, n.z); if (r) { const ll = P.inv(n.x, n.z); mainRoad = { name: best.name, x: r1(n.x), z: r1(n.z), lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6), m: r.m, walkMin: r.walkMin, route: r.p }; } }
+    if (best) { const n = walkG.get(best.id); const r = route(n.x, n.z); if (r) { usedPaths.push(r.pth); const ll = P.inv(n.x, n.z); mainRoad = { name: best.name, x: r1(n.x), z: r1(n.z), lat: +ll.lat.toFixed(6), lng: +ll.lng.toFixed(6), m: r.m, walkMin: r.walkMin, route: r.p }; } }
   }
   // ---- Жолоодох маршрут (OSM геометр): гэр → Баруун 4 зам → хотын төв ----
   const driveG = graph(allWays, (t) => DRIVE_W[t.highway] || 0, P);
@@ -545,11 +782,12 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   const study = commuteHours ? await computeStudy({ origin: { lat, lng }, entrance, mainRoad, dests }, { log }) : null;
   const arches = archAt.filter((a) => usedPaths.some((pth) => pth.some((q, i) => i && segDist(a.x, a.z, pth[i - 1][0], pth[i - 1][1], q[0], q[1])[0] < 2))).map((a) => [r1(a.x), r1(a.z), Math.round(Math.atan2(a.dx, a.dz) * 1000) / 1000, r1(a.len)]);
   for (const b of buildings) { delete b._poly; delete b._c; }
-  log(`бэлэн: барилга ${buildings.length} (+гэр ${gers.length}, алс ${far.length}), зам ${roads.length}, талбай ${areas.length}, цэг ${pois.length}`);
+  log(`бэлэн: барилга ${buildings.length} (+гэр ${gers.length}, алс ${far.length}), зам ${roads.length}, талбай ${areas.length}, цэг ${pois.length} (+${poisMore.length})`);
+  const attribution = '© OpenStreetMap contributors (ODbL)' + ([...pois, ...poisMore].some((p) => /overture/.test(p.src)) || (extBuildings && extBuildings.features) ? ' · Overture Maps Foundation (CDLA-Permissive-2.0 / ODbL)' : '');
   return {
-    v: 1, origin: { lat, lng }, R: Math.round(R), attribution: '© OpenStreetMap contributors (ODbL)',
+    v: 1, origin: { lat, lng }, R: Math.round(R), attribution,
     home: home ? { p: home.p, lv: home.lv, n: home.n || '', no: home.no || '' } : null, entrance: entrance.map(r1),
-    buildings, gers, far, roads, areas, trees, pois, mainRoad, dests, arches, study, generated_at: new Date().toISOString(),
+    buildings, gers, far, roads, areas, trees, pois, poisMore, mainRoad, dests, arches, study, generated_at: new Date().toISOString(),
   };
 }
 
@@ -570,4 +808,4 @@ async function computeStudy(ext, { log = () => {} } = {}) {
   return { provider: commute.provider() === 'tomtom' ? 'TomTom Routing (түүхэн түгжрэл)' : 'Google Routes API (TRAFFIC_AWARE_OPTIMAL)', day: 'Ажлын өдөр (Мягмар)', rows, computed_at: new Date().toISOString() };
 }
 
-module.exports = { generate, computeStudy, WEST4, CENTER, CAT };
+module.exports = { generate, computeStudy, WEST4, CENTER, CAT, poiCat, poiRefine, poiSub, poiName, normName, nameSim, samePoi, clusterPois, genericName };
