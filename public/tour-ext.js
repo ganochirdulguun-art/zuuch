@@ -12,8 +12,10 @@ const CAT = {
   bus: { c: '#d946ef', ic: 'bus', mn: 'Автобусны буудал' }, mall: { c: '#8b5cf6', ic: 'store', mn: 'Худалдаа, үйлчилгээний төв' },
   main: { c: '#f43f5e', ic: 'route', mn: 'Төв зам' }, west4: { c: '#38bdf8', ic: 'navigation', mn: 'Баруун 4 зам' }, center: { c: '#0ea5e9', ic: 'landmark', mn: 'Хотын төв' },
   home: { c: '#fb7185', ic: 'house', mn: 'Таны байр' },
+  bank: { c: '#0891b2', ic: 'building-2', mn: 'Банк' }, post: { c: '#64748b', ic: 'archive', mn: 'Шуудан' }, gov: { c: '#475569', ic: 'shield-check', mn: 'Төрийн үйлчилгээ' },
 };
 const FLY_ORDER = ['grocery', 'pharmacy', 'health', 'parking', 'playground', 'park', 'sport', 'kinder', 'school', 'bus', 'mall'];
+const LIST_ORDER = [...FLY_ORDER, 'college', 'bank', 'post', 'gov']; // жагсаалтад бүгд; нислэг зөвхөн fly тэмдэгтэй (эсвэл ангилал бүрийн хамгийн ойр)
 const ic = (n) => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pairs = (p) => { const o = []; for (let i = 0; i < p.length; i += 2) o.push([p[i], p[i + 1]]); return o; };
@@ -407,7 +409,8 @@ export function createExterior(ext, opts = {}) {
     };
     lines.push(L); return L;
   }
-  for (const p of [...pois, ...(main ? [main] : [])]) { p.pts = pairs(p.route || []); p.line = routeLine(p.pts, (CAT[p.cat] || CAT.home).c, false); }
+  const hasFly = pois.some((p) => p.fly); const flySet = new Set(hasFly ? pois.filter((p) => p.fly) : FLY_ORDER.map((cat) => pois.find((p) => p.cat === cat)).filter(Boolean));
+  for (const p of [...pois, ...(main ? [main] : [])]) { p.pts = pairs(p.route || []); p.flyOn = p === main || flySet.has(p); if (p.lbl) p.lbl.fly = p.flyOn; p.line = p.flyOn ? routeLine(p.pts, (CAT[p.cat] || CAT.home).c, false) : null; }
   for (const d of dests) if (d.route) { d.pts = pairs(d.route); d.line = routeLine(d.pts, (CAT[d.cat] || CAT.center).c, true); }
   // ---------- Өндрийн тор: камер барилгад халхлагдахгүй, дотор нь орохгүй ----------
   const HG = (() => {
@@ -450,7 +453,7 @@ export function createExterior(ext, opts = {}) {
     return { L, at: (d) => { d = Math.max(0, Math.min(L, d)); let lo = 0, hi = n - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid; } const k = (d - cum[lo]) / (cum[hi] - cum[lo] || 1); return V(Q[lo][0] + (Q[hi][0] - Q[lo][0]) * k, 0, Q[lo][1] + (Q[hi][1] - Q[lo][1]) * k); } };
   }
   function headingOf(sp) { const h = sp.at(sp.L).sub(sp.at(0)).setY(0); return h.lengthSq() < 400 ? V(0, 0, -1) : h.normalize(); } // эхлэлээс очих газар руу (тогтмол)
-  const flyByOrder = FLY_ORDER.map((cat) => pois.find((p) => p.cat === cat)).filter(Boolean);
+  const flyByOrder = FLY_ORDER.flatMap((cat) => pois.filter((p) => p.cat === cat && p.flyOn).sort((a, b) => a.m - b.m));
   const A0 = 1.35; // тойм: байрны урд (нартай) талаас хойш харна
   const FADE = 1.3;
   const segs = [];
@@ -647,7 +650,7 @@ export function createExterior(ext, opts = {}) {
   function buildList() {
     const el = $('#extList'); if (!el) return;
     const rows = []; const fly = new Map(); segs.forEach((s, i) => { if (s.kind === 'fade' && s.to && !fly.has(keyOf(s.to))) fly.set(keyOf(s.to), i); });
-    for (const cat of [...FLY_ORDER, 'college']) for (const p of pois.filter((q) => q.cat === cat)) { const st = CAT[p.cat]; const si = fly.get(keyOf(p)); rows.push(`<li ${si != null ? `data-seg="${si}"` : ''} data-key="${keyOf(p)}" style="--c:${st.c}">${ic(st.ic)}<span><b>${esc(p.name)}</b><i>${esc(st.mn)}</i></span><em>${fmtM(p.m)}<small>${p.walkMin} мин</small></em></li>`); }
+    for (const cat of LIST_ORDER) for (const p of pois.filter((q) => q.cat === cat).sort((a, b) => a.m - b.m)) { const st = CAT[p.cat]; const si = fly.get(keyOf(p)); rows.push(`<li ${si != null ? `data-seg="${si}"` : ''} data-key="${keyOf(p)}" style="--c:${st.c}">${ic(st.ic)}<span><b>${esc(p.name)}</b><i>${esc(st.mn)}</i></span><em>${fmtM(p.m)}<small>${p.walkMin} мин</small></em></li>`); }
     if (main) { const row = ext.study && ext.study.rows.find((r) => r.id === 'main'); rows.push(`<li data-seg="${fly.get('main') ?? ''}" data-key="main" style="--c:${CAT.main.c}">${ic('route')}<span><b>${esc(main.name)}</b><i>Төв зам${row && row.peak != null ? ` · машинаар ${row.free}–${row.peak} мин` : ''}</i></span><em>${fmtM(main.m)}<small>${main.walkMin} мин</small></em></li>`); }
     for (const d of dests) { const row = ext.study && ext.study.rows.find((r) => r.id === d.id); const st = CAT[d.cat] || CAT.center; rows.push(`<li data-seg="${fly.get(d.id) ?? ''}" data-key="${d.id}" style="--c:${st.c}">${ic(st.ic)}<span><b>${esc(d.name)}</b><i>${row && row.peak != null ? `оргил ${row.peak} мин (${row.peakHour}:00)` : 'машинаар'}</i></span><em>${row && row.km ? row.km : d.km ? d.km : '—'} км<small>${row && row.free != null ? row.free + '–' + row.peak + ' мин' : ''}</small></em></li>`); }
     el.innerHTML = rows.join('');
@@ -681,7 +684,7 @@ export function createExterior(ext, opts = {}) {
       tmpV.copy(m.pos).project(camera); const vis = tmpV.z < 1 && tmpV.z > -1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
       const dist = camera.position.distanceTo(m.pos); const far = m.kind === 'west4' || m.kind === 'center';
       const x = ((tmpV.x + 1) / 2) * w; let y = ((1 - tmpV.y) / 2) * h; if (m.active && vis && y <= 92) y = 92; // идэвхтэй шошгыг дэлгэцэн дотор барина
-      const allow = m.active || (m.kind === 'home' && kind !== 'approach') || (overview && !far && dist < 900) || (farK && far);
+      const allow = m.active || (m.kind === 'home' && kind !== 'approach') || (overview && !far && m.fly && dist < 900) || (farK && far);
       if (!(vis && y > 86 && allow)) { if (m.shown !== false) { m.el.style.display = 'none'; m.shown = false; } m.hv = false; m.hp = null; continue; }
       cand.push({ m, x, y, dist, far, pri: m.active ? 0 : m.kind === 'home' ? 1 : far ? 2 : 3 });
     }
@@ -699,7 +702,7 @@ export function createExterior(ext, opts = {}) {
       if (m.on !== m.active || m.mini !== mini) { m.on = m.active; m.mini = mini; m.el.classList.toggle('on', m.active); m.el.classList.toggle('mini', mini); m.bw = m.el.offsetWidth; m.bh = m.el.offsetHeight; } // ангилал солигдоход л хэмжинэ
       const op = m.active || m.kind === 'home' ? 1 : c.far ? 0.95 : Math.max(0.5, 1 - c.dist / 1200); if (Math.abs((m.op ?? -1) - op) > 0.03) { m.op = op; m.el.style.opacity = op.toFixed(2); }
     }
-    for (const p of [...pois, ...(main ? [main] : [])]) { const on = p.lbl.active; p.ring.visible = on || overview; p.beam.visible = on || overview; p.ring.scale.setScalar(on ? 1.35 : 1); p.beam.material.opacity = on ? 0.75 : 0.3; p.beam.scale.y = on ? 1.6 : 1; p.ring.material.depthTest = true; p.beam.material.depthTest = true; }
+    for (const p of [...pois, ...(main ? [main] : [])]) { const on = p.lbl.active; p.ring.visible = on || (overview && p.flyOn); p.beam.visible = on || (overview && p.flyOn); p.ring.scale.setScalar(on ? 1.35 : 1); p.beam.material.opacity = on ? 0.75 : 0.3; p.beam.scale.y = on ? 1.6 : 1; p.ring.material.depthTest = true; p.beam.material.depthTest = true; }
     for (const d of dests) d.beam.visible = farK || overview || d.lbl.active;
   }
   function update(dt) {
