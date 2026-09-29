@@ -48,44 +48,104 @@ const area = (p) => { let s = 0; for (let i = 0, j = p.length - 1; i < p.length;
 const centroid = (p) => { let x = 0, z = 0; for (const q of p) { x += q[0]; z += q[1]; } return [x / p.length, z / p.length]; };
 function inPoly(x, z, p) { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { if (((p[i][1] > z) !== (p[j][1] > z)) && x < ((p[j][0] - p[i][0]) * (z - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; } return c; }
 function segDist(px, pz, ax, az, bx, bz) { const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1e-9; const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / L2)); const qx = ax + t * dx, qz = az + t * dz; return [Math.hypot(px - qx, pz - qz), qx, qz]; }
-function dims(p) { // гол тэнхлэгээр урт/өргөн (PCA)
-  const [cx, cz] = centroid(p); let sxx = 0, szz = 0, sxz = 0; for (const [x, z] of p) { sxx += (x - cx) ** 2; szz += (z - cz) ** 2; sxz += (x - cx) * (z - cz); }
-  const th = 0.5 * Math.atan2(2 * sxz, sxx - szz), ux = Math.cos(th), uz = Math.sin(th); let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-  for (const [x, z] of p) { const a = (x - cx) * ux + (z - cz) * uz, b = -(x - cx) * uz + (z - cz) * ux; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
-  const L = a1 - a0, W = b1 - b0; return L >= W ? [L, W] : [W, L];
+function hull(p) { // гүдгэр бүрхүүл (Andrew-ийн монотон гинж)
+  const s = p.map((q) => [q[0], q[1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]); if (s.length < 3) return s;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = [];
+  for (const q of s) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = s.length - 1; i >= 0; i--) { const q = s[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+// Урт/өргөн: хамгийн бага талбайтай хүрээлэгч тэгш өнцөгт (гүдгэр бүрхүүл + rotating calipers) — оройн тооноос хамаардаггүй
+// (оройн PCA шаталсан ML контурт тэнхлэгээ хазайлгадаг байсан). Буцаах: [L, W, θ] — θ = урт тэнхлэгийн чиг, [0, π)
+function dims(p) {
+  const h = hull(p); let best = null;
+  for (let i = 0; i < h.length; i++) {
+    const a = h[i], b = h[(i + 1) % h.length], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (l < 1e-6) continue;
+    const ux = (b[0] - a[0]) / l, uz = (b[1] - a[1]) / l; let s0 = Infinity, s1 = -Infinity, t0 = Infinity, t1 = -Infinity;
+    for (const [x, z] of h) { const s = x * ux + z * uz, t = -x * uz + z * ux; if (s < s0) s0 = s; if (s > s1) s1 = s; if (t < t0) t0 = t; if (t > t1) t1 = t; }
+    const e1 = s1 - s0, e2 = t1 - t0; if (!best || e1 * e2 < best[0]) best = [e1 * e2, e1, e2, Math.atan2(uz, ux)];
+  }
+  if (!best) return [0, 0, 0];
+  const [, e1, e2, th] = best; const t = e1 >= e2 ? th : th + Math.PI / 2;
+  return [Math.max(e1, e2), Math.min(e1, e2), ((t % Math.PI) + Math.PI) % Math.PI];
 }
 const flat = (pts) => pts.flatMap(([x, z]) => [r1(x), r1(z)]);
 
-// ---------- Барилгын төрөл ба давхар (OSM-д давхар ховор бичигддэг тул хэлбэр/талбайгаар тооцно) ----------
-function classify(t, A, L, W, anbh = null) {
-  const b = t.building || 'yes', am = t.amenity || '';
+// ---------- Барилгын төрөл ба давхар (OSM-д давхар ховор бичигддэг) ----------
+// Зарчим: бодит байдлыг гажуудуулахгүй — эргэлзээтэй бол БОЛГООМЖТОЙ (нам) утга өгч, «таамаг» (e:1) гэж тэмдэглэнэ.
+// kn=1 МЭДЭГДЭХ: building:levels / height таг, Overture num_floors, оршин суугчийн засвар, гэр, эргэлзээгүй жижиг төрөл (саравч/гараж/ТҮЦ → 1).
+// kn=0 ТААМАГ: төрөл/нэр/хэлбэрийн урьдчилсан утга; угсармал блок (slab) → орон сууцны нотолгоо + мэдэгдэх хөршөөр generate() дотор;
+// алс бүсийн том таггүй барилга → ойр орчны таглагдсан барилгын доод гуравны нэгээр. Таамаг ≤ 9 давхар.
+const FLH = 3; // нэг давхрын өндөр, м
+const EST_MAX = 9; // таамаг давхрын дээд хязгаар
+const SMALL_B = new Set(['shed', 'garage', 'garages', 'barn', 'roof', 'kiosk', 'container', 'carport', 'hangar', 'shelter', 'toilets', 'transformer_tower', 'service', 'greenhouse', 'sty', 'stable', 'cowshed', 'gatehouse', 'guardhouse']);
+const HOUSE_B = new Set(['house', 'detached', 'hut', 'cabin', 'bungalow', 'semidetached_house', 'terrace']);
+const RES_B = new Set(['apartments', 'residential', 'dormitory']);
+const COM_B = new Set(['commercial', 'retail', 'office', 'supermarket', 'mall', 'hotel', 'public', 'civic', 'government', 'market', 'shop', 'shopping', 'cafe', 'museum', 'temple', 'church', 'mosque', 'cathedral', 'chapel', 'monastery', 'religious', 'train_station', 'transportation', 'fire_station', 'bank', 'parking', 'theatre', 'cinema', 'library']);
+const IND_B = new Set(['industrial', 'warehouse', 'factory', 'manufacture']);
+const RE_KINDER = /цэцэрлэг|kindergarten|детский сад/i;
+const RE_UNIV = /их сургууль|дээд сургууль|университет|институт|коллеж|академи|university|college|institute|academy/i;
+const RE_GYM = /заал|спорт|gym|фитнес|fitness|бассейн/i;
+const RE_SCHOOL = /сургууль|school|лицей|гимнази/i;
+const RE_HEALTH = /эмнэлэг|hospital|clinic|клиник|амбулатори|поликлиник|төрөх/i;
+const RE_COM = /зах|дэлгүүр|худалдаа|маркет|market|store|плаза|plaza|center|centre|центр|төв|телевиз|радио|театр|кино|cinema|оффис|office|банк|bank|зочид буудал|hotel|ресторан|restaurant|mall|молл|үйлчилгээний|шатахуун|газар|яам|захиргаа|ордон|музей|сүм|хийд|цагдаа|шүүх|шуудан|номын сан/i;
+const RE_RESNAME = /байр|хотхон|орон сууц|residence|apartment/i; // орон сууцны нэр → нэрээр худалдааны гэж ангилахгүй
+const RE_GARAGE = /гараж|граж|garage/i;
+const RE_UTIL = /ЦТП|дулааны төв|дулааны станц|подстанц|бойлер|насос|трансформатор/i; // инженерийн байгууламж (дулааны төв г.м.) → үйлдвэр/агуулахын нам утга
+// Ангилал: ger | shed | house | apt | kinder | univ | gym | school | health | ind | com | bld (таггүй / yes / ML)
+function category(t) {
+  const b = t.building || 'yes', am = t.amenity || '', nm = String(t.name || ''), sub = t._sub || '', le = t.leisure || '';
+  const byName = nm && !RE_RESNAME.test(nm);
+  if (b === 'ger' || b === 'yurt') return 'ger';
+  if (SMALL_B.has(b) || am === 'toilets' || am === 'shelter') return 'shed';
+  if (HOUSE_B.has(b)) return 'house';
+  if (RES_B.has(b)) return 'apt'; // орон сууцны таг нэр/amenity-ээс давуу
+  if (b === 'kindergarten' || am === 'kindergarten' || (byName && RE_KINDER.test(nm))) return 'kinder';
+  if (['university', 'college'].includes(b) || ['university', 'college'].includes(am) || (byName && RE_UNIV.test(nm))) return GENERAL_ED.test(nm) && !HIGHER_ED.test(nm) ? 'school' : 'univ';
+  if (['sports_hall', 'sports_centre', 'stadium', 'grandstand'].includes(b) || ['sports_centre', 'fitness_centre', 'sports_hall'].includes(le) || (byName && RE_GYM.test(nm))) return 'gym';
+  if (b === 'school' || am === 'school' || sub === 'education' || (byName && RE_SCHOOL.test(nm))) return 'school';
+  if (['hospital', 'clinic'].includes(b) || ['hospital', 'clinic', 'doctors', 'dentist'].includes(am) || sub === 'medical' || (byName && RE_HEALTH.test(nm))) return 'health';
+  if (IND_B.has(b) || sub === 'industrial' || (byName && RE_UTIL.test(nm))) return 'ind';
+  if (COM_B.has(b) || am || t.shop || ['commercial', 'entertainment', 'civic', 'religious', 'transportation'].includes(sub) || (byName && RE_COM.test(nm))) return 'com';
+  return 'bld';
+}
+const KIND = { ger: 'ger', shed: 'shed', house: 'house', apt: 'apt', kinder: 'edu', univ: 'edu', school: 'edu', health: 'com', ind: 'com', com: 'com', bld: 'bld' };
+// Угсармал (бичил хорооллын) блокийн хэлбэр: дундаж гүн D = A/L 10–16.5 м, урт ≥ 36 м (хамгийн бага тэгш өнцөгтөөр), сунасан (L/W ≥ 2),
+// хүрээлэгч тэгш өнцөгт гүнээсээ хэт өргөн биш (W ≤ 2.2·D — Г/П хэлбэр, муруй контурыг хасна)
+const slabShape = (q) => q.L >= 36 && q.D >= 10 && q.D <= 16.5 && q.L / Math.max(q.W, 1) >= 2 && q.W <= 2.2 * q.D;
+// q: { t, A, L, W, D, src } → { k, lv, kn, cat, rule, slab }
+function classify(q) {
+  const t = q.t, A = q.A, b = t.building || 'yes';
   const lvTag = parseFloat(t['building:levels']); const hTag = parseFloat(String(t.height || '').replace(/[^0-9.]/g, ''));
-  let k = 'bld';
-  if (b === 'ger' || b === 'yurt') k = 'ger';
-  else if (['house', 'detached', 'hut', 'cabin', 'bungalow', 'semidetached_house'].includes(b)) k = 'house';
-  else if (['garage', 'garages', 'shed', 'barn', 'service', 'roof', 'kiosk', 'container', 'carport', 'hangar', 'shelter', 'toilets', 'transformer_tower'].includes(b)) k = 'shed';
-  else if (['school', 'kindergarten', 'university', 'college'].includes(b) || ['school', 'kindergarten', 'university', 'college'].includes(am)) k = 'edu';
-  else if (['commercial', 'retail', 'office', 'supermarket', 'mall', 'hotel', 'industrial', 'warehouse', 'hospital', 'public', 'civic', 'government'].includes(b)) k = 'com';
-  else if (['apartments', 'residential', 'dormitory'].includes(b)) k = 'apt';
-  let lv;
-  if (Number.isFinite(lvTag) && lvTag > 0) lv = Math.min(60, lvTag);
-  else if (Number.isFinite(hTag) && hTag > 2) lv = Math.max(1, Math.round(hTag / 3));
-  else if (k === 'ger') lv = 1;
-  else if (k === 'shed') lv = 1;
-  else if (k === 'house') lv = A > 130 ? 2 : 1;
-  else if (k === 'edu') lv = A > 700 ? 4 : 3;
-  else if (k === 'com') lv = A > 2500 ? 5 : A > 800 ? 3 : 2;
-  else {
-    // «yes»/apt: угсармал блок (гүн 10–17 м, урт ≥ 36 м) → 9; том талбай → 5; жижиг → 1–2
-    // anbh = GHSL (EU JRC, Sentinel хиймэл дагуулаар) 100 м торны барилгын дундаж өндөр, м
-    const H = Number.isFinite(anbh) && anbh > 0 ? anbh : null;
-    if (W >= 9 && W <= 17.5 && L >= 36) lv = H == null ? (L >= 70 ? 9 : 5) : H >= 12.5 ? 9 : 5;
-    else if (A < 60) lv = 1; else if (A < 150) lv = H != null && H < 7 ? 1 : 2;
-    else if (A < 350) lv = H == null ? 3 : Math.max(2, Math.min(9, Math.round(H / 3.2)));
-    else lv = H == null ? 5 : Math.max(3, Math.min(16, Math.round(H / 3)));
-    if (k === 'apt' && lv < 5) lv = 5;
+  const cat = category(t); const k = KIND[cat] || 'bld';
+  if (Number.isFinite(lvTag) && lvTag > 0) return { k, cat, lv: Math.min(60, Math.round(lvTag)), kn: 1, tg: 1, rule: 'таг: давхар' };
+  if (Number.isFinite(hTag) && hTag > 2) return { k, cat, lv: Math.max(1, Math.round(hTag / FLH)), kn: 1, tg: 1, rule: 'таг: өндөр' };
+  if (cat === 'ger') return { k, cat, lv: 1, kn: 1, rule: 'гэр' };
+  if (cat === 'shed') return { k, cat, lv: 1, kn: b === 'service' && A >= 200 ? 0 : 1, rule: 'жижиг төрөл (' + b + ')' };
+  const pr = (lv, rule) => ({ k, cat, lv, kn: 0, rule });
+  switch (cat) {
+    case 'kinder': return pr(A > 2500 ? 3 : 2, 'цэцэрлэг');
+    case 'univ': return pr(A < 300 ? 2 : A < 3000 ? 3 : 4, 'их/дээд сургууль'); // таглагдсан 13: медиан 3
+    case 'gym': return pr(2, 'заал/спорт');
+    case 'school': return pr(A < 300 ? 2 : A > 1500 ? 4 : 3, 'сургууль');
+    case 'health': return pr(A < 800 ? 2 : A < 2500 ? 3 : 4, 'эмнэлэг'); // өмнөх хувилбарын утгаас (com: > 800 м² → 3) өсгөхгүй — таглагдсан эмнэлэг цөөн (алс бүсэд 5)
+    case 'ind': return pr(A < 300 ? 1 : 2, 'үйлдвэр/агуулах');
+    case 'com': return pr(A < 300 ? 1 : A < 1500 ? 2 : A < 4000 ? 3 : 4, 'худалдаа/олон нийт');
+    case 'house': return pr(A < 130 ? 1 : 2, 'house');
+    default:
   }
-  return { k, lv };
+  // Угсармал: давхрыг generate() дотор (мэдэгдэх хөрш, алга бол 5). Таггүй/ML контур бол зөвхөн ОРОН СУУЦНЫ НОТОЛГОО байвал (generate() шалгана),
+  // үгүй бол alt (таггүй барилгын утга) хэвээр — гэр хороолол/авто баазын дундах сунасан хайрцаг 5 давхар болохгүй.
+  const slabOk = (RES_B.has(b) || b === 'yes' || q.src === 'ml') && slabShape(q);
+  if (slabOk) return { ...pr(5, 'угсармал'), slab: 1, slabRes: RES_B.has(b) || RE_RESNAME.test(String(t.name || '')) ? 1 : 0, alt: plainPrior(q) };
+  if (cat === 'apt') return pr(A < 150 ? 2 : 5, 'apartments'); // таглагдсан apartments < 300 м²: 24-өөс 17 нь ≥ 5 давхар (нэг орцтой цамхаг) — 2 гэвэл хэт бага
+  const pp = plainPrior(q); return pr(pp.lv, pp.rule);
+}
+// Таггүй (yes/ML) барилгын болгоомжтой урьдчилсан утга
+function plainPrior(q) {
+  if (RE_GARAGE.test(String(q.t.name || ''))) return { lv: 1, rule: 'гаражийн нэр' };
+  if (q.D < 9 && q.L / Math.max(q.W, 1) > 3) return { lv: 1, rule: 'нарийн эгнээ (гараж/лангуу)' }; // дундаж гүн < 9 м, сунасан → гараж/лангууны эгнээ
+  return { lv: q.A < 150 ? 1 : 2, rule: q.L / Math.max(q.W, 1) < 1.8 ? 'таггүй бөөрөнхий' : 'таггүй сунасан' };
 }
 
 // ---------- Орчны цэгийн ангилал ----------
@@ -162,7 +222,9 @@ function nearestNode(nodes, x, z, maxD = 250) { let best = null, bd = maxD; for 
 function pathTo(nodes, prev, dst) { const out = []; for (let c = dst; c != null; c = prev.get(c)) { const n = nodes.get(c); out.unshift([n.x, n.z]); } return out; }
 
 // ---------- Үндсэн: өгөгдөл цуглуулах ----------
-async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, homeLevels = null } = {}) {
+// heightAt(lat,lng) → GHSL ANBH (м), cellAt(lat,lng) → нүдний түлхүүр (heightAt-тай ижил тор): давхарт нөлөөлөхгүй (зөвхөн debug / ghslRules=true туршилт) —
+// тиймээс server.js (heightAt/cellAt-гүй) болон демо ижил дүрмээр давхар гаргана. overrides = оршин суугчийн засвар [{lat,lng}|{x,z}, lv, k?, rp?, note?]
+async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const P = projector(lat, lng);
   // 1) Орчны цэгүүд + гол зам (2 км)
@@ -202,44 +264,153 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   const farRaw = (await overpass(qFar)).elements || [];
 
   // ---- Барилгууд ----
-  const buildings = [], gers = [], far = []; const seen = new Set();
-  const anbhAt = (x, z) => { if (!heightAt) return null; const ll = P.inv(x, z); const v = heightAt(ll.lat, ll.lng); return Number.isFinite(v) ? v : null; };
-  const addPoly = (p, t, isNear, src) => {
+  // pool: бүх барилга (zn 0 = ойр, 1 = алс, 2 = R-ээс гадуурх Overture — зөвхөн нүдний барилгын талбайд, 3 = давхардал) → өндөр → гаралт
+  const buildings = [], gers = [], far = [], pool = []; const seen = new Set();
+  const addPoly = (p, t, zn, src, sid = null) => { // sid = эх сурвалжийн id (шинжилгээнд, гаралтад орохгүй)
     if (p.length > 1 && Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]) < 0.01) p.pop();
-    if (p.length < 3) return; const A = Math.abs(area(p)); if (A < 6) return; const [L, W] = dims(p); const [cx, cz] = centroid(p);
+    if (p.length < 3) return null; const A = Math.abs(area(p)); if (A < 6) return null; const [L, W, th] = dims(p); const [cx, cz] = centroid(p);
     // Гэр: жижиг, бөөрөнхий контур (OSM-д building=ger; ML контурт тэмдэггүй тул хэлбэрээр)
     let peri = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) peri += Math.hypot(p[i][0] - p[j][0], p[i][1] - p[j][1]);
     const round = (4 * Math.PI * A) / (peri * peri);
     const tt = !t.building && A < 50 && p.length >= 7 && round > 0.8 ? { ...t, building: 'ger' } : t;
-    const { k, lv } = classify(tt, A, L, W, anbhAt(cx, cz));
-    if (!isNear) { if (A < 450 && lv < 5) return; far.push({ p: flat(simplify(p, 1.6)), lv }); return; }
-    if (k === 'ger') { gers.push([r1(cx), r1(cz), r1(Math.max(2.2, Math.min(4.5, Math.sqrt(A / Math.PI))))]); return; }
-    const sp = simplify(p, 0.45); if (sp.length < 3) return;
-    const b = { p: flat(sp), lv, k }; if (t.name) b.n = String(t.name).slice(0, 40); if (t['addr:housenumber']) b.no = String(t['addr:housenumber']).slice(0, 10); if (src) b.s = src;
-    b._poly = sp; b._c = [cx, cz]; buildings.push(b);
+    const q = { p, t: tt, A, L, W, th, D: A / Math.max(L, 1), cx, cz, zn, src, sid }; Object.assign(q, classify(q)); q.t = t;
+    pool.push(q); return q;
   };
-  const addBuilding = (w, isNear) => {
+  const addBuilding = (w, zn) => {
     if (!w.geometry || w.geometry.length < 4 || seen.has(w.id)) return; seen.add(w.id);
-    addPoly(w.geometry.map((g) => P.f(g.lat, g.lon)), w.tags || {}, isNear, null);
+    addPoly(w.geometry.map((g) => P.f(g.lat, g.lon)), w.tags || {}, zn, null, 'OSM w' + w.id);
   };
+  const ovOsm = new Map(); // Overture доторх OSM way id → pool
   if (extBuildings && Array.isArray(extBuildings.features)) {
-    // Overture Maps: OSM + Microsoft ML Buildings (хиймэл дагуулын шинэ зургаас) — OSM-д ороогүй шинэ барилгууд ч багтана
-    const CLS = { apartments: 'apartments', residential: 'residential', house: 'house', detached: 'house', garage: 'garage', garages: 'garage', shed: 'shed', school: 'school', kindergarten: 'kindergarten', university: 'university', college: 'college', commercial: 'commercial', retail: 'retail', office: 'office', industrial: 'industrial', warehouse: 'warehouse', hospital: 'hospital', hotel: 'hotel', service: 'service', hut: 'hut' };
+    // Overture Maps: OSM + ML контур (Microsoft, East Asian Buildings г.м. хиймэл дагуулын зургаас) — OSM-д ороогүй барилгууд ч багтана. R-ээс гадна = зөвхөн нүдний талбайн тооцоонд
+    const CLS = { apartments: 'apartments', residential: 'residential', house: 'house', detached: 'house', garage: 'garage', garages: 'garage', shed: 'shed', barn: 'barn', roof: 'roof', ger: 'ger', school: 'school', kindergarten: 'kindergarten', university: 'university', college: 'college', commercial: 'commercial', retail: 'retail', supermarket: 'supermarket', office: 'office', industrial: 'industrial', warehouse: 'warehouse', hospital: 'hospital', hotel: 'hotel', service: 'service', hut: 'hut', church: 'church' };
+    const osmT = new Map(); for (const e of near) if (e.type === 'way' && e.tags && e.tags.building) osmT.set(e.id, e.tags); // Overture-т алга OSM таг (amenity/shop/нэр/давхар)
     for (const f of extBuildings.features) {
       const g = f.geometry; if (!g) continue; const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((c) => c[0]) : [];
       const pr = f.properties || {}; const t = {};
-      if (pr.class && CLS[pr.class]) t.building = CLS[pr.class];
+      if (pr.class && CLS[pr.class]) t.building = CLS[pr.class]; if (pr.subtype) t._sub = pr.subtype;
       if (pr.num_floors) t['building:levels'] = pr.num_floors; if (pr.height) t.height = pr.height;
       const nm = pr.names && (pr.names.primary || (pr.names.common && Object.values(pr.names.common)[0])); if (nm) t.name = nm;
-      const src = (pr.sources || []).map((s) => s.dataset).includes('Microsoft ML Buildings') ? 'ml' : null;
-      for (const ring of rings) { const p = ring.map(([lo, la]) => P.f(la, lo)); const [cx, cz] = centroid(p); if (Math.hypot(cx, cz) <= R) addPoly(p, t, true, src); }
+      const sr = pr.sources || [], os = sr.find((x) => x.dataset === 'OpenStreetMap'); const src = sr.length && !os ? 'ml' : null; // OSM биш бүх эх сурвалж = ML
+      const oid = os && /^w\d+/.test(os.record_id || '') ? parseInt(os.record_id.slice(1), 10) : null;
+      const ot = oid && osmT.get(oid);
+      if (ot) { // OSM-ийн эх таг: ангилалд хэрэгтэйг нь нэмнэ (building=yes бол Overture class хоосон хэвээр — гэрийн хэлбэрийн шалгалт хэвээр)
+        for (const kk of ['amenity', 'shop', 'leisure', 'building:levels', 'height', 'addr:housenumber']) if (ot[kk] && !t[kk]) t[kk] = ot[kk];
+        if (ot.name && !t.name) t.name = ot.name; if (!t.building && ot.building && ot.building !== 'yes') t.building = ot.building;
+      }
+      for (const ring of rings) { const p = ring.map(([lo, la]) => P.f(la, lo)); const [cx, cz] = centroid(p); const q = addPoly(p, t, Math.hypot(cx, cz) <= R ? 0 : 2, src, oid ? 'OSM w' + oid : sr.length ? sr[0].dataset : null); if (q && oid) ovOsm.set(oid, q); }
     }
-  } else for (const e of near) if (e.type === 'way' && e.tags && e.tags.building) addBuilding(e, true);
-  for (const e of farRaw) if (e.type === 'way' && e.tags && e.tags.building) { const g = e.geometry && e.geometry[0]; if (!g) continue; const [x, z] = P.f(g.lat, g.lon); if (Math.hypot(x, z) > R) addBuilding(e, false); }
+  } else for (const e of near) if (e.type === 'way' && e.tags && e.tags.building) addBuilding(e, 0);
+  for (const e of farRaw) if (e.type === 'way' && e.tags && e.tags.building) {
+    const g = e.geometry && e.geometry[0]; if (!g) continue; const [x, z] = P.f(g.lat, g.lon); if (Math.hypot(x, z) <= R) continue;
+    const m = ovOsm.get(e.id); if (m && m.zn === 0) continue; if (m) m.zn = 3; addBuilding(e, 1); // Overture-т байгаа бол давхар тоолохгүй
+  }
+  const nearB = pool.filter((q) => q.zn === 0 && q.k !== 'ger');
   // Гэрийн барилга: зүүг агуулсан, эсвэл 60 м доторх хамгийн ойр
-  let home = buildings.find((b) => inPoly(0, 0, b._poly));
-  if (!home) { let bd = 60; for (const b of buildings) { const d = Math.hypot(b._c[0], b._c[1]); if (d < bd) { bd = d; home = b; } } }
-  if (home) { home.t = 1; if (homeLevels) home.lv = homeLevels; else if (home.k === 'bld' || home.k === 'apt') home.lv = Math.max(home.lv, 5); }
+  let hq = nearB.find((q) => inPoly(0, 0, q.p));
+  if (!hq) { let bd = 60; for (const q of nearB) { const d = Math.hypot(q.cx, q.cz); if (d < bd) { bd = d; hq = q; } } }
+  // homeLevels-гүй (server.js) үед: зөвхөн орон сууц/таггүй, ≥ 150 м² контурт ≥ 5 (объект нь орон сууцны байранд) — house/оффис/цэцэрлэг г.м. өөрийн утгаараа
+  if (hq) { if (homeLevels) { hq.lv = homeLevels; hq.kn = 1; hq.slab = 0; hq.rule = 'гэрийн байр (өгөгдсөн)'; } else if (!hq.kn && (hq.cat === 'apt' || hq.cat === 'bld') && hq.A >= 150) hq.mn = 5; }
+  // Оршин суугчийн засвар: цэгийг агуулсан (эсвэл 12 м доторх хамгийн ойр төвтэй) барилга → мэдэгдэж буй
+  for (const o of overrides || []) {
+    const [ox, oz] = Number.isFinite(o.x) ? [o.x, o.z] : P.f(o.lat, o.lng); let q = nearB.find((b) => inPoly(ox, oz, b.p));
+    if (!q) { let bd = 12; for (const b of nearB) { const d = Math.hypot(b.cx - ox, b.cz - oz); if (d < bd) { bd = d; q = b; } } }
+    if (!q) { log(`засвар: барилга олдсонгүй (${r1(ox)}, ${r1(oz)}) ${o.note || ''}`); continue; }
+    if (o.lv > 0) { q.lv = o.lv; q.kn = 1; q.slab = 0; q.rule = 'засвар'; } if (o.k) q.k = o.k; if (o.rp) q.rp = o.rp; q.uc = 1; log(`засвар: (${r1(q.cx)}, ${r1(q.cz)}) → ${q.lv} давхар ${o.note || ''}`);
+  }
+  // ---- GHSL (EU JRC ANBH R2023A, ~100 м нүдний барилгын дундаж өндөр) — ӨГӨГДМӨЛӨӨР ДАВХАРТ НӨЛӨӨЛӨХГҮЙ ----
+  // Шалгалт (2026-09-30, энэ байршил, мэдэгдэх давхартай барилгууд): ойрын бүсийн 5 давхар угсармал блок 7/7-ийн ANBH 15–20 м (≥ 14 → 9 болох байсан),
+  // 9 давхар 17–22 м; 2 давхар цэцэрлэг (нүдийнхээ барилгын 76–84%-ийг эзэлдэг) 18–20 м; 1 давхар таглагдсан барилга ~21 м; гэр p50 11.9 м.
+  // Нэг барилгын түвшинд 1/2/3 ба 5/9 давхрыг ялгахгүй тул давхрыг зөвхөн таг/хэлбэр/мэдэгдэх хөршөөр тогтооно.
+  // ghslRules=true → туршилтын 2 дүрэм (угсармал: ANBH ≥ 14 → 9, ≤ 10 → 5; бусад таамаг: +1 давхар) — хөрш үнэлгээнд илүү олон хэтрүүлэлт өгсөн.
+  // Түүвэр: 4 м торны цэгүүд → anbh = өөрийн талбайгаар жигнэсэн ANBH; cellAt байвал share = өөрийн талбай / тэдгээр нүдний нийт барилгын талбай (шинжилгээнд).
+  const cells = new Map();
+  if (heightAt && (ghslRules || debug)) {
+    for (const q of pool) {
+      if (q.zn === 3) continue;
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of q.p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+      const st = Math.max(4, Math.sqrt(q.A / 1500)), cnt = new Map(); let n = 0, sv = 0, nv = 0;
+      const put = (x, z) => {
+        const ll = P.inv(x, z), v = heightAt(ll.lat, ll.lng); n++; if (Number.isFinite(v) && v > 0) { sv += v; nv++; }
+        if (cellAt) { const r = cellAt(ll.lat, ll.lng); if (r != null) { const key = Array.isArray(r) ? r.join(',') : String(r); cnt.set(key, (cnt.get(key) || 0) + 1); } }
+      };
+      for (let x = x0 + st / 2; x < x1; x += st) for (let z = z0 + st / 2; z < z1; z += st) if (inPoly(x, z, q.p)) put(x, z);
+      if (!n) put(q.cx, q.cz);
+      q.anbh = nv ? sv / nv : null; if (cellAt) q.cells = [...cnt].map(([key, c]) => [key, (q.A * c) / n]);
+    }
+    if (cellAt) {
+      for (const q of pool) for (const [key, a] of q.cells || []) cells.set(key, (cells.get(key) || 0) + a);
+      for (const q of pool) if (q.cells && q.cells.length) { let own = 0, tot = 0; for (const [key, a] of q.cells) { own += a; tot += cells.get(key); } q.share = tot > 0 ? own / tot : null; }
+    }
+  }
+  // ---- Угсармал блок (таамаг) ----
+  // (1) Орон сууцны нотолгоо: building=apartments/residential/dormitory таг эсвэл нэр («…байр», хотхон, орон сууц), ЭСВЭЛ 150 м дотор мэдэгдэх ≥ 4 давхар орон сууц/таггүй барилга,
+  //     ЭСВЭЛ 100 м дотор OSM apartments/residential тагтай барилга. Нотолгоогүй таггүй/ML контур → таггүй барилгын утга (alt, 1–2 давхар).
+  // (2) Давхар: 100 м доторх ижил чигтэй (±15°) МЭДЭГДЭХ хамгийн ойр угсармал хөршийн давхар (≤ 9); алга бол 5.
+  //     5-аас дээш өсгөхөд: 60 м дотор илүү нам МЭДЭГДЭХ орон сууц (хэлбэрээс үл хамааран) байвал түүний давхраас хэтрүүлэхгүй.
+  // Мэдэгдэх 205 угсармал блок дээрх leave-one-out: 100 м + 60 м дүрэм 62% зөв, ≥3 давхраар хэтрүүлсэн 2 (150 м: 68% / 6; ойрын бүсэд 100 м: 58% / 1).
+  const multiKnown = (o) => o.kn && o.zn < 3 && (o.cat === 'apt' || o.cat === 'bld') && o.lv >= 4; // мэдэгдэх олон давхар орон сууц/таггүй
+  const knownSlabs = pool.filter((o) => multiKnown(o) && slabShape(o));
+  const knownApt = pool.filter((o) => o.kn && o.zn < 3 && (o.cat === 'apt' || (o.cat === 'bld' && o.lv >= 4)));
+  const resTagged = pool.filter((o) => o.zn < 3 && RES_B.has(o.t.building));
+  const sameDir = (a, b) => { const d = Math.abs(a - b) % Math.PI; return Math.min(d, Math.PI - d) <= (15 * Math.PI) / 180; };
+  const dd = (a, b) => Math.hypot(a.cx - b.cx, a.cz - b.cz);
+  for (const q of pool) {
+    if (!q.slab || q.kn || q.zn === 3) continue;
+    if (!q.slabRes) {
+      const ev = pool.find((o) => o !== q && multiKnown(o) && dd(o, q) <= 150) || resTagged.find((o) => o !== q && dd(o, q) <= 100);
+      if (!ev) { q.slab = 0; q.lv = q.alt.lv; q.rule = q.alt.rule + ' (угсармал хэлбэр, орон сууцны нотолгоогүй)'; continue; }
+      // гэр хороолол давамгай (100 м дотор ≥ 10 барилгын ≥ 50% нь гэр/house) → угсармал гэж үзэхгүй
+      let nA = 0, nG = 0; for (const o of pool) if (o !== q && o.zn < 3 && dd(o, q) <= 100) { nA++; if (o.cat === 'ger' || o.cat === 'house') nG++; }
+      if (nA >= 10 && nG >= 0.5 * nA) { q.slab = 0; q.lv = q.alt.lv; q.rule = q.alt.rule + ` (угсармал хэлбэр, гэр хороолол давамгай ${nG}/${nA})`; continue; }
+      q.ev = ev;
+    }
+    const H = ghslRules ? q.anbh : null;
+    if (H != null && H >= 14) { q.lv = 9; q.rule = `угсармал: GHSL ${H.toFixed(1)} м ≥ 14`; continue; }
+    if (H != null && H <= 10) { q.lv = 5; q.rule = `угсармал: GHSL ${H.toFixed(1)} м ≤ 10`; continue; }
+    let nb = null, bd = 100; for (const o of knownSlabs) { if (o === q || !sameDir(o.th, q.th)) continue; const d = dd(o, q); if (d < bd) { bd = d; nb = o; } }
+    if (!nb) { q.lv = 5; q.rule = 'угсармал: 100 м дотор мэдэгдэх хөршгүй → 5'; continue; }
+    q.nb = nb; q.lv = Math.min(EST_MAX, nb.lv); q.rule = `угсармал: мэдэгдэх хөрш ${nb.lv} давхар (${Math.round(bd)} м)`;
+    if (q.lv > 5) for (const o of knownApt) if (o !== q && o !== nb && o.lv < q.lv && dd(o, q) <= 60) { q.lv = Math.max(5, o.lv); q.rule += ` → 60 м доторх мэдэгдэх ${o.lv} давхраас хэтрүүлэхгүй`; q.lo = o; }
+  }
+  // ---- АЛС БҮС (хотын төвийн дүр төрх), том таггүй барилга (A ≥ 350 м², таамаг bld/com, нарийн эгнээ/гараж биш) ----
+  // Ойр орчны ТАГЛАГДСАН (building:levels/height) ижил хэмжээний (×2.5) орон сууцны биш барилгуудын ДООД ДӨРӨВНИЙ НЭГ (p25) — таглагдсан түүвэр
+  // өндөр рүү хазайдаг тул медиан биш. 400 м дотор ≥ 5, эсвэл 1000 м дотор ≥ 8; үр дүнг [3, 6]-д хязгаарлана; хөрш алга бол 3.
+  // Алс бүсийн таглагдсан 350+ м² барилга дээрх leave-one-out (bld 130 / com 91): энэ дүрэм ±1 давхар 32% / 34%, ≥3 давхраар хэтрүүлсэн 3 / 2;
+  // тогтмол 2 — 26% / 22% (≥3 давхраар дутуу 80 / 61); хуучин тогтмол 5 — 33% / 25%, ≥3 давхраар хэтрүүлсэн 25 / 8; медиан (p50) — хэтрүүлсэн 24 / 13.
+  // Ойрын бүсэд ХЭРЭГЛЭХГҮЙ: гэрийн орчмын таглагдсан барилга цөөн (400 м дотор ≤ 7), өндөр рүү хазайсан — туршихад гэрийн хажуугийн 21×19 м ML контур,
+  // «Supermarket», зах, ресторан 5–7 давхар болсон (өмнөх шалгалтаар татгалзсан төрлийн алдаа). Ойрын бүс ангиллын болгоомжтой утгаараа (e:1).
+  const TAGNB = new Set(['bld', 'com', 'ind', 'health']);
+  const tagNb = pool.filter((o) => o.tg && o.zn < 3 && TAGNB.has(o.cat) && o.A >= 150);
+  for (const q of pool) {
+    if (q.kn || q.slab || q.zn !== 1 || q.A < 350 || !(q.cat === 'bld' || q.cat === 'com') || /гараж|нарийн/.test(q.rule)) continue;
+    let pick = null;
+    for (const [rr, nmin] of [[400, 5], [1000, 8]]) {
+      const v = []; for (const o of tagNb) if (o.A >= q.A / 2.5 && o.A <= q.A * 2.5 && dd(o, q) <= rr) v.push(o.lv);
+      if (v.length >= nmin) { v.sort((a, b) => a - b); pick = { lv: v[Math.floor((v.length - 1) / 4)], n: v.length, rr }; break; }
+    }
+    const lv = Math.max(q.lv, Math.min(6, Math.max(3, pick ? pick.lv : 3)));
+    if (lv !== q.lv) { q.lv0 = q.lv; q.lv = lv; q.rule += pick ? ` → алс бүс: таглагдсан хөрш p25 ${pick.lv} (${pick.n}, ${pick.rr} м) → ${lv}` : ' → алс бүс: таглагдсан хөршгүй → 3'; }
+  }
+  if (ghslRules) for (const q of pool) { // туршилтын: угсармал биш таамаг +1, хэрэв өөрийн нүднүүдийн ANBH ≥ 1.8 × урьдчилсан өндөр ба тэдгээр нүдний барилгын талбайн ≥ 50%-ийг эзэлдэг
+    if (q.kn || q.slab || q.zn === 3 || q.share == null || q.anbh == null || q.A < 60 || /гараж/.test(q.rule)) continue;
+    if (q.share >= 0.5 && q.anbh >= 1.8 * q.lv * FLH && q.lv < EST_MAX) { q.lv += 1; q.rule += ` +1 (GHSL ${q.anbh.toFixed(1)} м, эзлэх ${Math.round(q.share * 100)}%)`; }
+  }
+  for (const q of pool) if (!q.kn) { if (q.mn && q.lv < q.mn) { q.lv = q.mn; q.rule += ' → гэрийн байр ≥ 5'; } q.lv = Math.min(EST_MAX, q.lv); }
+  if (debug) { debug.cells = cells; debug.pool = pool; debug.home = hq; }
+  // ---- Гаралт ----
+  let home = null;
+  for (const q of pool) {
+    if (q.zn >= 2) continue;
+    if (q.zn === 1) { if (q.A < 350 && q.lv < 5) continue; const fb = { p: flat(simplify(q.p, 1.6)), lv: q.lv }; if (!q.kn) fb.e = 1; far.push(fb); continue; }
+    if (q.k === 'ger') { gers.push([r1(q.cx), r1(q.cz), r1(Math.max(2.2, Math.min(4.5, Math.sqrt(q.A / Math.PI))))]); continue; }
+    const sp = simplify(q.p, 0.45); if (sp.length < 3) continue; const t = q.t;
+    const b = { p: flat(sp), lv: q.lv, k: q.k }; if (t.name) b.n = String(t.name).slice(0, 40); if (t['addr:housenumber']) b.no = String(t['addr:housenumber']).slice(0, 10); if (q.src) b.s = q.src;
+    if (!q.kn) b.e = 1; if (q.rp) b.rp = q.rp; if (q === hq) { b.t = 1; home = b; } // e = таамаг өндөр; rp = дээвэр дээрх (playground г.м.)
+    // rf = 'flat': ≥ 300 м², 1–2 давхар, байшин/саравч/худалдаа/сургууль биш → хавтгай дээвэр (үзэгч одоогоор 1–2 давхар 'bld'-г байшин загвараар зурдаг)
+    if (q.lv <= 2 && q.A >= 300 && !['house', 'shed', 'com', 'edu', 'ger'].includes(q.k)) b.rf = 'flat';
+    b._poly = sp; b._c = [q.cx, q.cz]; buildings.push(b);
+  }
 
   // ---- Замууд / талбайнууд / мод ----
   const roads = [], areas = [], trees = []; const allWays = [];
@@ -350,7 +521,7 @@ async function computeStudy(ext, { log = () => {} } = {}) {
   for (const tg of targets) {
     const row = { id: tg.id, name: tg.name, byHour: [] };
     for (let h = 6; h <= 23; h++) { try { const r = await commute.routeOnce(o, tg, commute.nextTuesdayAt(h, 0)); row.byHour.push(r ? [h, r.min, r.km, r.freeMin] : [h, null, null, null]); } catch (e) { row.byHour.push([h, null, null, null]); row.error = String(e.message).slice(0, 120); } }
-    const ok = row.byHour.filter((b) => b[1] != null); if (ok.length) { row.free = Math.min(...ok.map((b) => b[3] || b[1])); row.peak = Math.max(...ok.map((b) => b[1])); row.km = ok[0][2]; row.peakHour = ok.find((b) => b[1] === row.peak)[0]; }
+    const ok = row.byHour.filter((b) => b[1] != null); if (ok.length) { row.free = Math.min(...ok.map((b) => b[1])); row.freeHour = ok.find((b) => b[1] === row.free)[0]; row.peak = Math.max(...ok.map((b) => b[1])); row.km = ok[0][2]; row.peakHour = ok.find((b) => b[1] === row.peak)[0]; } // free = хамгийн чөлөөтэй цагийн бодит хугацаа
     rows.push(row);
   }
   return { provider: commute.provider() === 'tomtom' ? 'TomTom Routing (түүхэн түгжрэл)' : 'Google Routes API (TRAFFIC_AWARE_OPTIMAL)', day: 'Ажлын өдөр (Мягмар)', rows, computed_at: new Date().toISOString() };
