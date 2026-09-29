@@ -1,7 +1,7 @@
 // «Зууч» — Д-5 Замын/түгжрэлийн профайл: объектын байршлаас худалдан авагчийн гол цэгүүд хүртэлх БОДИТ хугацаа
 // Эх сурвалж: Google Routes API (computeRoutes, TRAFFIC_AWARE_OPTIMAL — тухайн цагийн түүхэн түгжрэлийн урьдчилсан тооцоо).
 // Кэш: ~100 м торны нүд бүрд нэг удаа (commute_cells, 30 хоног) — ойролцоох объектууд дахин тооцохгүй.
-const { db } = require('./db');
+const dbm = () => require('./db').db; // хэрэгтэй үед л ачаална (exterior.js-ийг өгөгдлийн сангүй туршихад)
 
 const KEY = () => process.env.GOOGLE_MAPS_KEY || '';
 const TT = () => process.env.TOMTOM_KEY || ''; // TomTom Routing API (карт шаардахгүй, өдөрт 2 500 тооцоо үнэгүй) — Google түлхүүргүй бол үүнийг ашиглана
@@ -50,12 +50,12 @@ async function routeTomTom(origin, dest, departure) {
   const withTraffic = s.historicTrafficTravelTimeInSeconds || s.travelTimeInSeconds || 0;
   return { min: Math.round(withTraffic / 60), freeMin: Math.round((s.noTrafficTravelTimeInSeconds || s.travelTimeInSeconds || 0) / 60), km: Math.round((s.lengthInMeters || 0) / 100) / 10 };
 }
-async function routeOnce(origin, dest, departure) {
+async function routeOnce(origin, dest, departure, mode = 'DRIVE') {
   if (provider() === 'tomtom') return routeTomTom(origin, dest, departure);
   const body = {
     origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
     destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
-    travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE_OPTIMAL', departureTime: departure.toISOString(), languageCode: 'mn',
+    travelMode: mode, ...(mode === 'DRIVE' ? { routingPreference: 'TRAFFIC_AWARE_OPTIMAL', departureTime: departure.toISOString() } : {}), languageCode: 'mn',
   };
   const r = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST', signal: AbortSignal.timeout(15000),
@@ -82,7 +82,7 @@ function scoreProfile(rows) {
 async function profile(lat, lng, { force = false } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const cell = cellOf(lat, lng);
-  if (!force) { const c = await db.one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cell); if (c) return { ...c.profile, score: c.score, cached: true, computed_at: c.computed_at }; }
+  if (!force) { const c = await dbm().one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cell); if (c) return { ...c.profile, score: c.score, cached: true, computed_at: c.computed_at }; }
   if (!provider()) throw new Error('Замын API түлхүүр тохируулаагүй — TOMTOM_KEY (карт шаардахгүй) эсвэл GOOGLE_MAPS_KEY');
   const dests = destinations(); const rows = [];
   for (const d of dests) {
@@ -92,9 +92,9 @@ async function profile(lat, lng, { force = false } = {}) {
   }
   const sc = scoreProfile(rows);
   const prof = { lat, lng, cell, slots: SLOTS, rows, ...sc, provider: provider() === 'tomtom' ? 'TomTom Routing API (түүхэн түгжрэл, Мягмар)' : 'Google Routes API (TRAFFIC_AWARE_OPTIMAL, Мягмар)', computed_at: new Date().toISOString() };
-  await db.run(`INSERT INTO commute_cells (cell, lat, lng, profile, score, computed_at) VALUES (?,?,?,?,?,NOW())
+  await dbm().run(`INSERT INTO commute_cells (cell, lat, lng, profile, score, computed_at) VALUES (?,?,?,?,?,NOW())
     ON CONFLICT (cell) DO UPDATE SET profile=EXCLUDED.profile, score=EXCLUDED.score, computed_at=NOW()`, cell, lat, lng, JSON.stringify(prof), sc.score);
   return { ...prof, cached: false };
 }
 // Гэрээс гараад ГОЛ ЗАМ хүртэл: хамгийн ойрын гол цэг рүү чөлөөт урсгалын анхны 1–2 км — тусдаа маягаар хойшлуулав; одоо профайлд «хамгийн ойр 4 зам» гэж харуулна
-module.exports = { profile, destinations, SLOTS, cellOf, hasKey: () => !!provider(), provider };
+module.exports = { profile, destinations, SLOTS, cellOf, routeOnce, nextTuesdayAt, hasKey: () => !!provider(), provider };

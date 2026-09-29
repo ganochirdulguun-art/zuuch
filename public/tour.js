@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '/vendor/GLTFLoader.js';
 import { RoundedBoxGeometry } from '/vendor/RoundedBoxGeometry.js';
 import { RoomEnvironment } from '/vendor/RoomEnvironment.js';
+import { createExterior } from '/tour-ext.js';
 
 const $ = (s) => document.querySelector(s);
 const token = location.pathname.split('/').filter(Boolean).pop();
@@ -30,6 +31,7 @@ const texTile = (base = '#eeece8', n = 4) => canvasTex((g, s) => {
 });
 
 let data, plan, scene, camera, renderer, rooms = [], byId = {}, doorGraph = {};
+let EXT = null, SCENE_MODE = 'interior'; // гадаах орчны 3D нислэг (Ш3д-3) эсвэл байрны дотор
 const mats = {};
 const furnGroup = new THREE.Group();
 const roomLights = []; // өрөө бүрийн цэгэн гэрэл — зайгаар хасна (FPS)
@@ -215,13 +217,16 @@ function mainSide(r) {
   const free = ['W', 'E', 'N', 'S'].filter((s) => !winSides.has(s) && !doorSides.has(s) && s !== ds);
   return free[0] || opp;
 }
-function furnish(r) {
+function furnish(r0) {
+  const kit = r0.type === 'living' && r0.kitchen ? r0.kitchen : null;
+  const r = kit ? shrinkRoom(r0, kit, 2.3) : r0;
   const side = { N: 'S', S: 'N', W: 'E', E: 'W' }[mainSide(r)];
   const cx = r.x + r.w / 2, cz = r.y + r.h / 2; const H = plan.ceiling;
   const fwd = { S: [0, -1], N: [0, 1], W: [1, 0], E: [-1, 0] }[side]; const rgt = [-fwd[1], fwd[0]];
   const depth = (side === 'N' || side === 'S') ? r.h : r.w, width = (side === 'N' || side === 'S') ? r.w : r.h;
   const rotY = Math.atan2(fwd[0], fwd[1]);
-  const g = new THREE.Group(); furnGroup.add(g); roomFurn[r.id] = g;
+  const g = new THREE.Group(); furnGroup.add(g); roomFurn[r0.id] = g;
+  if (kit) kitchenBand(r0, kit, g);
   // локал: u баруун, v урагш (гол хана руу); rot = загварын урд тал -v (камер руу) харна гэж үзнэ
   const place = (m, u, v, y = 0, rot = 0) => { if (!m) return null; m.position.set(cx + rgt[0] * u + fwd[0] * v, y, cz + rgt[1] * u + fwd[1] * v); m.rotation.y = rotY + Math.PI + rot; g.add(m); return m; };
   const model = (name, u, v, rot = 0, y = 0, scale = 1) => loadModel(name).then((m) => { if (!m) return; const c = m.clone(); c.scale.setScalar(scale); place(c, u, v, y, (FRONT[name] || 0) + rot); });
@@ -292,6 +297,31 @@ function furnish(r) {
   } else if (T === 'balcony') {
     model('dining_chair_02', 0, 0, 0);
   }
+}
+
+// Зочны өрөөний нэг хананд гал тогооны эгнээ (тавцан + дээд шүүгээ + угаалтуур + плита + хөргөгч), үлдсэн хэсэгт зочны тавилга
+function shrinkRoom(r, side, d) {
+  const o = { ...r };
+  if (side === 'N') { o.y += d; o.h -= d; } else if (side === 'S') o.h -= d; else if (side === 'W') { o.x += d; o.w -= d; } else o.w -= d;
+  return o;
+}
+function kitchenBand(r, side, g) {
+  const horiz = side === 'N' || side === 'S';
+  const len = (horiz ? r.w : r.h) - 0.25; const wall = { N: r.y, S: r.y + r.h, W: r.x, E: r.x + r.w }[side]; const inward = side === 'N' || side === 'W' ? 1 : -1;
+  const c0 = horiz ? r.x + r.w / 2 : r.y + r.h / 2;
+  const put = (m, along, off, y, rot = 0) => { m.position.set(horiz ? c0 + along : wall + inward * off, y, horiz ? wall + inward * off : c0 + along); m.rotation.y = rot + (horiz ? (side === 'S' ? Math.PI : 0) : (side === 'W' ? Math.PI / 2 : -Math.PI / 2)); g.add(m); return m; };
+  const fr = 0.75, cw = len - fr - 0.05; const cc = -len / 2 + fr + 0.05 + cw / 2; const d0 = WALL_T + 0.3;
+  put(rbox(cw, 0.86, 0.6, mats.wood, 0.01), cc, d0, 0.43);
+  put(rbox(cw + 0.04, 0.04, 0.64, mats.marble, 0.01), cc, d0, 0.88);
+  put(rbox(cw, 0.7, 0.35, mats.matteWhite, 0.01), cc, WALL_T + 0.175, 1.95);
+  put(new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.18, 0.4, 3, 0.03), mats.steel), cc - cw / 4, d0, 0.83);
+  put(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 10), mats.steel), cc - cw / 4, WALL_T + 0.12, 1.05);
+  put(rbox(0.6, 0.02, 0.5, mats.dark, 0.01), cc + cw / 4, d0, 0.905);
+  put(rbox(fr - 0.05, 1.85, 0.68, mats.steel, 0.03), -len / 2 + fr / 2, WALL_T + 0.36, 0.925);
+  for (let i = 0; i < Math.floor(cw / 0.6); i++) put(box(0.14, 0.02, 0.02, mats.steel), cc - cw / 2 + 0.3 + i * 0.6, WALL_T + 0.61, 0.72);
+  const tv = (horiz ? r.h : r.w) > 5 ? 1.55 : 1.2;
+  loadModel('dining_table').then((m) => { if (!m) return; const t = m.clone(); t.scale.setScalar(0.72); put(t, cc, WALL_T + tv, 0); });
+  for (const [a, o] of [[-0.55, tv - 0.55], [0.55, tv - 0.55], [-0.55, tv + 0.55], [0.55, tv + 0.55]]) loadModel('dining_chair_02').then((m) => { if (!m) return; put(m.clone(), cc + a, WALL_T + o, 0, o < tv ? 0 : Math.PI); });
 }
 
 // ---------- Гадаад орчин ----------
@@ -402,7 +432,7 @@ function stepAuto(dt) {
   // 2) өрөөний панорам: бүтэн эргэлт
   if (phase === 'pano') { if (!panoActive) return; panoT += dt; cam.yaw += AUTO.spinRate * dt; cam.pitch += (-0.02 - cam.pitch) * 0.03; if (panoT >= AUTO.panoSpin) { phase = 'walk'; fadeTo(() => { hidePano(); cam.yaw = p.yaw0; pauseT = 0.8; }); } return; }
   // 3) өрөөний төвд зогсоод зөөлөн эргэж харах
-  if (p.pause && pauseT > 0) { pauseT -= dt; sweep += dt; cam.yaw = p.yaw0 + Math.sin(sweep * 0.55) * 1.25; cam.pitch += (-0.04 - cam.pitch) * 0.04; if (pauseT <= 0) { tourI = (tourI + 1) % tourPts.length; if (tourI === 0 && extNodes.length) { phase = 'ext'; extI = 0; extT = 0; fadeTo(() => showPano(extNodes[0], true)); } } return; }
+  if (p.pause && pauseT > 0) { pauseT -= dt; sweep += dt; cam.yaw = p.yaw0 + Math.sin(sweep * 0.55) * 1.25; cam.pitch += (-0.04 - cam.pitch) * 0.04; if (pauseT <= 0) { tourI = (tourI + 1) % tourPts.length; if (tourI === 0 && EXT) { const oh = EXT.segs.find((q) => q.kind === 'orbitHome'); goExterior(oh ? oh.t0 : 0); return; } if (tourI === 0 && extNodes.length) { phase = 'ext'; extI = 0; extT = 0; fadeTo(() => showPano(extNodes[0], true)); } } return; }
   // 4) явах
   const dx = p.x - cam.x, dz = p.z - cam.z, dist = Math.hypot(dx, dz);
   const targetYaw = Math.atan2(-dx, -dz);
@@ -425,14 +455,15 @@ function stepFree(dt) {
 function bindControls() {
   const c = renderer.domElement; let drag = null;
   c.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); });
-  c.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; if (mode === 'auto' && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) setMode('free'); cam.yaw -= dx * 0.004; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch - dy * 0.003)); });
+  c.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; if (SCENE_MODE === 'exterior' && EXT) { if (Math.abs(dx) + Math.abs(dy) > 1) { EXT.drag(dx, dy); markModeButtons(); } return; } if (mode === 'auto' && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) setMode('free'); cam.yaw -= dx * 0.004; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch - dy * 0.003)); });
   c.addEventListener('pointerup', () => { drag = null; }); c.addEventListener('pointercancel', () => { drag = null; });
   const keyOf = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
-  window.addEventListener('keydown', (e) => { const k = keyOf(e); keys[k] = true; if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) { setMode('free'); e.preventDefault(); } });
+  window.addEventListener('keydown', (e) => { const k = keyOf(e); keys[k] = true; if (['w', 'a', 's', 'd', 'q', 'e', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(true); markModeButtons(); } else setMode('free'); e.preventDefault(); } });
   window.addEventListener('keyup', (e) => { keys[keyOf(e)] = false; });
   document.querySelectorAll('.pad button').forEach((b) => { const k = b.dataset.k; const on = (e) => { e.preventDefault(); keys[k] = true; setMode('free'); }; const off = () => { keys[k] = false; }; b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off); });
-  $('#bAuto').onclick = () => { if (panoActive) togglePano(); setMode('auto'); };
-  $('#bFree').onclick = () => { if (panoActive && panoMesh.userData.exterior) hidePano(false); setMode('free'); };
+  $('#bAuto').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(false); markModeButtons(); return; } if (panoActive) togglePano(); setMode('auto'); };
+  $('#bOut').onclick = () => goExterior(0); $('#bIn').onclick = () => goInterior();
+  $('#bFree').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(true); markModeButtons(); return; } if (panoActive && panoMesh.userData.exterior) hidePano(false); setMode('free'); };
   $('#bFurn').onclick = () => { furnGroup.visible = !furnGroup.visible; $('#bFurn').classList.toggle('on', furnGroup.visible); };
   $('#bFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };
   $('#map').addEventListener('click', (e) => {
@@ -507,6 +538,41 @@ function togglePano() {
   savedCam = { ...cam }; setMode('free'); showPano(a, false);
 }
 
+// ---------- Гадаа ↔ дотор ----------
+function markModeButtons() {
+  const auto = SCENE_MODE === 'exterior' ? !!(EXT && !EXT.free) : mode === 'auto';
+  $('#bAuto').classList.toggle('on', auto); $('#bFree').classList.toggle('on', !auto);
+  $('#bOut').classList.toggle('on', SCENE_MODE === 'exterior'); $('#bIn').classList.toggle('on', SCENE_MODE === 'interior');
+}
+function showInteriorHud(on) { for (const q of ['.room', '.help']) { const el = $(q); if (el) el.style.display = on ? '' : 'none'; } $('#bFurn').style.display = on ? '' : 'none'; }
+function goExterior(at = 0) {
+  if (!EXT) return;
+  fadeTo(() => { SCENE_MODE = 'exterior'; if (panoActive) hidePano(true); EXT.setVisible(true); showInteriorHud(false); EXT.start(at); markModeButtons(); });
+}
+// Орцны хаалганаас 0.7 м дотор, өрөөний хамгийн урт чөлөөтэй чиглэл рүү харна (ханыг ширтэхгүй)
+function entryPose() {
+  const e = byId[plan.entry] || rooms[0]; cam.x = e.x + e.w / 2; cam.z = e.y + e.h / 2;
+  const ent = plan.doors.find((d) => d.b === 'out'); if (!ent) return;
+  const mx = (ent.x1 + ent.x2) / 2, mz = (ent.y1 + ent.y2) / 2; const r = byId[ent.a] || e;
+  let ix = r.x + r.w / 2 - mx, iz = r.y + r.h / 2 - mz; if (Math.abs(ent.x1 - ent.x2) > Math.abs(ent.y1 - ent.y2)) ix = 0; else iz = 0; const il = Math.hypot(ix, iz) || 1;
+  cam.x = mx + (ix / il) * 0.7; cam.z = mz + (iz / il) * 0.7;
+  const dirs = [['S', 0, 1, 0], ['N', 0, -1, Math.PI], ['W', -1, 0, -Math.PI / 2], ['E', 1, 0, Math.PI / 2]]; let best = null;
+  for (const [, dx, dz, yaw] of dirs) {
+    if (dx * ix + dz * iz < -0.01) continue; // хаалга руу биш
+    const free = dx > 0 ? r.x + r.w - cam.x : dx < 0 ? cam.x - r.x : dz > 0 ? r.y + r.h - cam.z : cam.z - r.y;
+    const doors = plan.doors.filter((d) => d.b !== 'out' && (d.a === r.id || d.b === r.id) && ((d.x1 + d.x2) / 2 - cam.x) * dx + ((d.y1 + d.y2) / 2 - cam.z) * dz > 0.3).length;
+    const score = free + doors * 0.8; if (!best || score > best.score) best = { score, yaw };
+  }
+  if (best) cam.yaw = best.yaw;
+}
+function goInterior() {
+  fadeTo(() => {
+    SCENE_MODE = 'interior'; if (EXT) EXT.setVisible(false); showInteriorHud(true);
+    entryPose();
+    tourI = 0; pauseT = 2.5; sweep = 0; phase = 'walk'; if (tourPts[0]) tourPts[0].yaw0 = cam.yaw; setMode('auto'); markModeButtons();
+  });
+}
+
 // ---------- Эхлэл ----------
 async function main() {
   const res = await fetch(`/tour-data/${token}`); if (!res.ok) { $('#load').textContent = 'Аялал олдсонгүй'; return; }
@@ -533,21 +599,33 @@ async function main() {
   hangPhotos();
   if (Object.values(assetsByType).flat().length) $('#bPhotos').disabled = false;
   $('#bPhotos').onclick = showPhotos; $('#bClosePhotos').onclick = () => { $('#photos').style.display = 'none'; }; $('#bPano').onclick = togglePano;
-  const e = byId[plan.entry] || rooms[0]; cam.x = e.x + e.w / 2; cam.z = e.y + e.h / 2;
-  const ent = plan.doors.find((d) => d.b === 'out'); if (ent) { const dx = (ent.x1 + ent.x2) / 2 - cam.x, dz = (ent.y1 + ent.y2) / 2 - cam.z; cam.yaw = Math.atan2(-dx, -dz) + Math.PI; }
+  entryPose();
   tourPts = buildTour(); tourI = 0; pauseT = 2.5; sweep = 0; if (tourPts[0]) tourPts[0].yaw0 = cam.yaw;
+  if (data.exterior && Array.isArray(data.exterior.buildings)) {
+    $('#load').lastElementChild.textContent = 'Гадаах орчныг бүтээж байна…'; await new Promise((r) => setTimeout(r, 30));
+    try { EXT = createExterior(data.exterior, { title: $('#title').textContent, keys, onDone: () => goInterior() }); window.zuuch.ext = EXT; $('#bOut').style.display = ''; $('#bIn').style.display = ''; }
+    catch (err) { console.error('exterior', err); EXT = null; }
+  }
   const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
+  if (EXT && !sr && q.get('in') !== '1') { SCENE_MODE = 'exterior'; EXT.setVisible(true); showInteriorHud(false); EXT.start(Number(q.get('at')) || 0); } else if (EXT) EXT.setVisible(false);
   if (sr) { enterRoom(sr); if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
   bindControls();
-  const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }; addEventListener('resize', resize); resize();
+  const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (EXT) { EXT.camera.aspect = innerWidth / innerHeight; EXT.camera.updateProjectionMatrix(); } }; addEventListener('resize', resize); resize();
   // Загварууд ачаалагдтал (≤6с) хүлээнэ, дараа нь эхэлнэ
   const t0 = Date.now(); while (loadedN < pending && Date.now() - t0 < 6000) { $('#load').lastElementChild.textContent = `Тавилга ачаалж байна… ${loadedN}/${pending}`; await new Promise((r) => setTimeout(r, 120)); }
   // Шэйдерүүдийг урьдчилан компиляц — тавилга гарч ирэх/өрөө солигдох мөчид гацахгүй (бенчмарк: эхний frame 62 мс, дараа нь 2 мс)
-  try { renderer.compile(scene, camera); } catch { /* зарим GPU-д алгасна */ }
+  try { renderer.compile(scene, camera); if (EXT) renderer.compile(EXT.scene, EXT.camera); } catch { /* зарим GPU-д алгасна */ }
+  markModeButtons();
   $('#load').style.display = 'none';
   let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1, fpsAcc = 0, fpsN = 0; // эхний frame-д минимап зурагдана
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (SCENE_MODE === 'exterior' && EXT) {
+      EXT.update(dt); mapT += dt; if (mapT > 0.1) { mapT = 0; EXT.drawMap($('#map').getContext('2d'), 440, 340); }
+      fpsAcc += dt; fpsN++;
+      if (fpsAcc >= 2) { const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; const pr = renderer.getPixelRatio(); if (fps < 28 && pr > 0.6) renderer.setPixelRatio(Math.max(0.6, pr - 0.15)); else if (fps > 55 && pr < Math.min(devicePixelRatio, 1.25)) renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25, pr + 0.1)); if (renderer.getPixelRatio() !== pr) renderer.setSize(innerWidth, innerHeight, false); }
+      renderer.render(EXT.scene, EXT.camera); requestAnimationFrame(frame); return;
+    }
     if (mode === 'auto') stepAuto(dt); else if (!panoActive) stepFree(dt);
     stepStaging(dt);
     camera.position.set(cam.x, EYE, cam.z); camera.rotation.set(0, 0, 0, 'YXZ'); camera.rotation.y = cam.yaw; camera.rotation.x = cam.pitch;

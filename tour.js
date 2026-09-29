@@ -73,6 +73,7 @@ function sanitizeRoom(r, i) {
     wallColor: /^#[0-9a-f]{6}$/i.test(String(r.wallColor || '')) ? r.wallColor : null,
     floor: ['parquet', 'laminate', 'tile', 'carpet'].includes(r.floor) ? r.floor : null,
     ceiling: r.ceiling ? num(r.ceiling, 2.2, 4.5, null) : null,
+    kitchen: r.type === 'living' && SIDES.includes(r.kitchen) ? r.kitchen : null, // зочны өрөөн доторх гал тогоо (аль хананд)
   };
 }
 
@@ -113,7 +114,10 @@ function finalize(plan) {
     for (const d of doors) if (d.manual && d.b !== 'out' && (d.a === id || d.b === id) && !out.some((o) => o.other === (d.a === id ? d.b : d.a))) out.push({ e: null, other: d.a === id ? d.b : d.a, manual: true });
     return out;
   };
-  const visited = new Set(entry ? [entry] : []); const queue = entry ? [entry] : []; const order = entry ? [entry] : [];
+  // Коридор өрөөнүүдийг ТЭРГҮҮНД боловсруулна → өрөөнүүд коридороос орно (унтлагын хооронд хаалга үүсэхгүй)
+  const visited = new Set(entry ? [entry] : []); const hallQ = [], otherQ = []; const order = entry ? [entry] : [];
+  const enqueue = (id) => ((byId[id] && byId[id].type === 'hall') ? hallQ : otherQ).push(id); if (entry) enqueue(entry);
+  const queue = { get length() { return hallQ.length + otherQ.length; }, shift: () => (hallQ.length ? hallQ.shift() : otherQ.shift()), push: enqueue };
   while (queue.length) {
     const cur = queue.shift(); const isHall = byId[cur] && byId[cur].type === 'hall';
     for (const { e, other, manual } of nbrsOf(cur)) {

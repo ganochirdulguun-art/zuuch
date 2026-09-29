@@ -393,6 +393,7 @@ CREATE TABLE IF NOT EXISTS tours (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (company_id, property_id)
 );
+ALTER TABLE tours ADD COLUMN IF NOT EXISTS exterior JSONB;
 `;
 
 async function init() {

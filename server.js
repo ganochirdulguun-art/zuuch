@@ -227,6 +227,7 @@ app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.o
 app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district)) || { error: 'Оноо олдсонгүй' })));
 // ---- Д-5: Замын/түгжрэлийн профайл ----
 const commute = require('./commute');
+const exterior = require('./exterior');
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -509,6 +510,31 @@ app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
   const t = await saveTour(req.user.company_id, prop.id, plan);
   res.json({ tour: t });
 }));
+// Ш3д-3 Гадаах орчны 3D нислэг: OSM (+ Google Routes цаг тус бүр) → tours.exterior. Удаан (1–3 мин) тул арын горимд, төлөвийг асууна.
+const extJobs = new Map(); // "company:pid" → { status, msg, started, error }
+app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return res.status(400).json({ error: 'Объектын байршлыг газрын зураг дээр заана уу (lat/lng)' });
+  const key = `${req.user.company_id}:${prop.id}`; const cur = extJobs.get(key);
+  if (cur && cur.status === 'running') return res.status(202).json(cur);
+  const job = { status: 'running', msg: 'Эхэлж байна…', started: new Date().toISOString() }; extJobs.set(key, job);
+  (async () => {
+    try {
+      const data = await exterior.generate(prop.lat, prop.lng, { log: (m) => { job.msg = m; } });
+      let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+      if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+      await db.run('UPDATE tours SET exterior=?, updated_at=NOW() WHERE company_id=? AND property_id=?', JSON.stringify(data), req.user.company_id, prop.id);
+      Object.assign(job, { status: 'done', msg: `Бэлэн: ${data.buildings.length} барилга, ${data.pois.length} цэг` });
+    } catch (e) { Object.assign(job, { status: 'error', msg: String(e.message || e).slice(0, 200) }); }
+  })();
+  res.status(202).json(job);
+}));
+app.get('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const job = extJobs.get(`${req.user.company_id}:${prop.id}`) || null;
+  const t = await db.one("SELECT (exterior IS NOT NULL) AS has, exterior->>'generated_at' AS at, jsonb_array_length(COALESCE(exterior->'pois','[]'::jsonb)) AS pois FROM tours WHERE company_id=? AND property_id=?", req.user.company_id, prop.id);
+  res.json({ job, has: !!(t && t.has), generated_at: t && t.at, pois: t ? t.pois : 0 });
+}));
 // AI зургийн шинжилгээ → бодит орон зайн параметр (таазны өндөр, хаалга/цонх/довжоо, дам нуруу, шал, ханын өнгө) → plan.style
 app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
@@ -560,7 +586,7 @@ app.get('/tour-data/:token', wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
   const p = await db.one('SELECT district, khoroolol, rooms, area, floor, total_floors, is_new, deal_type, price FROM properties WHERE id=?', t.property_id);
   const c = await db.one('SELECT name FROM companies WHERE id=?', t.company_id);
-  res.json({ plan: t.plan, property: p, company: c ? c.name : '', assets: await tourAssets(t.company_id, t.property_id) });
+  res.json({ plan: t.plan, property: p, company: c ? c.name : '', assets: await tourAssets(t.company_id, t.property_id), exterior: t.exterior || null });
 }));
 app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   const t = await db.one('SELECT company_id, property_id FROM tours WHERE token=?', req.params.token);

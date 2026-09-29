@@ -21,6 +21,7 @@
   .brand b { color:#60a5fa; }
   .title { font-size:13px; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sp { flex:1; }
+  .top button { white-space:nowrap; }
   button, .btn { border:1px solid rgba(255,255,255,.25); background:rgba(15,23,42,.65); color:#fff; border-radius:8px; padding:7px 11px; font:600 12.5px Inter,sans-serif; cursor:pointer; backdrop-filter:blur(6px); }
   button.on { background:var(--accent); border-color:var(--accent); }
   button:disabled { opacity:.4; cursor:default; }
@@ -43,6 +44,34 @@
   .ic.solo { margin:0; }
   .pad .ic { width:22px; height:22px; vertical-align:middle; }
   .fade { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .35s; z-index:4; }
+
+  /* Гадаах орчны нислэг (Ш3д-3) */
+  #extLabels { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:2; }
+  .xl { position:absolute; left:0; top:0; display:flex; align-items:center; gap:6px; padding:3px 9px 3px 3px; background:rgba(15,23,42,.74); border:1px solid color-mix(in srgb, var(--c) 65%, transparent); border-radius:999px; color:#fff; font:600 11.5px Inter,sans-serif; white-space:nowrap; backdrop-filter:blur(4px); }
+  .xl::after { content:''; position:absolute; left:50%; bottom:-8px; width:2px; height:8px; margin-left:-1px; background:var(--c); }
+  .xl-ic { width:22px; height:22px; border-radius:50%; background:var(--c); display:grid; place-items:center; flex:none; }
+  .xl-ic .ic { width:13px; height:13px; margin:0; stroke:#fff; stroke-width:2.2; vertical-align:0; }
+  .xl-t b { display:block; line-height:1.15; } .xl-t i { display:block; font-style:normal; font-weight:500; font-size:10.5px; opacity:.85; }
+  .xl.on { background:color-mix(in srgb, var(--c) 88%, #0f172a); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 35%, transparent), 0 8px 24px rgba(0,0,0,.35); font-size:13px; z-index:3; }
+  .xl-home { background:color-mix(in srgb, var(--c) 90%, #0f172a); font-size:13px; }
+  .xl.mini { padding:2px 7px 2px 2px; font-size:10.5px; } .xl.mini .xl-t i { display:none; } .xl.mini .xl-ic { width:17px; height:17px; } .xl.mini .xl-ic .ic { width:10px; height:10px; }
+  #extCaption { position:fixed; left:50%; bottom:88px; transform:translate(-50%, 12px); opacity:0; transition:opacity .45s, transform .45s; display:flex; gap:12px; align-items:flex-start; min-width:340px; max-width:min(560px, 92vw); padding:12px 16px; background:rgba(15,23,42,.8); border:1px solid rgba(255,255,255,.12); border-left:4px solid var(--c); border-radius:14px; color:#fff; backdrop-filter:blur(8px); z-index:4; pointer-events:none; }
+  #extCaption.show { opacity:1; transform:translate(-50%, 0); }
+  .xc-ic { width:44px; height:44px; border-radius:12px; background:var(--c); display:grid; place-items:center; flex:none; }
+  .xc-ic .ic { width:24px; height:24px; margin:0; stroke:#fff; stroke-width:2; vertical-align:0; }
+  .xc-t { font:700 17px Montserrat,sans-serif; line-height:1.2; } .xc-s { font-size:13.5px; margin-top:2px; opacity:.95; } .xc-d { font-size:12.5px; margin-top:4px; color:#cbd5e1; line-height:1.45; }
+  .xc-chart { display:block; margin-top:8px; max-width:100%; }
+  #extPanel { position:fixed; right:14px; top:62px; width:300px; max-height:calc(100vh - 270px); overflow:auto; background:rgba(15,23,42,.74); border:1px solid rgba(255,255,255,.14); border-radius:12px; padding:8px; backdrop-filter:blur(8px); z-index:4; }
+  #extPanel h4 { margin:2px 4px 8px; font:700 13px Montserrat,sans-serif; display:flex; align-items:center; gap:6px; }
+  #extList { list-style:none; margin:0; padding:0; }
+  #extList li { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:6px 6px; border-radius:8px; font-size:12px; border-left:3px solid transparent; }
+  #extList li[data-seg] { cursor:pointer; } #extList li:hover { background:rgba(255,255,255,.07); }
+  #extList li.on { background:color-mix(in srgb, var(--c) 30%, transparent); border-left-color:var(--c); }
+  #extList li > .ic { width:18px; height:18px; margin:0; color:var(--c); }
+  #extList li span b { display:block; font-weight:600; line-height:1.2; } #extList li span i { display:block; font-style:normal; opacity:.7; font-size:11px; }
+  #extList li em { font-style:normal; font-weight:700; text-align:right; white-space:nowrap; } #extList li em small { display:block; font-weight:500; opacity:.75; }
+  .xp-src { font-size:10.5px; opacity:.65; margin:8px 4px 2px; line-height:1.4; }
+  @media (max-width:760px) { #extPanel { display:none; } #extCaption { bottom:150px; min-width:0; } }
 </style>
 </head>
 <body>
@@ -56,6 +85,8 @@
   <button id="bPhotos" disabled><svg class="ic" aria-hidden="true"><use href="#i-images"/></svg>Зураг</button>
   <button id="bPano" style="display:none">360° панорам</button>
   <button id="bFurn" class="on" title="Тавилгын санал (жишиг) асаах/унтраах"><svg class="ic" aria-hidden="true"><use href="#i-armchair"/></svg>Тавилга</button>
+  <button id="bOut" style="display:none" title="Гадаах орчны 3D нислэг"><svg class="ic" aria-hidden="true"><use href="#i-plane-landing"/></svg>Гадаа</button>
+  <button id="bIn" style="display:none" title="Байрны дотор"><svg class="ic" aria-hidden="true"><use href="#i-house"/></svg>Дотор</button>
   <button id="bFull" title="Бүтэн дэлгэц"><svg class="ic solo" aria-hidden="true"><use href="#i-maximize"/></svg></button>
 </div>
 <div class="room"><div class="n" id="rName">—</div><div class="a" id="rArea"></div></div>
@@ -63,6 +94,12 @@
 <div class="help">Чирж хар · W/A/S/D эсвэл сумаар яв · план дээр өрөө дарж очно</div>
 <div class="pad"><button data-k="a"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-left"/></svg></button><button data-k="w"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-up"/></svg></button><button data-k="s"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-down"/></svg></button><button data-k="d"><svg class="ic solo" aria-hidden="true"><use href="#i-chevron-right"/></svg></button></div>
 <div id="photos"><button class="x" id="bClosePhotos"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>Хаах</button><div class="grid" id="photoGrid"></div></div>
+<div id="extLabels"></div>
+<div id="extHud" style="display:none">
+  <div id="extCaption"></div>
+  <aside id="extPanel"><h4><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>Орчны мэдээлэл</h4><ul id="extList"></ul>
+    <div class="xp-src">Газрын зураг: © OpenStreetMap, Overture Maps (Microsoft ML барилга) · Өндөр: GHSL (EU JRC) · Замын хугацаа: Google Routes, ажлын өдөр · Алхах хурд 4.5 км/ц</div></aside>
+</div>
 <div class="fade" id="fade"></div>
 <div id="load"><div class="spin"></div><div>Аялал бэлдэж байна…</div></div>
 <script src="/icons.js?v=1"></script>
