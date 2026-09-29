@@ -80,7 +80,8 @@ function initMats() {
   mats.duvet = new THREE.MeshStandardMaterial({ color: 0x9aa7b8, roughness: 1, normalMap: mats.fabricNor, roughnessMap: mats.fabricRough });
   mats.rug = new THREE.MeshStandardMaterial({ color: 0xd6d3cd, roughness: 1, normalMap: mats.fabricNor });
   mats.steel = new THREE.MeshStandardMaterial({ color: 0xcfd4da, roughness: 0.25, metalness: 0.9 });
-  mats.mirror = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.02, metalness: 1 });
+  mats.mirror = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 1, envMap: scene.environment, envMapIntensity: 1 }); // толь: орчныг бүрэн тусгана (scene.environmentIntensity-ээр бүдгэрэхгүй)
+  mats.tWood = new THREE.MeshStandardMaterial({ color: 0xa27a52, roughness: 0.5, normalMap: tex('/textures/wood_nor.jpg', [1, 1], false), normalScale: new THREE.Vector2(0.4, 0.4) }); // хоолны ширээ/сандал: дунд өнгийн мод (цайвар шалнаас ялгарна)
   mats.matteWhite = new THREE.MeshStandardMaterial({ color: 0xf7f7f5, roughness: 0.6 });
   // Буйдан (дулаан саарал даавуу), дэр, гэрлийн бүрхүүл, навч, ус, шүүгээний заадас
   mats.sofa = new THREE.MeshStandardMaterial({ color: 0x9a948b, roughness: 1, normalMap: mats.fabricNor, roughnessMap: mats.fabricRough }); mats.sofaCus = new THREE.MeshStandardMaterial({ color: 0xaaa49a, roughness: 1, normalMap: mats.fabricNor, roughnessMap: mats.fabricRough });
@@ -116,7 +117,7 @@ function loadModel(name) {
   return modelCache[name];
 }
 // Загварын «урд тал» (эргэлтийн залруулга, рад) — дэлгэцээр шалгаж тохируулсан
-const FRONT = { sofa_03: 0, modern_arm_chair_01: 0, dining_chair_02: 0, modern_wooden_cabinet: 0, painted_wooden_nightstand: 0, Shelf_01: 0, electric_stove: 0, hanging_picture_frame_01: 0, ornate_mirror_01: 0, wall_clock: 0 };
+const FRONT = { modern_arm_chair_01: 0, modern_wooden_cabinet: 0, hanging_picture_frame_01: 0, wall_clock: 0 };
 
 // ---------- Дэлхийн координат: план (x баруун, y урагш=өмнө) → three (x, z=y) ----------
 function segOnEdge(seg, edge) {
@@ -214,8 +215,9 @@ function buildRoom(r) {
 
 // ---------- Тавилга: дүрэмд суурилсан байрлуулалт (мэргэжлийн staging) ----------
 // Зарчим: зөвхөн БОДИТ ханын хэсэг (хана − хаалга − өндөр эд зүйлд цонх); гал тогооны зурвасын дотоод зааг хана биш.
-// Хаалга бүрийн өмнө чөлөө (нээлхий+0.2 × 0.9 м), тагтны хаалга руу 1.0 м зам, эд зүйлсийн хооронд ≥0.7 м гарц, тавцан ↔ хоолны ширээ ≥0.9 м.
-// Эд зүйл бүр: хэмжээ Box3-аар → ханад 2 см зайтай наалдуулна → өрөөнд багтаж, мөргөлдөхгүй, чөлөөт бүсэд орохгүй бол авна; үгүй бол дараагийн хувилбар, эс бөгөөс алгасна (шалтгаан тайланд).
+// Хаалга бүрийн өмнө чөлөө (нээлхий+0.2 × 0.9 м), тагтны хаалга руу зам (зочны өрөөнд 1.0 м, бусад 0.8 м), эд зүйлсийн хооронд ≥0.7 м гарц, тавцан ↔ хоолны ширээ ≥0.9 м, сандлын ард 0.6 м.
+// Эд зүйл бүр: хэмжээ → ханад 2 см зайтай наалдуулна → өрөөнд багтаж, мөргөлдөхгүй, чөлөөт бүсэд орохгүй бол авна; үгүй бол дараагийн хувилбар, эс бөгөөс алгасна (шалтгаан тайланд).
+// Залхуу: байрлал зөвхөн тавилга анх асаахад (эсвэл ?furn=1, листингийн зураг өлгөх үед) тооцогдоно; ~8 мс тутамд main thread-д амсхийлгэнэ.
 function doorSide(r) {
   for (const d of plan.doors) {
     if (d.b === 'out' && d.a === r.id) continue;
@@ -227,28 +229,21 @@ function doorSide(r) {
   }
   return 'S';
 }
-function mainSide(r) {
-  const ds = doorSide(r); const opp = { S: 'N', N: 'S', W: 'E', E: 'W' }[ds];
-  const winSides = new Set(plan.windows.filter((w) => w.room === r.id).map((w) => w.side));
-  const doorSides = new Set(); for (const d of plan.doors) { if (d.a !== r.id && d.b !== r.id) continue; if (Math.abs(d.y1 - r.y) < 0.07 && Math.abs(d.y2 - r.y) < 0.07) doorSides.add('N'); else if (Math.abs(d.y1 - (r.y + r.h)) < 0.07) doorSides.add('S'); else if (Math.abs(d.x1 - r.x) < 0.07) doorSides.add('W'); else doorSides.add('E'); }
-  if (!winSides.has(opp)) return opp;
-  const free = ['W', 'E', 'N', 'S'].filter((s) => !winSides.has(s) && !doorSides.has(s) && s !== ds);
-  return free[0] || opp;
-}
-const LAY = { gap: 0.02, doorW: 0.2, doorD: 0.9, balc: 1.0, walk: 0.7, cell: 0.05 };
+const LAY = { gap: 0.02, doorW: 0.2, doorD: 0.9, balc: 1.0, balcBed: 0.8, walk: 0.7, back: 0.6, cell: 0.05, fcl: 0.6 };
 const FACE = { N: 0, S: Math.PI, W: Math.PI / 2, E: -Math.PI / 2 }, OPP = { N: 'S', S: 'N', W: 'E', E: 'W' }, SIDES = ['N', 'S', 'W', 'E'];
-const roomLay = {}, FUR = {}; let furnReady = false, furnDirty = false; // өрөө бүрийн байрлалын тайлан; ачаалсан загварууд (прототип)
+const roomLay = {}, FUR = {}; let furnReady = false, furnDirty = false, furnWant = false; // өрөө бүрийн байрлалын тайлан; ачаалсан загварууд (прототип)
 const ov = (a, b, m = 0) => a.x0 < b.x1 - m && b.x0 < a.x1 - m && a.z0 < b.z1 - m && b.z0 < a.z1 - m;
 const rdist = (a, b) => Math.hypot(Math.max(0, a.x0 - b.x1, b.x0 - a.x1), Math.max(0, a.z0 - b.z1, b.z0 - a.z1));
 const inRoom = (c, k, e = 0.002) => k.x0 >= c.x0 - e && k.x1 <= c.x1 + e && k.z0 >= c.z0 - e && k.z1 <= c.z1 + e;
 const steps = (a, b, d = 0.1) => { if (b < a - 1e-6) return []; const o = [a, b, (a + b) / 2]; for (let t = a + d; t < b; t += d) o.push(t); return o; };
 const alongX = (s) => s === 'N' || s === 'S';
+let brkT = 0; const brk = async () => { if (performance.now() - brkT < 8) return; await (globalThis.scheduler && scheduler.yield ? scheduler.yield() : new Promise((r) => setTimeout(r, 0))); brkT = performance.now(); }; // ~8 мс тутамд амсхийлгэнэ
 // Ханын локал координат: t = ханын дагуу, o = ханын дотоод гадаргуугаас өрөө рүү
 function wRect(c, s, t0, t1, o0, o1) { return s === 'N' ? { x0: t0, x1: t1, z0: c.z0 + o0, z1: c.z0 + o1 } : s === 'S' ? { x0: t0, x1: t1, z0: c.z1 - o1, z1: c.z1 - o0 } : s === 'W' ? { x0: c.x0 + o0, x1: c.x0 + o1, z0: t0, z1: t1 } : { x0: c.x1 - o1, x1: c.x1 - o0, z0: t0, z1: t1 }; }
 const wPt = (c, s, t, o) => (s === 'N' ? [t, c.z0 + o] : s === 'S' ? [t, c.z1 - o] : s === 'W' ? [c.x0 + o, t] : [c.x1 - o, t]);
-// Өрөөний контекст: дотоод хил (ханын гадаргуу), хана бүрийн нээлхий, хаалганы чөлөө, цонхны өмнөх бүс (0.8 м), хаалганы хүрээ
+// Өрөөний контекст: дотоод хил (ханын гадаргуу), хана бүрийн нээлхий, хаалганы чөлөө, цонхны өмнөх бүс (0.8 м), хаалганы хүрээ; тагт руу замын өргөн (зочны 1.0, бусад 0.8)
 function roomCtx(r) {
-  const c = { r, x0: r.x + WALL_T, x1: r.x + r.w - WALL_T, z0: r.y + WALL_T, z1: r.y + r.h - WALL_T, walls: {}, zones: [], wins: [], frames: [], items: [], log: [] };
+  const c = { r, x0: r.x + WALL_T, x1: r.x + r.w - WALL_T, z0: r.y + WALL_T, z1: r.y + r.h - WALL_T, walls: {}, zones: [], wins: [], frames: [], items: [], log: [], balc: r.type === 'living' ? LAY.balc : LAY.balcBed, tick: async () => {} };
   for (const [s, axis, ec, a, b] of [['N', 'x', r.y, r.x, r.x + r.w], ['S', 'x', r.y + r.h, r.x, r.x + r.w], ['W', 'y', r.x, r.y, r.y + r.h], ['E', 'y', r.x + r.w, r.y, r.y + r.h]]) {
     const e = { axis, c: ec, a, b }, w = { s, a0: alongX(s) ? c.x0 : c.z0, a1: alongX(s) ? c.x1 : c.z1, ops: [] }; c.walls[s] = w;
     for (const d of plan.doors) { if (d.a !== r.id && d.b !== r.id) continue; const o = segOnEdge(d, e); if (!o) continue; const to = d.a === r.id ? d.b : d.a; w.ops.push({ t: 'door', lo: o[0], hi: o[1], to, balc: !!(byId[to] && byId[to].type === 'balcony') }); }
@@ -270,88 +265,131 @@ function solid(c, s, y0, y1, pad = 0) {
   }
   return iv;
 }
-// Прототип: obj (урд тал +Z, суурь y=0) → хэмжээ Box3-аар (rot0 эргэлттэй); grp = бүлэг (бүлэг дотроо гарц/чөлөөний дүрэм үйлчлэхгүй)
+// Ханын дагуух тууз (гүн dep, өндөр y0..y1) дахь чөлөөт хэсгүүд: solid − туузтай огтлолцох хаалганы чөлөө (нам эд зүйлд) − цонхны бүс (хөрш хананых ч — булан дахь дээд шүүгээ цонхыг халхлахгүй)
+function bandIv(c, s, y0, y1, dep, min = 0.3) {
+  let iv = solid(c, s, y0, y1); const band = wRect(c, s, -1e3, 1e3, 0, dep), cut = (lo, hi) => { iv = iv.flatMap(([a, b]) => [[a, Math.min(b, lo - 0.02)], [Math.max(a, hi + 0.02), b]]); };
+  for (const z of y0 < 1.0 ? c.zones : []) if (ov(band, z)) cut(alongX(s) ? z.x0 : z.z0, alongX(s) ? z.x1 : z.z1);
+  for (const w of c.wins) if (y1 > w.y0 && y0 < w.y1 && ov(band, w)) cut(alongX(s) ? w.x0 : w.z0, alongX(s) ? w.x1 : w.z1);
+  return iv.filter(([a, b]) => b - a >= min);
+}
+// Прототип (урд тал +Z, суурь y=0): glTF объект → хэмжээ Box3-аар (rot0 эргэлттэй); процедур P(w,d,h,mk) → хэмжээ урьдчилан мэдэгдэнэ, объект зөвхөн сонгогдвол бүтээгдэнэ (хурдан)
+// grp = бүлэг (бүлэг дотроо гарц/чөлөөний дүрэм үйлчлэхгүй); pull = сандал (ард нь 0.6 м татах зай гарц гэж тооцогдоно)
+const P = (w, d, h, mk) => ({ w, d, h, mk });
 function proto(obj, k, o = {}) {
-  if (!obj) return null;
-  obj.position.set(0, 0, 0); obj.rotation.set(0, o.rot0 || 0, 0); obj.updateMatrixWorld(true);
-  const bb = new THREE.Box3().setFromObject(obj), sz = bb.getSize(new THREE.Vector3());
-  return { ref: { obj, n: 0 }, k, w: sz.x, d: sz.z, h: o.h || sz.y, cx: (bb.min.x + bb.max.x) / 2, cz: (bb.min.z + bb.max.z) / 2, rot0: o.rot0 || 0, y0: o.y0 || 0, grp: o.grp || k, wall: !!o.wall, deco: !!o.deco, under: !!o.under, ceil: !!o.ceil, floor: !o.wall && !o.under && !((o.y0 || 0) > 0.3) };
+  if (!obj) return null; let { w, d, h } = obj, cx = 0, cz = 0;
+  if (obj.isObject3D) { obj.position.set(0, 0, 0); obj.rotation.set(0, o.rot0 || 0, 0); obj.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(obj), sz = bb.getSize(new THREE.Vector3()); [w, d, h, cx, cz] = [sz.x, sz.z, sz.y, (bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2]; }
+  return { ref: { obj: obj.isObject3D ? obj : null, mk: obj.mk, n: 0 }, k, w, d, h: o.h || h, cx, cz, rot0: o.rot0 || 0, y0: o.y0 || 0, grp: o.grp || k, wall: !!o.wall, deco: !!o.deco, under: !!o.under, ceil: !!o.ceil, pull: !!o.pull, floor: !o.wall && !o.under && !((o.y0 || 0) > 0.3) };
 }
 // Байрлал: төв (x,z), урд тал θ чиглэлд (0, ±π/2, π) → дэлхийн тэгш өнцөгт ул мөр
 function at(p, x, z, th, ex) { const q = Math.abs(Math.sin(th)) > 0.5, hw = (q ? p.d : p.w) / 2, hd = (q ? p.w : p.d) / 2; return { ...p, x, z, th, rect: { x0: x - hw, x1: x + hw, z0: z - hd, z1: z + hd }, keep: [], ...ex }; }
 function onWall(c, p, s, t, off = LAY.gap) { const [x, z] = wPt(c, s, t, off + p.d / 2); return at(p, x, z, FACE[s], { side: s, t, off }); }
 // Нэг эд зүйлийн шалгалт → '' эсвэл шалтгаан
 function fits(c, it) {
-  const r = it.rect, e = 0.002, y1 = it.y0 + it.h, tall = (x) => x.wall || x.h > 1.4;
+  const r = it.rect, e = 0.002, y1 = it.y0 + it.h, tall = (x) => x.wall || x.h > 1.4, nar = (g, x, y) => g > 0.002 && g < LAY.walk - 0.01 && !((x.pull || (y && y.pull)) && g >= LAY.back - 0.01); // нарийн гарц (сандлын ард 0.6 м татах зай болно)
   if (!inRoom(c, r)) return 'өрөөнд багтахгүй';
   if (it.y0 < 1.0) for (const z of c.zones) if (ov(r, z, e)) return 'хаалганы өмнөх чөлөөнд';
   if (!it.under) for (const f of c.frames) if (it.y0 < f.y1 && ov(r, f, e)) return 'хаалганы хүрээнд';
   for (const w of c.wins) if (y1 > w.y0 && it.y0 < w.y1 && ov(r, w, it.deco ? -0.08 : e)) return 'цонхны өмнө';
   for (const k of it.keep) if (!inRoom(c, k)) return 'урд чөлөө өрөөнд багтахгүй';
+  // Чөлөөт (хананд наалдаагүй) том шалны эд зүйл ханатай «үхмэл зурвас» (0.06–0.7 м) үүсгэхгүй: хананд наалдана эсвэл гарц үлдээнэ (ургамал г.м. жижиг зүйлд үйлчлэхгүй)
+  if (it.floor && !it.side && it.h > 0.3 && Math.min(it.w, it.d) >= 0.4 && [r.x0 - c.x0, c.x1 - r.x1, r.z0 - c.z0, c.z1 - r.z1].some((g) => g > 0.06 && nar(g, it))) return 'ханатай нарийн зай';
   for (const o of c.items) {
     if (it.under || o.under) { if (it.under && o.under && ov(r, o.rect, e)) return 'хивс давхцана'; continue; }
-    if (y1 > o.y0 + 0.005 && it.y0 < o.y0 + o.h - 0.005 && ov(r, o.rect, e)) return `${o.k}-тэй давхцана`;
+    if (y1 > o.y0 + 0.005 && it.y0 < o.y0 + o.h - 0.005 && ov(r, o.rect, e) && !(o.grp === it.grp && it.pull !== o.pull)) return `${o.k}-тэй давхцана`; // сандал ширээн доор 8 см түлхэгдсэн (staging) — өөрийн ширээтэй давхцаж болно
     if (o.grp === it.grp) continue;
     if (it.floor) for (const k of o.keep) if (ov(r, k, e)) return `${o.k}-ийн өмнөх чөлөөнд`;
     if (o.floor) for (const k of it.keep) if (ov(k, o.rect, e)) return `өмнөх чөлөөнд ${o.k}`;
-    if (it.floor && o.floor) { const px = Math.min(r.x1, o.rect.x1) - Math.max(r.x0, o.rect.x0), pz = Math.min(r.z1, o.rect.z1) - Math.max(r.z0, o.rect.z0), g = px > 0.05 ? -pz : pz > 0.05 ? -px : 0; if (g > (it.side && o.side ? 0.12 : 0.002) && g < LAY.walk - 0.01) return `${o.k}-тэй гарц нарийн`; } // хоёулаа хананд наалдсан бол зэрэгцэж (≤0.12) болно
+    if (it.floor && o.floor) { const px = Math.min(r.x1, o.rect.x1) - Math.max(r.x0, o.rect.x0), pz = Math.min(r.z1, o.rect.z1) - Math.max(r.z0, o.rect.z0), g = px > 0.05 ? -pz : pz > 0.05 ? -px : 0; if (g > (it.side && o.side ? 0.12 : 0.002) && nar(g, it, o)) return `${o.k}-тэй гарц нарийн`; } // хоёулаа хананд наалдсан бол зэрэгцэж (≤0.12) болно
     if (it.side && it.side === o.side && (it.wall || o.wall) && tall(it) && tall(o)) { const g = alongX(it.side) ? Math.max(r.x0 - o.rect.x1, o.rect.x0 - r.x1) : Math.max(r.z0 - o.rect.z1, o.rect.z0 - r.z1); if (g < 0.3) return `${o.k}-тэй хананд шахцана`; }
   }
   return '';
 }
 function tryAdd(c, its) { let n = 0; for (const it of its) { const w = fits(c, it); if (w) { c.items.length -= n; return `${it.k}: ${w}`; } c.items.push(it); n++; } return ''; }
-// Хөдөлгөөний зам (5 см сүлжээ): үндсэн хаалганаас бусад хаалганы чөлөө ба 'reach' чөлөөнүүд ≥0.7 м, тагтны хаалга ≥1.0 м өргөн замаар холбогдоно
+// Хөдөлгөөний зам (5 см сүлжээ): үндсэн хаалганаас бусад хаалганы чөлөө ба 'reach' чөлөөнүүд ≥0.7 м, тагтны хаалга c.balc өргөн замаар холбогдоно.
+// Хурдан: ханын зайн суурь талбар + хаалганы бүсийн индекс өрөө бүрт нэг удаа; батлагдсан эд зүйлсийн талбар кэштэй, шинэ эд зүйл зөвхөн өөрийн ≤0.6 м орчны нүдийг шинэчилнэ
+function fgrid(c) {
+  if (c.G) return c.G;
+  const nx = Math.max(1, Math.round((c.x1 - c.x0) / LAY.cell)), nz = Math.max(1, Math.round((c.z1 - c.z0) / LAY.cell)), N = nx * nz, sx = (c.x1 - c.x0) / nx, sz = (c.z1 - c.z0) / nz, D0 = new Float32Array(N), Z = new Int8Array(N).fill(-1);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const px = c.x0 + (i + 0.5) * sx, pz = c.z0 + (j + 0.5) * sz, k = j * nx + i; D0[k] = Math.min(LAY.fcl, px - c.x0, c.x1 - px, pz - c.z0, c.z1 - pz);
+    for (let q = 0; q < c.zones.length; q++) { const z = c.zones[q]; if (px > z.x0 && px < z.x1 && pz > z.z0 && pz < z.z1) { Z[k] = q; break; } }
+  }
+  return (c.G = { nx, nz, N, sx, sz, D0, Z, B: null });
+}
+function stamp(c, G, D, o) { // o-гийн орчны (≤fcl) нүдний зайг шинэчилнэ
+  const F = LAY.fcl, i0 = Math.max(0, Math.floor((o.x0 - F - c.x0) / G.sx)), i1 = Math.min(G.nx - 1, Math.ceil((o.x1 + F - c.x0) / G.sx)), j0 = Math.max(0, Math.floor((o.z0 - F - c.z0) / G.sz)), j1 = Math.min(G.nz - 1, Math.ceil((o.z1 + F - c.z0) / G.sz));
+  for (let j = j0; j <= j1; j++) { const pz = c.z0 + (j + 0.5) * G.sz, dz = Math.max(o.z0 - pz, 0, pz - o.z1); for (let i = i0; i <= i1; i++) { const px = c.x0 + (i + 0.5) * G.sx, d = Math.hypot(Math.max(o.x0 - px, 0, px - o.x1), dz), k = j * G.nx + i; if (d < D[k]) D[k] = d; } }
+}
+function field(c) { // батлагдсан (кэш) + шинэ шалны эд зүйлсийн зайн талбар
+  const G = fgrid(c), fl = c.items.filter((o) => o.floor), B = G.B; let n = 0, D;
+  if (B && B.fl.length <= fl.length && B.fl.every((o, i) => o === fl[i])) { D = B.D.slice(); n = B.fl.length; } else D = G.D0.slice();
+  for (let i = n; i < fl.length; i++) stamp(c, G, D, fl[i].rect);
+  return D;
+}
 function flows(c) {
   if (!c.main) return true;
-  const nx = Math.max(1, Math.round((c.x1 - c.x0) / LAY.cell)), nz = Math.max(1, Math.round((c.z1 - c.z0) / LAY.cell)), N = nx * nz, sx = (c.x1 - c.x0) / nx, sz = (c.z1 - c.z0) / nz;
-  const obs = c.items.filter((o) => o.floor).map((o) => o.rect), D = new Float32Array(N), Z = new Int8Array(N).fill(-1), z0i = c.zones.indexOf(c.main);
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const px = c.x0 + (i + 0.5) * sx, pz = c.z0 + (j + 0.5) * sz, k = j * nx + i; let d = Math.min(px - c.x0, c.x1 - px, pz - c.z0, c.z1 - pz);
-    for (const o of obs) d = Math.min(d, Math.hypot(Math.max(o.x0 - px, 0, px - o.x1), Math.max(o.z0 - pz, 0, pz - o.z1)));
-    D[k] = d; for (let q = 0; q < c.zones.length; q++) { const z = c.zones[q]; if (px > z.x0 && px < z.x1 && pz > z.z0 && pz < z.z1) { Z[k] = q; break; } }
-  }
+  const G = fgrid(c), { nx, nz, N, sx, sz, Z } = G, D = field(c), z0i = c.zones.indexOf(c.main);
   const reach = (rad) => {
     const seen = new Uint8Array(N), st = []; for (let k = 0; k < N; k++) if (Z[k] === z0i && D[k] > 0) { seen[k] = 1; st.push(k); }
     while (st.length) { const k = st.pop(), i = k % nx, j = (k - i) / nx; for (const kk of [i + 1 < nx ? k + 1 : -1, i > 0 ? k - 1 : -1, j + 1 < nz ? k + nx : -1, j > 0 ? k - nx : -1]) if (kk >= 0 && !seen[kk] && D[kk] > 0.001 && (Z[kk] >= 0 || D[kk] >= rad - LAY.cell / 2)) { seen[kk] = 1; st.push(kk); } }
     return seen;
   };
-  const hit = (seen, rc) => { for (let j = 0; j < nz; j++) { const pz = c.z0 + (j + 0.5) * sz; if (pz <= rc.z0 || pz >= rc.z1) continue; for (let i = 0; i < nx; i++) { const px = c.x0 + (i + 0.5) * sx; if (px > rc.x0 && px < rc.x1 && seen[j * nx + i]) return true; } } return false; };
+  const hit = (seen, rc) => { const i0 = Math.max(0, Math.floor((rc.x0 - c.x0) / sx - 0.5) + 1), i1 = Math.min(nx - 1, Math.ceil((rc.x1 - c.x0) / sx - 0.5) - 1), j0 = Math.max(0, Math.floor((rc.z0 - c.z0) / sz - 0.5) + 1), j1 = Math.min(nz - 1, Math.ceil((rc.z1 - c.z0) / sz - 0.5) - 1); for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (seen[j * nx + i]) return true; return false; };
   const a = reach(LAY.walk / 2);
   for (const z of c.zones) if (!hit(a, z)) return false;
   for (const o of c.items) for (const k of o.keep) if (k.reach && !hit(a, k)) return false;
-  if (c.zones.some((z) => z.door.balc)) { const b = reach(LAY.balc / 2); for (const z of c.zones) if (z.door.balc && !hit(b, z)) return false; }
+  if (c.zones.some((z) => z.door.balc)) { const b = reach(c.balc / 2); for (const z of c.zones) if (z.door.balc && !hit(b, z)) return false; }
   return true;
 }
-// Хувилбаруудаас сонголт: хямд шалгалт → оноогоор эрэмбэлж → замын шалгалт; эхний тэнцсэнийг авна, эс бөгөөс хамгийн түгээмэл шалтгаан.
-// look(c) өгвөл нэг алхам урьдчилан харна: түлхүүр (key) бүрийн шилдэг хувилбарыг (≤24) түр байрлуулж дараагийн эд зүйл багтах эсэхийн оноог нэмнэ
-function choose(c, cands, flow = true, look = null, maxFlow = 150) {
-  const ok = [], why = {}, bump = (w) => { why[w] = (why[w] || 0) + 1; };
+// Хувилбаруудаас сонголт: хямд шалгалт → оноогоор эрэмбэлж → замын шалгалт; эхний тэнцсэнийг авна, эс бөгөөс хамгийн түгээмэл шалтгаан
+function choose(c, cands, flow = true, maxFlow = 150) {
+  const G = fgrid(c), B0 = G.B; G.B = { fl: c.items.filter((o) => o.floor), D: field(c) }; // батлагдсан талбарын кэш (дотоод peek дараа нь сэргээнэ)
+  try {
+    const ok = [], why = {}, bump = (w) => { why[w] = (why[w] || 0) + 1; };
+    for (const cd of cands) { const w = tryAdd(c, cd.its); if (w) { bump(w); continue; } c.items.length -= cd.its.length; ok.push(cd); }
+    ok.sort((p, q) => q.score - p.score); let n = 0;
+    for (const cd of ok) { tryAdd(c, cd.its); if (!flow || flows(c)) return cd; bump('хөдөлгөөний зам хаагдана'); c.items.length -= cd.its.length; if (++n >= maxFlow) break; }
+    return { fail: Object.entries(why).sort((p, q) => q[1] - p[1])[0]?.[0] || 'тохирох байр алга' };
+  } finally { G.B = B0; }
+}
+// Урьдчилан харах сонголт: түлхүүр (key) бүрийн шилдэг хувилбарыг (≤8) түр байрлуулж look(c)-ийн оноог нэмнэ (дараагийн эд зүйл багтах эсэх); шалгалт бүрийн хооронд main thread-д амсхийлгэнэ
+async function chooseLook(c, cands, look) {
+  const why = {}, bump = (w) => { why[w] = (why[w] || 0) + 1; }, ok = [], seen = {}; let best = null, n = 0;
   for (const cd of cands) { const w = tryAdd(c, cd.its); if (w) { bump(w); continue; } c.items.length -= cd.its.length; ok.push(cd); }
-  ok.sort((p, q) => q.score - p.score); let n = 0, best = null; const seen = {};
+  ok.sort((p, q) => q.score - p.score); await c.tick(); const G = fgrid(c); G.B = { fl: c.items.filter((o) => o.floor), D: field(c) }; // батлагдсан талбар нэг удаа
   for (const cd of ok) {
-    if (look) { if (seen[cd.key]) continue; seen[cd.key] = 1; }
-    tryAdd(c, cd.its); const fl = !flow || flows(c);
-    if (fl && !look) return cd;
-    if (fl) { const v = cd.score + look(c); if (!best || v > best.v) best = { cd, v }; } else bump('хөдөлгөөний зам хаагдана');
-    c.items.length -= cd.its.length; if (++n >= (look ? 24 : maxFlow)) break;
+    if (seen[cd.key]) continue; seen[cd.key] = 1;
+    tryAdd(c, cd.its); if (flows(c)) { const v = cd.score + look(c); if (!best || v > best.v) best = { cd, v }; } else bump('хөдөлгөөний зам хаагдана');
+    c.items.length -= cd.its.length; await c.tick(); if (++n >= 8) break;
   }
   if (best) { tryAdd(c, best.cd.its); return best.cd; }
   return { fail: Object.entries(why).sort((p, q) => q[1] - p[1])[0]?.[0] || 'тохирох байр алга' };
 }
-const peek = (c, cands) => { const cd = choose(c, cands, true, null, 40); if (cd.fail) return null; c.items.length -= cd.its.length; return cd; }; // түр шалгаад буцаана (≤40 замын шалгалт — хурдан)
-// Сонгосон эд зүйлсийг бодит объект болгоно (прототипийг эхэндээ, дараа нь clone)
+const peek = (c, cands) => { const cd = choose(c, cands, true, 20); if (cd.fail) return null; c.items.length -= cd.its.length; return cd; }; // түр шалгаад буцаана (≤20 замын шалгалт — хурдан)
+// Сонгосон эд зүйлсийг бодит объект болгоно (прототип анх бүтээгдэж, дараа нь clone)
 function commit(c, its) {
   for (const it of its) {
-    const o = it.ref.n++ ? it.ref.obj.clone() : it.ref.obj, cs = Math.cos(it.th), sn = Math.sin(it.th), R = it.rect;
+    const o = it.ref.n++ ? it.ref.obj.clone() : (it.ref.obj ||= it.ref.mk()), cs = Math.cos(it.th), sn = Math.sin(it.th), R = it.rect;
     o.rotation.set(0, it.th + it.rot0, 0); o.position.set(it.x - (it.cx * cs + it.cz * sn), it.y0, it.z - (-it.cx * sn + it.cz * cs)); if (it.ceil) o.userData.ceil = 1;
     it.obj = o; c.log.push({ k: it.k, at: it.side ? `${it.side} хана` : 'чөлөөт', x: +it.x.toFixed(2), z: +it.z.toFixed(2), w: +(R.x1 - R.x0).toFixed(2), d: +(R.z1 - R.z0).toFixed(2) });
   }
   return its;
 }
 const skip = (c, k, why) => { c.log.push({ k, skip: why }); return null; };
-const put1 = (c, cands, k, flow = true, look = null) => { const cd = choose(c, cands, flow, look); return cd.fail ? skip(c, k, cd.fail) : commit(c, cd.its); };
+const put1 = (c, cands, k, flow = true) => { const cd = choose(c, cands, flow); return cd.fail ? skip(c, k, cd.fail) : commit(c, cd.its); };
+const put1L = async (c, cands, k, look) => { const cd = await chooseLook(c, cands, look); return cd.fail ? skip(c, k, cd.fail) : commit(c, cd.its); };
 const add1 = (c, it) => { const w = tryAdd(c, [it]); return w ? skip(c, it.k, w) : commit(c, [it]); };
 function mdl(name, sx = 1, sy = sx, sz = sx) { const m = FUR[name]; if (!m) return null; const g = new THREE.Group(), cl = m.clone(); cl.scale.set(sx, sy, sz); cl.rotation.y = FRONT[name] || 0; g.add(cl); return g; }
+// Бүлгийн тэгш өнцөгтөөс 4 чиглэлд (W, E, N, S) хамгийн ойр саад (хана эсвэл шалны эд зүйл) хүртэлх зай — төвд байрлуулахад
+function gaps(c, R, grp) {
+  const g = [R.x0 - c.x0, c.x1 - R.x1, R.z0 - c.z0, c.z1 - R.z1];
+  for (const o of c.items) {
+    if (!o.floor || o.grp === grp) continue; const q = o.rect, oz = Math.min(R.z1, q.z1) - Math.max(R.z0, q.z0) > 0.02, ox = Math.min(R.x1, q.x1) - Math.max(R.x0, q.x0) > 0.02;
+    if (oz && q.x1 <= R.x0 + 1e-3) g[0] = Math.min(g[0], R.x0 - q.x1); if (oz && q.x0 >= R.x1 - 1e-3) g[1] = Math.min(g[1], q.x0 - R.x1);
+    if (ox && q.z1 <= R.z0 + 1e-3) g[2] = Math.min(g[2], R.z0 - q.z1); if (ox && q.z0 >= R.z1 - 1e-3) g[3] = Math.min(g[3], q.z0 - R.z1);
+  }
+  return g;
+}
 
 // ---------- Процедур тавилга (урд тал +Z, суурь y=0, төв x/z=0) ----------
 function mkSofa(L) { // орчин үеийн нам буйдан (≤0.78 м — цонхны тавцангаас доош багтана)
@@ -385,29 +423,54 @@ function mkWardrobe(w) { // 2.2 м цагаан шүүгээ: хаалганы �
   return g;
 }
 function mkScreen(sw) { const g = new THREE.Group(), sh = sw * 0.5625 + 0.03, s = rbox(sw, sh, 0.04, mats.screen, 0.01); s.position.y = sh / 2; g.add(s); return g; }
-function mkCounter(len) { // доод шүүгээ (мод) + гантиг тавцан + бариул
-  const g = new THREE.Group(), b = rbox(len - 0.02, 0.86, 0.6, mats.wood, 0.01), t = rbox(len, 0.04, 0.63, mats.marble, 0.01); b.position.y = 0.43; t.position.set(0, 0.88, 0.015); g.add(b, t);
-  const n = Math.max(1, Math.floor(len / 0.6)); for (let i = 0; i < n; i++) { const h = box(0.14, 0.02, 0.02, mats.steel); h.position.set(-len / 2 + (i + 0.5) * len / n, 0.72, 0.31); g.add(h); }
+// Доод шүүгээ (мод) + гантиг тавцан + бариул; sx = угаалтуур (холигч tapH — цонхны доор намхан), kx = плита + доор нь шарах шүүгээ (тавцангийн локал x)
+function mkCounter(len, sx = null, tapH = 0.28, kx = null) {
+  const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
+  add(rbox(len - 0.02, 0.86, 0.6, mats.wood, 0.01), 0, 0.43, 0); add(rbox(len, 0.04, 0.63, mats.marble, 0.01), 0, 0.88, 0.015);
+  const n = Math.max(1, Math.floor(len / 0.6)); for (let i = 0; i < n; i++) { const x = -len / 2 + (i + 0.5) * len / n; if (kx == null || Math.abs(x - kx) > 0.35) add(box(0.14, 0.02, 0.02, mats.steel), x, 0.72, 0.31); }
+  if (sx != null) {
+    add(rbox(0.52, 0.02, 0.42, mats.steel, 0.01), sx, 0.905, 0.02); add(rbox(0.44, 0.012, 0.32, mats.dark, 0.01), sx, 0.912, 0.03);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, tapH, 10), mats.steel), sx, 0.9 + tapH / 2, -0.2); add(new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.16, 8), mats.steel), sx, 0.9 + tapH - 0.01, -0.13).rotation.x = Math.PI / 2;
+  }
+  if (kx != null) { add(rbox(0.58, 0.015, 0.5, mats.dark, 0.01), kx, 0.908, 0.02); add(rbox(0.56, 0.56, 0.01, mats.screen, 0.01), kx, 0.44, 0.302); add(box(0.4, 0.02, 0.02, mats.steel), kx, 0.68, 0.32); }
   return g;
 }
-// Угаалтуур + холигч (цонхны доор бол намхан — тавцанд тулахгүй) + плита тавцан дээр (тавцангийн локал x)
-function kitTop(g, sx, tapH, kx) {
-  const rim = rbox(0.52, 0.02, 0.42, mats.steel, 0.01), bowl = rbox(0.44, 0.012, 0.32, mats.dark, 0.01); rim.position.set(sx, 0.905, 0.02); bowl.position.set(sx, 0.912, 0.03); g.add(rim, bowl);
-  const tap = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, tapH, 10), mats.steel); tap.position.set(sx, 0.9 + tapH / 2, -0.2); g.add(tap);
-  const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.16, 8), mats.steel); sp.rotation.x = Math.PI / 2; sp.position.set(sx, 0.9 + tapH - 0.01, -0.13); g.add(sp);
-  if (kx != null) { const ck = rbox(0.58, 0.015, 0.5, mats.dark, 0.01); ck.position.set(kx, 0.908, 0.02); g.add(ck); }
+// Хөргөгч-багана: ган бие + дээд шүүгээ; hs = бариулын тал (локал x тэмдэг — нугас эсрэг талд), pn = ил талын бүтэн өндөр цагаан хавтан (−1/+1, 0 = үгүй)
+function mkFridge(w, hs = 1, pn = 0) {
+  const g = new THREE.Group(), bw = w - (pn ? 0.025 : 0), bx = -pn * 0.0125, add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
+  add(rbox(bw, 1.85, 0.65, mats.steel, 0.03), bx, 0.925, 0); add(box(bw - 0.02, 0.008, 0.005, mats.dark), bx, 1.25, 0.326);
+  for (const y of [1.45, 0.95]) add(box(0.02, 0.32, 0.03, mats.dark), bx + hs * (bw / 2 - 0.06), y, 0.34);
+  add(rbox(bw, 0.36, 0.6, mats.matteWhite, 0.01), bx, 2.05, -0.025); add(box(0.14, 0.015, 0.02, mats.steel), bx, 1.93, 0.285);
+  if (pn) add(box(0.025, 2.24, 0.66, mats.matteWhite), pn * (w / 2 - 0.0125), 1.12, 0.005);
+  return g;
 }
-function mkFridge(w) { const g = new THREE.Group(), b = rbox(w, 1.85, 0.65, mats.steel, 0.03); b.position.y = 0.925; g.add(b); const l = box(w - 0.02, 0.008, 0.005, mats.dark); l.position.set(0, 1.25, 0.326); g.add(l); for (const y of [1.45, 0.95]) { const h = box(0.02, 0.32, 0.03, mats.dark); h.position.set(w / 2 - 0.06, y, 0.34); g.add(h); } return g; }
 function mkUpper(len, h = 0.7, d = 0.35) { const g = new THREE.Group(), b = rbox(len, h, d, mats.matteWhite, 0.01); b.position.y = h / 2; g.add(b); const n = Math.max(1, Math.round(len / 0.5)); for (let i = 1; i < n; i++) { const l = box(0.006, h - 0.04, 0.004, mats.seam); l.position.set(-len / 2 + i * len / n, h / 2, d / 2 + 0.001); g.add(l); } return g; }
+function mkHood(h) { const g = new THREE.Group(), cp = rbox(0.6, 0.07, 0.5, mats.steel, 0.01), ch = box(0.3, h - 0.07, 0.25, mats.steel); cp.position.y = 0.035; ch.position.set(0, 0.07 + (h - 0.07) / 2, -0.125); g.add(cp, ch); return g; } // яндан (агаар соруулагч)
 function mkTub(L, D) { const g = new THREE.Group(), o = rbox(L, 0.56, D, mats.white, 0.06), i = rbox(L - 0.14, 0.02, D - 0.14, mats.water, 0.04), f = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 10), mats.steel); o.position.y = 0.28; i.position.y = 0.555; f.position.set(L / 2 - 0.14, 0.62, -D / 2 + 0.06); g.add(o, i, f); return g; }
 function mkWC() { const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); }; add(rbox(0.38, 0.4, 0.52, mats.white, 0.08), 0, 0.2, 0.05); add(rbox(0.37, 0.03, 0.46, mats.white, 0.015), 0, 0.415, 0.07); add(rbox(0.38, 0.38, 0.17, mats.white, 0.03), 0, 0.6, -0.225); return g; }
-function mkVanity(w) { const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); }; add(rbox(w, 0.8, 0.45, mats.wood, 0.02), 0, 0.4, 0); add(rbox(w + 0.02, 0.06, 0.46, mats.white, 0.02), 0, 0.83, 0.005); add(rbox(w - 0.2, 0.012, 0.28, mats.water, 0.01), 0, 0.862, 0.03); add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.2, 10), mats.steel), 0, 0.96, -0.17); return g; }
+function mkVanity(w, D = 0.45) { const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); }; add(rbox(w, 0.8, D, mats.wood, 0.02), 0, 0.4, 0); add(rbox(w + 0.02, 0.06, D + 0.01, mats.white, 0.02), 0, 0.83, 0.005); add(rbox(w - 0.2, 0.012, D - 0.17, mats.water, 0.01), 0, 0.862, 0.03); add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.2, 10), mats.steel), 0, 0.96, -D / 2 + 0.055); return g; }
 function mkShoeCab(w) { const g = new THREE.Group(), b = rbox(w, 0.88, 0.32, mats.matteWhite, 0.01), t = rbox(w + 0.02, 0.025, 0.33, mats.oak, 0.005); b.position.y = 0.44; t.position.set(0, 0.8925, 0.005); g.add(b, t); const l = box(0.006, 0.8, 0.004, mats.seam); l.position.set(0, 0.44, 0.161); g.add(l); for (const k of [-1, 1]) { const h = box(0.1, 0.012, 0.02, mats.steel); h.position.set(k * 0.08, 0.78, 0.17); g.add(h); } return g; }
 function mkPlant() { // сансевиер: цагаан ваар + босоо навч (~0.75 м)
   const g = new THREE.Group(), pot = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.09, 0.26, 20), mats.matteWhite), soil = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.01, 16), mats.dark); pot.position.y = 0.13; pot.castShadow = true; soil.position.y = 0.255; g.add(pot, soil);
   for (let i = 0; i < 9; i++) { const h = 0.3 + ((i * 37) % 10) / 10 * 0.18, a = i * 2.4, l = box(0.045, h, 0.01, mats.leaf); l.position.set(Math.cos(a) * 0.045, 0.26 + h / 2, Math.sin(a) * 0.045); l.rotation.set(Math.sin(a) * 0.12, a, Math.cos(a) * 0.12); g.add(l); }
   return g;
 }
+function mkTable(L, D) { // модерн ширээ: 3.5 см модон тавцан, нимгэн 4 хөл, нарийн хүрээ (хуучин glTF-ийн үрчийсэн бүтээлэгийн оронд)
+  const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
+  add(rbox(L, 0.035, D, mats.tWood, 0.008), 0, 0.7325, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(box(0.045, 0.715, 0.045, mats.tWood), sx * (L / 2 - 0.08), 0.3575, sz * (D / 2 - 0.08));
+  for (const sz of [-1, 1]) add(box(L - 0.2, 0.06, 0.02, mats.tWood), 0, 0.685, sz * (D / 2 - 0.08)); for (const sx of [-1, 1]) add(box(0.02, 0.06, D - 0.2, mats.tWood), sx * (L / 2 - 0.08), 0.685, 0);
+  return g;
+}
+function mkChair() { // модерн хоолны сандал: модон хөл/түшлэг, цайвар даавуун суудал
+  const g = new THREE.Group(), add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(box(0.032, 0.44, 0.032, mats.tWood), sx * 0.19, 0.22, sz * 0.19);
+  add(rbox(0.46, 0.03, 0.46, mats.tWood, 0.008), 0, 0.455, 0); add(rbox(0.42, 0.05, 0.42, mats.headboard, 0.02), 0, 0.495, 0.01);
+  for (const sx of [-1, 1]) add(box(0.03, 0.4, 0.03, mats.tWood), sx * 0.19, 0.67, -0.205);
+  add(rbox(0.44, 0.13, 0.03, mats.tWood, 0.01), 0, 0.8, -0.215).rotation.x = -0.1;
+  return g;
+}
+function mkMirror(w, h) { const g = new THREE.Group(), f = rbox(w, h, 0.025, mats.dark, 0.02), m = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.04, h - 0.04), mats.mirror); f.position.y = h / 2; m.position.set(0, h / 2, 0.0135); g.add(f, m); return g; } // нимгэн хар хүрээтэй толь (орчны тусгалтай)
 // Зургийн жааз: урлагийг процедур хийсвэр зургаар солино (анхны нь «Ray Homes» саарал загвар байв)
 function artTex(i) {
   const t = canvasTex((g, s) => {
@@ -419,133 +482,152 @@ function artTex(i) {
 function mkFrame(i) { const g = mdl('hanging_picture_frame_01'); if (g) g.traverse((o) => { if (o.isMesh && /artwork$/.test(o.material.name)) { o.material = o.material.clone(); o.material.map = artTex(i); o.material.needsUpdate = true; } }); return g; }
 
 // ---------- Өрөөний хөтөлбөрүүд ----------
-function progBedroom(c) {
-  // Ор: толгой нь хатуу хананд (хаалгатай хана, цонхны доороос зайлсхийнэ), нэг талд ≥0.6 м, хөлд ≥0.7 м чөлөө
+async function progBedroom(c) {
+  // Ор: толгой нь хатуу хананд (хаалгатай хана, цонхны доороос зайлсхийнэ), хананы төвд, нэг талд ≥0.6 м, хөлд ≥0.7 м чөлөө
   const sh = Math.min(c.x1 - c.x0, c.z1 - c.z0), bw = sh > 3.2 ? 1.6 : sh > 2.7 ? 1.4 : 0.9;
-  const head = proto(mkHeadboard(bw), 'орны толгой', { grp: 'bed' }), body = proto(mkBedBody(bw), 'ор', { grp: 'bed' }), cands = [], L = LAY.gap + head.d + body.d;
+  const head = proto(P(bw + 0.1, 0.08, 1.06, () => mkHeadboard(bw)), 'орны толгой', { grp: 'bed' }), body = proto(P(bw + 0.04, 2.02, 0.7, () => mkBedBody(bw)), 'ор', { grp: 'bed' }), cands = [], L = LAY.gap + head.d + body.d;
   for (const s of SIDES) {
     const W = c.walls[s], door = W.ops.some((o) => o.t === 'door'), win = W.ops.some((o) => o.t === 'win'), mid = (W.a0 + W.a1) / 2;
     for (const [a, b] of solid(c, s, 0, head.h)) for (const t of steps(a + head.w / 2, b - head.w / 2)) {
       const H = onWall(c, head, s, t), B = onWall(c, body, s, t, LAY.gap + head.d);
       const sides = [wRect(c, s, t - bw / 2 - 0.6, t - bw / 2, 0.5, L), wRect(c, s, t + bw / 2, t + bw / 2 + 0.6, 0.5, L)].filter((k) => inRoom(c, k)); if (!sides.length) continue;
       B.keep = [{ ...wRect(c, s, t - bw / 2, t + bw / 2, L, L + 0.7), reach: 1 }, ...sides];
-      cands.push({ key: s + Math.round(t / 0.3), score: (door ? 0 : 2) + (win ? 0 : 0.5) + sides.length * 0.6 - Math.abs(t - mid) * 0.8 + (c.main ? Math.min(3, rdist(B.rect, c.main)) * 0.4 : 0), its: [H, B] });
+      cands.push({ key: s + Math.round(t / 0.3), score: (door ? 0 : 2) + (win ? 0 : 0.5) + sides.length * 0.6 - Math.abs(t - mid) * 2 + (c.main ? Math.min(3, rdist(B.rect, c.main)) * 0.4 : 0), its: [H, B] });
     }
   }
   // Хувцасны шүүгээ: хатуу хэсэгт, урд нь 0.8 м чөлөө (цонх/тагтны хаалганы өмнө биш), буланд илүү
-  const wps = [2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.0].map((w) => proto(mkWardrobe(w), 'хувцасны шүүгээ', { grp: 'ward' }));
+  const wps = [2.0, 1.8, 1.6, 1.4, 1.2, 1.1, 1.0].map((w) => proto(P(w, 0.62, 2.2, () => mkWardrobe(w)), 'хувцасны шүүгээ', { grp: 'ward' }));
   const wardC = () => { const wc = []; for (const p of wps) for (const s of SIDES) { const W = c.walls[s]; for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + p.w / 2, b - p.w / 2)) { const it = onWall(c, p, s, t); it.keep = [{ ...wRect(c, s, t - p.w / 2, t + p.w / 2, LAY.gap + p.d, LAY.gap + p.d + 0.8), reach: 1 }]; wc.push({ score: p.w * 1.2 + (Math.min(t - p.w / 2 - W.a0, W.a1 - t - p.w / 2) < 0.03 ? 0.8 : 0), its: [it] }); } } return wc; };
-  const ns = proto(mkNightstand(), 'орны шүүгээ', { grp: 'bed' }), nsAt = (H) => [-1, 1].map((k) => onWall(c, ns, H.side, H.t + k * (bw / 2 + 0.1 + ns.w / 2)));
-  const bed = put1(c, cands, 'ор', true, (cc) => { // орыг сонгохдоо хоёр шүүгээ + хувцасны шүүгээ багтах эсэхийг урьдчилан харна
+  const WC = wardC(), ns = proto(P(0.45, 0.4, 0.92, mkNightstand), 'орны шүүгээ', { grp: 'bed' }), nsAt = (H) => [-1, 1].map((k) => onWall(c, ns, H.side, H.t + k * (bw / 2 + 0.1 + ns.w / 2)));
+  const bed = await put1L(c, cands, 'ор', (cc) => { // орыг сонгохдоо хоёр шүүгээ + хувцасны шүүгээ багтах эсэхийг урьдчилан харна
     const H = cc.items[cc.items.length - 2]; let n = 0; for (const it of nsAt(H)) if (!fits(cc, it)) { cc.items.push(it); n++; }
-    const w = peek(cc, wardC()); cc.items.length -= n; return n * 0.4 + (w ? 1.5 + w.its[0].w : 0);
+    const w = peek(cc, WC); cc.items.length -= n; return n * 0.4 + (w ? 1.5 + w.its[0].w : 0);
   });
+  await c.tick();
   if (bed) {
     const { side: s, t } = bed[0]; for (const it of nsAt(bed[0])) add1(c, it);
     const nF = head.w >= 1.5 ? 2 : 1; // толгойн дээр 1–2 зураг, өрөө рүү харсан
     for (let i = 0; i < nF; i++) { const p = proto(mkFrame(i), 'зураг', { grp: 'bed', wall: true, deco: true, y0: 1.28 }); if (p) add1(c, onWall(c, p, s, t + (nF === 2 ? (i ? 0.36 : -0.36) : 0), 0.005)); }
-    rug(c, s, t, bw + 0.8, 0.62, [L + 0.5, L + 0.3, L + 0.1], 'bed'); // хивс: орны доод 2/3 + хөлд
+    rug(c, s, t, bw + 0.8, 0.62, [L + 0.6, L + 0.45], 'bed'); // хивс: орны доод 2/3 + хөлөөс ≥0.45 м гарна (эс бөгөөс алгасна)
   }
-  put1(c, wardC(), 'хувцасны шүүгээ');
+  put1(c, WC, 'хувцасны шүүгээ'); await c.tick();
   const lp = proto(mdl('modern_ceiling_lamp_01', 0.6), 'таазны гэрэл', { grp: 'lamp', y0: plan.ceiling - 0.57, ceil: true }); // тааз дор 0.57 м — өрөөний төвд
   if (lp) add1(c, at(lp, (c.x0 + c.x1) / 2, (c.z0 + c.z1) / 2, 0));
 }
-// Гал тогооны эгнээ: хананы хатуу хэсэг − хаалганы чөлөө (хөрш хананых ч) → хамгийн урт
-function runIv(c, s) {
-  let iv = solid(c, s, 0, 0.92); const band = wRect(c, s, -1e3, 1e3, 0, 0.66);
-  for (const z of c.zones) { if (!ov(band, z)) continue; const lo = alongX(s) ? z.x0 : z.z0, hi = alongX(s) ? z.x1 : z.z1; iv = iv.flatMap(([a, b]) => [[a, Math.min(b, lo - 0.02)], [Math.max(a, hi + 0.02), b]]).filter(([a, b]) => b - a > 0.3); }
-  return iv;
-}
+// Гал тогоо: эгнээ = хамгийн урт чөлөөт хана (цонхтой бол угаалтуур доор нь). Хөргөгч = өндөр багана (дээд шүүгээ + ил талдаа бүтэн хавтан), эгнээний булан БИШ төгсгөлд, нугас нь тавцангаас холын талд.
+// Плита: цонхноос ≥0.3 м, хоёр талдаа ≥0.3 м тавцан, угаалтууртай хооронд ≥0.6 м; эгнээнд багтахгүй бол буланд L эргэлт (хөрш хатуу хананд плита + яндан + дээд шүүгээ)
 function progKitchen(c, sides) {
-  // Хөргөгч эгнээний төгсгөлд (цонхны өмнө, хаалганы чөлөөнд биш; эс бөгөөс булангийн хөрш хананд), тавцан + угаалтуур цонхны доор, плита, дээд шүүгээ цонхны дээр биш
   let run = null;
-  for (const s of sides) for (const [a, b] of runIv(c, s)) { const win = c.walls[s].ops.some((o) => o.t === 'win' && o.hi > a && o.lo < b), sc = b - a + (win ? 0.6 : 0); if (b - a >= 1.5 && (!run || sc > run.sc)) run = { s, a, b, sc }; }
+  for (const s of sides) for (const [a, b] of bandIv(c, s, 0, 0.92, 0.66)) { const win = c.walls[s].ops.some((o) => o.t === 'win' && o.hi > a && o.lo < b), sc = b - a + (win ? 0.6 : 0); if (b - a >= 1.5 && (!run || sc > run.sc)) run = { s, a, b, sc }; }
   if (!run) return skip(c, 'гал тогооны эгнээ', 'чөлөөт хана алга (хаалга/цонх)');
-  const { s } = run, W = c.walls[s], keeps = [], fc = []; let { a, b } = run;
-  for (const fw of [0.6, 0.55]) {
-    const f = proto(mkFridge(fw), 'хөргөгч', { grp: 'kit' });
-    for (const end of [0, 1]) {
-      const t = end ? b - fw / 2 : a + fw / 2, it = onWall(c, f, s, t); it.keep = [{ ...wRect(c, s, t - fw / 2, t + fw / 2, LAY.gap + f.d, LAY.gap + f.d + 0.9), reach: 1 }];
-      fc.push({ score: 2 + fw, its: [it], run: end ? [a, b - fw - 0.02] : [a + fw + 0.02, b] });
-      if (Math.abs((end ? b : a) - (end ? W.a1 : W.a0)) > 0.05) continue; // эгнээ буланд хүрсэн бол хөрш хананд
-      const s2 = alongX(s) ? (end ? 'E' : 'W') : (end ? 'S' : 'N'), lo = s === 'N' || s === 'W', t2 = lo ? (alongX(s2) ? c.x0 : c.z0) + 0.67 + fw / 2 : (alongX(s2) ? c.x1 : c.z1) - 0.67 - fw / 2;
-      const it2 = onWall(c, f, s2, t2); it2.keep = [{ ...wRect(c, s2, t2 - fw / 2, t2 + fw / 2, LAY.gap + f.d, LAY.gap + f.d + 0.9), reach: 1 }];
-      fc.push({ score: 1 + fw, its: [it2], run: [a, b] });
-    }
+  const { s } = run, W = c.walls[s], CD = 0.63, keeps = [], sgn = (q) => (q === 'N' || q === 'E' ? 1 : -1), sg = sgn(s), lo = s === 'N' || s === 'W';
+  const cor = (t) => (Math.abs(t - W.a0) < 0.05 ? -1 : Math.abs(t - W.a1) < 0.05 ? 1 : 0), side2 = (k) => (alongX(s) ? (k > 0 ? 'E' : 'W') : (k > 0 ? 'S' : 'N'));
+  const winOk = (q, t0, t1) => c.walls[q].ops.every((o) => o.t !== 'win' || o.sill > 2 || t1 <= o.lo - 0.3 || t0 >= o.hi + 0.3); // плита цонхноос ≥0.3 м
+  const kp = (it, q, t0, t1) => { it.keep = [{ ...wRect(c, q, t0, t1, LAY.gap + it.d, LAY.gap + it.d + 0.9), reach: 1 }]; return it; };
+  // 1) Хөргөгч-багана (0.6/0.55): эгнээний төгсгөл (булан биш төгсгөл илүү — булан L эргэлтэд үлдэнэ); эгнээ буланд хүрсэн бол хөрш хананд ч болно
+  let a = run.a, b = run.b; const fc = [];
+  for (const fw of [0.6, 0.55]) for (const end of [0, 1]) {
+    const t = end ? b - fw / 2 : a + fw / 2, hs = sg * (end ? -1 : 1), k = cor(end ? b : a), f = proto(P(fw, 0.66, 2.24, () => mkFridge(fw, hs, k ? 0 : -hs)), 'хөргөгч', { grp: 'kit' });
+    fc.push({ score: 2 + fw - (k ? 0.8 : 0), its: [kp(onWall(c, f, s, t), s, t - fw / 2, t + fw / 2)], run: end ? [a, b - fw - 0.02] : [a + fw + 0.02, b] });
+    if (!k) continue; const q = side2(k), W2 = c.walls[q], di = lo ? 1 : -1, t2 = (lo ? W2.a0 : W2.a1) + di * (LAY.gap + CD + 0.02 + fw / 2), h2 = sgn(q) * -di, f2 = proto(P(fw, 0.66, 2.24, () => mkFridge(fw, h2, -h2)), 'хөргөгч', { grp: 'kit' });
+    fc.push({ score: 1 + fw, its: [kp(onWall(c, f2, q, t2), q, t2 - fw / 2, t2 + fw / 2)], run: [a, b] });
   }
   const fr = choose(c, fc); if (fr.fail) skip(c, 'хөргөгч', fr.fail); else { commit(c, fr.its); [a, b] = fr.run; keeps.push(...fr.its[0].keep); }
   const len = b - a; if (len < 0.8) { skip(c, 'тавцан', 'зай хүрэлцэхгүй'); return keeps; }
-  const ct = proto(mkCounter(len), 'тавцан', { grp: 'kit' }), tc = (a + b) / 2, it = onWall(c, ct, s, tc); it.keep = [{ ...wRect(c, s, a, b, LAY.gap + ct.d, LAY.gap + ct.d + 0.9), reach: 1 }];
-  const cr = choose(c, [{ score: 0, its: [it] }]); if (cr.fail) { skip(c, 'тавцан', cr.fail); return keeps; }
-  const wn = W.ops.filter((o) => o.t === 'win' && o.hi > a + 0.3 && o.lo < b - 0.3)[0], sg = s === 'N' || s === 'E' ? 1 : -1;
+  // 2) Угаалтуур: цонхны төвд (эс бөгөөс хөргөгчийн талаас 1/3-т); 3) плита эгнээнд, эс бөгөөс L эргэлтэд
+  const wn = W.ops.filter((o) => o.t === 'win' && o.hi > a + 0.3 && o.lo < b - 0.3)[0], tc = (a + b) / 2;
   const ts = wn ? Math.min(b - 0.35, Math.max(a + 0.35, (wn.lo + wn.hi) / 2)) : a + Math.min(0.9, len * 0.35), tapH = wn && ts > wn.lo - 0.3 && ts < wn.hi + 0.3 ? Math.max(0.06, Math.min(0.28, wn.sill - 0.97)) : 0.28;
-  const tk = b - ts - 0.25 >= 0.78 ? ts + 0.66 : ts - 0.25 - a >= 0.78 ? ts - 0.66 : null;
-  kitTop(ct.ref.obj, (ts - tc) * sg, tapH, tk == null ? null : (tk - tc) * sg); commit(c, cr.its); keeps.push(...it.keep);
-  for (const [a2, b2] of solid(c, s, 1.5, 2.2)) { const lo = Math.max(a, a2), hi = Math.min(b, b2); if (hi - lo >= 0.5) add1(c, onWall(c, proto(mkUpper(hi - lo - 0.02), 'дээд шүүгээ', { grp: 'kit', wall: true, y0: 1.5 }), s, (lo + hi) / 2)); }
-  if (!fr.fail) { const F = fr.its[0]; add1(c, onWall(c, proto(mkUpper(F.w, 0.34, 0.6), 'хөргөгчийн дээд шүүгээ', { grp: 'kit', wall: true, y0: 1.9 }), F.side, F.t)); }
+  let st = null, ret = null;
+  for (let t = a + 0.6; t <= b - 0.6 + 1e-6; t += 0.05) if (Math.abs(t - ts) >= 1.16 && winOk(s, t - 0.3, t + 0.3) && (!st || Math.abs(t - ts) < Math.abs(st.t - ts))) st = { q: s, t };
+  if (!st) for (const k of [1, -1]) { // L эргэлт: 1.2 м (0.3 тавцан + 0.6 плита + 0.3 тавцан), булангийн тавцангийн ард
+    if (cor(k > 0 ? b : a) !== k) continue; const q = side2(k), W2 = c.walls[q], di = lo ? 1 : -1, r0 = (lo ? W2.a0 : W2.a1) + di * (LAY.gap + CD), l0 = Math.min(r0, r0 + di * 1.2), l1 = l0 + 1.2, t2 = (l0 + l1) / 2;
+    if (!bandIv(c, q, 0, 0.92, 0.66).some(([x, y]) => x <= l0 + 0.01 && y >= l1 - 0.01) || !winOk(q, t2 - 0.3, t2 + 0.3)) continue;
+    const pr = proto(P(1.2, CD, 0.92, () => mkCounter(1.2, null, 0, 0)), 'тавцан (L)', { grp: 'kit' }); ret = { q, l0, l1, it: kp(onWall(c, pr, q, t2), q, l0, l1) }; st = { q, t: t2 }; break;
+  }
+  let stF = null, bd = -1; for (let t = a + 0.35; t <= b - 0.35 + 1e-6; t += 0.05) { if (Math.abs(t - ts) < 0.9) continue; const d = Math.min(9, ...W.ops.filter((o) => o.t === 'win').map((o) => Math.max(o.lo - t - 0.3, t - 0.3 - o.hi))); if (d > bd) { bd = d; stF = { q: s, t, near: d < 0.3 }; } } // нөөц: эгнээнд цонхноос аль болох хол
+  if (!st) st = stF;
+  const mp = proto(P(len, CD, 0.92, () => mkCounter(len, (ts - tc) * sg, tapH, st && st.q === s ? (st.t - tc) * sg : null)), 'тавцан', { grp: 'kit' }), main = kp(onWall(c, mp, s, tc), s, a, b);
+  let cr = choose(c, [{ score: 0, its: ret ? [main, ret.it] : [main] }]);
+  if (cr.fail && ret) { skip(c, 'тавцан (L)', cr.fail); ret = null; st = stF; cr = choose(c, [{ score: 0, its: [kp(onWall(c, proto(P(len, CD, 0.92, () => mkCounter(len, (ts - tc) * sg, tapH, st ? (st.t - tc) * sg : null)), 'тавцан', { grp: 'kit' }), s, tc), s, a, b)] }]); }
+  if (cr.fail) { skip(c, 'тавцан', cr.fail); return keeps; }
+  commit(c, cr.its); for (const it of cr.its) keeps.push(...it.keep); if (st && st.near) c.log.push({ k: 'плита', note: 'цонхны ойр (өөр байр алга)' });
+  // 4) Яндан плитагийн дээр (тавцангаас 0.72 м), дээд шүүгээ — цонх/яндан/хөргөгчөөс бусад хатуу хэсэгт (≥0.25 м)
+  const H = plan.ceiling, y0 = 1.62; if (st) add1(c, onWall(c, proto(P(0.6, 0.5, H - 0.1 - y0, () => mkHood(H - 0.1 - y0)), 'яндан', { grp: 'kit', wall: true, y0 }), st.q, st.t));
+  for (const [q, u0, u1] of [[s, a, b], ...(ret ? [[ret.q, ret.l0, ret.l1]] : [])]) {
+    let iv = bandIv(c, q, 1.5, 2.2, 0.36, 0.25).map(([x, y]) => [Math.max(x, u0), Math.min(y, u1)]); if (st && st.q === q) iv = iv.flatMap(([x, y]) => [[x, Math.min(y, st.t - 0.31)], [Math.max(x, st.t + 0.31), y]]);
+    for (const [x, y] of iv.filter(([x, y]) => y - x >= 0.25)) add1(c, onWall(c, proto(P(y - x - 0.01, 0.35, 0.7, () => mkUpper(y - x - 0.01)), 'дээд шүүгээ', { grp: 'kit', wall: true, y0: 1.5 }), q, (x + y) / 2));
+  }
   return keeps;
 }
-function progDining(c, prefer) {
-  // Хоолны ширээ + сандал: гал тогооны чөлөөний (0.9 м) хилд ойр, хаалганы замыг хаахгүй; сандал урт талд, дараа нь үзүүрт (≤4)
-  const ch = proto(mdl('dining_chair_02'), 'сандал', { grp: 'dine' }), cands = []; if (!ch || !FUR.dining_table) return skip(c, 'хоолны ширээ', 'загвар ачаалагдсангүй');
+async function progDining(c, prefer, band) {
+  // Хоолны ширээ (процедур модон) + модерн сандал: сандлын ард 0.6 м татах зай, ширээ ↔ тавцан ≥0.9 м (тавцангийн чөлөө), хоёр талын гарц тэнцүү (төвд), хаалганы замыг хаахгүй; урт талд, дараа нь үзүүрт (≤4)
+  const ch = proto(P(0.46, 0.48, 0.87, mkChair), 'сандал', { grp: 'dine', pull: true }), cands = [];
   for (const [L, D] of [[1.4, 0.85], [1.2, 0.8], [0.9, 0.9]]) {
-    const tp = proto(mdl('dining_table', L / 2.256, 0.75 / 0.877, D / 1.39), 'хоолны ширээ', { grp: 'dine' });
+    const tp = proto(P(L, D, 0.75, () => mkTable(L, D)), 'хоолны ширээ', { grp: 'dine' });
     for (const th of L === D ? [0] : [0, Math.PI / 2]) {
-      const cs = Math.cos(th), sn = Math.sin(th), hw = (th ? D : L) / 2, hd = (th ? L : D) / 2, ex = ch.d / 2 + 0.04, slots = [];
-      for (const v of [-1, 1]) for (const u of L >= 1.2 ? [-L / 4, L / 4] : [0]) slots.push([u, v * (D / 2 + ex), 0, -v]);
-      for (const u of [-1, 1]) slots.push([u * (L / 2 + ex), 0, -u, 0]);
-      for (let x = c.x0 + hw; x <= c.x1 - hw + 1e-6; x += 0.1) for (let z = c.z0 + hd; z <= c.z1 - hd + 1e-6; z += 0.1) {
-        const tb = at(tp, x, z, th); if (fits(c, tb)) continue; c.items.push(tb); const chairs = [];
-        for (const [u, v, fu, fv] of slots) { if (chairs.length >= 4) break; const it = at(ch, x + u * cs + v * sn, z - u * sn + v * cs, Math.atan2(fu * cs + fv * sn, -fu * sn + fv * cs)), bx = -(fu * cs + fv * sn), bz = -(-fu * sn + fv * cs), R = it.rect; it.keep = [{ x0: bx > 0.5 ? R.x1 : bx < -0.5 ? R.x0 - 0.25 : R.x0, x1: bx > 0.5 ? R.x1 + 0.25 : bx < -0.5 ? R.x0 : R.x1, z0: bz > 0.5 ? R.z1 : bz < -0.5 ? R.z0 - 0.25 : R.z0, z1: bz > 0.5 ? R.z1 + 0.25 : bz < -0.5 ? R.z0 : R.z1 }]; if (!fits(c, it)) { c.items.push(it); chairs.push(it); } } // сандлын ард 0.25 м татах зай
+      const cs = Math.cos(th), sn = Math.sin(th), hw = (th ? D : L) / 2, hd = (th ? L : D) / 2, ex = ch.d / 2 - 0.08, slots = []; // суудлын урд ирмэг ширээн доор 8 см
+      for (const v of [-1, 1]) for (const u of L >= 1.2 ? [-L / 4, L / 4] : [0]) slots.push([u, v * (D / 2 + ex), 0, -v, v < 0 ? 0 : 1]);
+      for (const u of [-1, 1]) slots.push([u * (L / 2 + ex), 0, -u, 0, u < 0 ? 2 : 3]); // slot: 0/1 урт талууд, 2/3 үзүүрүүд
+      for (let x = c.x0 + hw; x <= c.x1 - hw + 1e-6; x += 0.1) for (let z = c.z0 + hd; z <= c.z1 - hd + 1e-6; z += 0.05) {
+        const tb = at(tp, x, z, th), d = prefer && prefer.length ? Math.min(...prefer.map((k) => rdist(tb.rect, k))) : 0; if (d > 2.5 || fits(c, tb)) continue; c.items.push(tb); const chairs = []; // гал тогооноос ≤2.5 м
+        for (const [u, v, fu, fv, sl] of slots) { if (chairs.length >= 4) break; const it = at(ch, x + u * cs + v * sn, z - u * sn + v * cs, Math.atan2(fu * cs + fv * sn, -fu * sn + fv * cs), { slot: sl }), bx = -(fu * cs + fv * sn), bz = -(-fu * sn + fv * cs), R = it.rect, K = LAY.back; it.keep = [{ x0: bx > 0.5 ? R.x1 : bx < -0.5 ? R.x0 - K : R.x0, x1: bx > 0.5 ? R.x1 + K : bx < -0.5 ? R.x0 : R.x1, z0: bz > 0.5 ? R.z1 : bz < -0.5 ? R.z0 - K : R.z0, z1: bz > 0.5 ? R.z1 + K : bz < -0.5 ? R.z0 : R.z1 }]; if (!fits(c, it)) { c.items.push(it); chairs.push(it); } } // сандлын ард 0.6 м татах зай
         c.items.length -= 1 + chairs.length; if (chairs.length < 2) continue;
-        const d = prefer && prefer.length ? Math.min(...prefer.map((k) => rdist(tb.rect, k))) : 0;
-        cands.push({ score: Math.min(4, chairs.length) * 1.5 + L * 0.8 - d * 2, its: [tb, ...chairs] });
+        const sym = [0, 1].every((q) => chairs.filter((h) => h.slot === q * 2).length === chairs.filter((h) => h.slot === q * 2 + 1).length), its = [tb, ...chairs], G = { x0: Math.min(...its.map((i) => i.rect.x0)), x1: Math.max(...its.map((i) => i.rect.x1)), z0: Math.min(...its.map((i) => i.rect.z0)), z1: Math.max(...its.map((i) => i.rect.z1)) }, g = gaps(c, G, 'dine');
+        const bal = (g[0] < 2.5 && g[1] < 2.5 ? Math.abs(g[0] - g[1]) : 0) + (g[2] < 2.5 && g[3] < 2.5 ? Math.abs(g[2] - g[3]) : 0);
+        cands.push({ key: L + '/' + th + '/' + Math.round(x / 0.3), score: Math.min(4, chairs.length) * 1.5 + (sym ? 1.2 : 0) + L * 0.8 - d * 2 - bal * 0.6, its }); // тэгш хэмтэй (эсрэг талдаа хос) сандал илүү
       }
+      await c.tick();
     }
   }
-  const res = put1(c, cands, 'хоолны ширээ'); if (!res) return null;
+  // Урьдчилан харах: хэмжээ/чиглэл бүрийн шилдэг байрлалд зочны бүлэг (буйдан + ТВ) багтах эсэх
+  const SC = c.r.type === 'living' ? seatCands(c, band).cands : null, res = SC ? await put1L(c, cands, 'хоолны ширээ', (cc) => { const p = peek(cc, SC); return p ? 2 + p.score * 0.2 : 0; }) : put1(c, cands, 'хоолны ширээ'); if (!res) return null;
   const lp = proto(mdl('modern_ceiling_lamp_01', 0.6), 'унжлага гэрэл', { grp: 'dine', y0: plan.ceiling - 0.57, ceil: true }); if (lp) add1(c, at(lp, res[0].x, res[0].z, 0));
   return res[0];
 }
-function progSeating(c, band) {
-  // Буйдан бодит хананд (нам тул цонхны доор болно), ТВ (шүүгээ + ханын дэлгэц) эсрэг БОДИТ хананд 2.4–3.2 м зайд, дунд нь кофены ширээ (буйдангаас 0.45 м), доор нь хивс
-  const sofas = [2.2, 1.9, 1.6].map((L) => proto(mkSofa(L), 'буйдан', { grp: 'seat' }));
-  const tvs = [[1.8, 1.3], [1.5, 1.1]].map(([cw, sw]) => [proto(mdl('modern_wooden_cabinet', cw / 2.44, 0.5 / 0.68, 0.4 / 0.52), 'ТВ-ийн шүүгээ', { grp: 'seat' }), proto(mkScreen(sw), 'ТВ дэлгэц', { grp: 'seat', wall: true, y0: 0.95 })]).filter(([a]) => a);
+// Зочны бүлэг: буйдан бодит хананд (нам тул цонхны доор болно), ТВ (шүүгээ + ханын дэлгэц) эсрэг БОДИТ хананд 2.2–3.2 м зайд, дунд нь кофены ширээ (буйдангаас 0.45 м)
+// Буйдан хананд наалдана; зөвхөн ард нь ≥0.9 м гарц үлдэх том өрөөнд л хананаас холдоно (тэгвэл чөлөөт эд зүйл гэж тооцогдоно)
+function seatCands(c, band) {
+  const sofas = [2.2, 1.9, 1.6].map((L) => proto(P(L, 0.9, 0.78, () => mkSofa(L)), 'буйдан', { grp: 'seat' }));
+  const tvs = [[1.8, 1.3], [1.5, 1.1]].map(([cw, sw]) => [proto(mdl('modern_wooden_cabinet', cw / 2.44, 0.5 / 0.68, 0.4 / 0.52), 'ТВ-ийн шүүгээ', { grp: 'seat' }), proto(P(sw, 0.04, sw * 0.5625 + 0.03, () => mkScreen(sw)), 'ТВ дэлгэц', { grp: 'seat', wall: true, y0: 0.95 })]).filter(([q]) => q);
   const ct = proto(mdl('modern_coffee_table_01', 0.9), 'кофены ширээ', { grp: 'seat', rot0: Math.PI / 2 }), cands = [], alone = [];
   let [lx0, lx1, lz0, lz1] = [c.x0, c.x1, c.z0, c.z1]; if (band === 'N') lz0 += 2.4; if (band === 'S') lz1 -= 2.4; if (band === 'W') lx0 += 2.4; if (band === 'E') lx1 -= 2.4; // зочны бүсийн төв
   for (const s of SIDES) {
     if (s === band) continue; const ts = OPP[s], span = alongX(s) ? c.z1 - c.z0 : c.x1 - c.x0, pc0 = alongX(s) ? (lx0 + lx1) / 2 : (lz0 + lz1) / 2;
     for (const so of sofas) {
-      const vd0 = span - LAY.gap - 0.45 - 0.07, off = LAY.gap + Math.max(0, vd0 - 3.0), vd = vd0 - off + LAY.gap; // том өрөөнд буйдан ханаас холдож 3.0 м зайд
+      const vd0 = span - LAY.gap - 0.45 - 0.07, fl = vd0 - 3.0 >= 0.9 ? vd0 - 3.0 : 0, off = LAY.gap + fl, vd = vd0 - fl; // харах зай 3.0 м-ээс хэтэрсэн ч ард ≥0.9 м гарц үлдэхгүй бол хананд үлдэнэ
       for (const [a, b] of solid(c, s, 0, so.h)) for (const t of steps(a + so.w / 2, b - so.w / 2)) {
-        const sofa = onWall(c, so, s, t, off), win = c.walls[s].ops.find((o) => o.t === 'win' && o.lo < t + so.w / 2 && o.hi > t - so.w / 2), pc = win ? (win.lo + win.hi) / 2 : pc0;
+        const sofa = onWall(c, so, s, t, off), win = c.walls[s].ops.find((o) => o.t === 'win' && o.lo < t + so.w / 2 && o.hi > t - so.w / 2), pc = win ? (win.lo + win.hi) / 2 : pc0; if (fl) { sofa.wside = s; sofa.side = null; }
         const table = ct ? [at(ct, ...wPt(c, s, t, off + so.d + 0.45 + ct.d / 2), FACE[s])] : [], base = so.w * 1.5 - Math.abs(t - pc) * 0.8 + (c.main ? Math.min(3, rdist(sofa.rect, c.main)) * 0.3 : 0);
-        alone.push({ score: base, its: [sofa, ...table] });
+        alone.push({ score: base, its: [sofa, ...table] }, { score: base - 1, its: [sofa] });
         if (ts === band || vd < 2.2) continue;
         for (const [cab, scr] of tvs) cands.push({ score: base + cab.w * 0.5 - Math.abs(vd - 2.8), its: [sofa, ...table, onWall(c, cab, ts, t), onWall(c, scr, ts, t, 0.03)] });
       }
     }
   }
+  return { cands, alone, ct };
+}
+function progSeating(c, band) {
+  const { cands, alone, ct } = seatCands(c, band);
   let seat = choose(c, cands);
   if (seat.fail) { skip(c, 'ТВ', `эсрэг хананд багтсангүй (${seat.fail})`); seat = choose(c, alone); if (seat.fail) return skip(c, 'буйдан', seat.fail); }
-  const its = commit(c, seat.its), sofa = its[0], s = sofa.side, table = ct ? its[1] : null, cab = its.find((i) => i.k === 'ТВ-ийн шүүгээ');
+  const its = commit(c, seat.its), sofa = its[0], s = sofa.wside || sofa.side, table = its.find((i) => i.k === 'кофены ширээ'), cab = its.find((i) => i.k === 'ТВ-ийн шүүгээ');
   if (table) rug(c, s, sofa.t, sofa.w + 0.3, sofa.off + sofa.d - 0.12, [0.45, 0.25, 0.1].map((ex) => sofa.off + sofa.d + 0.45 + ct.d + ex), 'seat'); // буйдангийн урд хөлийн доороос ширээний цаана
   if (cab) { const vp = proto(mdl('ceramic_vase_01'), 'ваар', { grp: 'seat', y0: cab.h + 0.001 }); if (vp) { let ok = false; for (const k of [1, -1]) { const it = onWall(c, vp, cab.side, cab.t + k * (cab.w / 2 - 0.2), LAY.gap + cab.d / 2 - vp.d / 2); if (!tryAdd(c, [it])) { commit(c, [it]); ok = true; break; } } if (!ok) skip(c, 'ваар', 'шүүгээн дээр зай алга'); } }
-  // Түшлэгтэй сандал (зай байвал): кофены ширээний үзүүрт, ширээ рүү харсан
+  // Түшлэгтэй сандал (зай байвал): кофены ширээний үзүүрт, ширээ рүү харсан (хананд наалдах эсвэл гарц үлдээх хүртэл ойртуулж/холдуулна)
   const ap = proto(mdl('modern_arm_chair_01', 0.95), 'түшлэгтэй сандал', { grp: 'seat' });
   if (ap && table) {
     const u = alongX(s) ? [1, 0] : [0, 1], n = { N: [0, 1], S: [0, -1], W: [1, 0], E: [-1, 0] }[s], ac = [];
-    for (const k of [-1, 1]) for (const dv of [0, 0.15, -0.15]) { const d0 = ct.w / 2 + 0.3 + ap.d / 2, x = table.x + u[0] * k * d0 + n[0] * dv, z = table.z + u[1] * k * d0 + n[1] * dv, it = at(ap, x, z, Math.atan2(-k * u[0], -k * u[1])); ac.push({ score: Math.min(2, ...c.zones.map((zz) => rdist(it.rect, zz))) * 0.5 - Math.abs(dv), its: [it] }); }
+    for (const k of [-1, 1]) for (const du of [0, -0.05, -0.1, -0.15, -0.2, 0.1]) for (const dv of [0, 0.15, -0.15]) { const d0 = ct.w / 2 + 0.3 + ap.d / 2 + du, x = table.x + u[0] * k * d0 + n[0] * dv, z = table.z + u[1] * k * d0 + n[1] * dv, it = at(ap, x, z, Math.atan2(-k * u[0], -k * u[1])); ac.push({ score: Math.min(2, ...c.zones.map((zz) => rdist(it.rect, zz))) * 0.5 - Math.abs(dv) - Math.abs(du) * 0.5, its: [it] }); }
     put1(c, ac, 'түшлэгтэй сандал');
   }
   return sofa;
 }
 // Хивс: хананаас o0..o1 гүн, дагуу w өргөн (дараалсан гүнээр оролдоно — хаалганы чөлөөнд орохгүй)
 function rug(c, s, t, w, o0, o1s, grp) {
-  for (const o1 of o1s) { const it = at(proto(flat(w, o1 - o0, mats.rug), 'хивс', { grp, under: true, y0: 0.004, h: 0.01 }), ...wPt(c, s, t, (o0 + o1) / 2), FACE[s]); if (!tryAdd(c, [it])) return commit(c, [it]); }
+  for (const o1 of o1s) { const it = at(proto(P(w, o1 - o0, 0.01, () => flat(w, o1 - o0, mats.rug)), 'хивс', { grp, under: true, y0: 0.004, h: 0.01 }), ...wPt(c, s, t, (o0 + o1) / 2), FACE[s]); if (!tryAdd(c, [it])) return commit(c, [it]); }
   return skip(c, 'хивс', 'хаалганы чөлөөнд эсвэл өрөөнөөс гарна');
 }
-// Ханын чимэглэл (цаг): хамгийн их чөлөөтэй хатуу хананы төвд, нээлхий/хүрээ/бусад ханын эд зүйлээс зайтай; near бол түүний ойролцоо
+// Ханын чимэглэл (цаг, листингийн зураг): хамгийн их чөлөөтэй хатуу хананы төвд, нээлхий/хүрээ/бусад ханын эд зүйлээс зайтай; near бол түүний ойролцоо
 function wallDeco(c, p, near) {
   if (!p) return null; const cands = [];
   for (const s of SIDES) for (const [a, b] of solid(c, s, p.y0, p.y0 + p.h, 0.15)) for (const t of steps(a + p.w / 2, b - p.w / 2)) {
@@ -555,36 +637,36 @@ function wallDeco(c, p, near) {
   }
   return put1(c, cands, p.k, false);
 }
-function progLiving(c) {
+async function progLiving(c) {
   const band = c.r.kitchen && c.walls[c.r.kitchen] ? c.r.kitchen : null; let dine = null;
-  if (band) dine = progDining(c, progKitchen(c, [band])); // гал тогоо → хоолны хэсэг (шилжилтийн бүс) → зочны бүлэг
-  progSeating(c, band);
+  if (band) { const kk = progKitchen(c, [band]); await c.tick(); dine = await progDining(c, kk, band); await c.tick(); } // гал тогоо → хоолны хэсэг (шилжилтийн бүс) → зочны бүлэг
+  progSeating(c, band); await c.tick();
   wallDeco(c, proto(mdl('wall_clock'), 'цаг', { grp: 'clock', wall: true, deco: true, y0: 1.74 }), dine);
 }
 function progBath(c) {
-  // Ванн (хаалганаас хол, хамгийн урт хатуу хана), суултуур (хаалганы эсрэг хана), угаалтуур + толь — бүгд хаалганы чөлөөнд орохгүй
+  // Ванн (хаалганаас хол, хамгийн урт хатуу хана), суултуур (хаалганы эсрэг хана; төвөөс хажуу тал бүрт ≥0.4 м чөлөө), угаалтуур + толь — бүгд хаалганы чөлөөнд орохгүй
   const W = c.x1 - c.x0, D = c.z1 - c.z0, opp = c.main ? OPP[c.main.s] : null;
   if (W * D >= 1.8 && Math.min(W, D) >= 1.1) {
     const cands = [];
-    for (const L of [1.7, 1.6, 1.5, 1.4, 1.3, 1.2]) for (const dd of [0.75, 0.7, 0.65, 0.6]) { const p = proto(mkTub(L, dd), 'ванн', { grp: 'tub' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + L / 2, b - L / 2)) { const it = onWall(c, p, s, t); cands.push({ score: L * 2 + dd + (c.main ? Math.min(2, rdist(it.rect, c.main)) * 0.5 : 0), its: [it] }); } }
+    for (const L of [1.7, 1.6, 1.5, 1.4, 1.3, 1.2]) for (const dd of [0.75, 0.7, 0.65, 0.6]) { const p = proto(P(L, dd, 0.72, () => mkTub(L, dd)), 'ванн', { grp: 'tub' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + L / 2, b - L / 2)) { const it = onWall(c, p, s, t); cands.push({ score: L * 2 + dd + (c.main ? Math.min(2, rdist(it.rect, c.main)) * 0.5 : 0), its: [it] }); } }
     put1(c, cands, 'ванн');
   } else skip(c, 'ванн', 'өрөө жижиг');
-  const wp = proto(mkWC(), 'суултуур', { grp: 'wc' }), wcs = [];
-  for (const s of SIDES) { const Wl = c.walls[s]; for (const [a, b] of solid(c, s, 0, wp.h)) for (const t of steps(a + wp.w / 2 + 0.05, b - wp.w / 2 - 0.05)) { const it = onWall(c, wp, s, t); it.keep = [wRect(c, s, t - 0.3, t + 0.3, LAY.gap + wp.d, LAY.gap + wp.d + 0.45)]; wcs.push({ score: (s === opp ? 1 : 0) + (Math.min(t - Wl.a0, Wl.a1 - t) - wp.w / 2 < 0.3 ? 0.4 : 0) - Math.abs(t - (Wl.a0 + Wl.a1) / 2) * 0.1, its: [it] }); } }
+  const wp = proto(P(0.38, 0.62, 0.79, mkWC), 'суултуур', { grp: 'wc' }), wcs = [];
+  for (const s of SIDES) { const Wl = c.walls[s]; for (const [a, b] of solid(c, s, 0, wp.h)) for (const t of steps(a + 0.4, b - 0.4, 0.05)) { const it = onWall(c, wp, s, t); it.keep = [wRect(c, s, t - 0.3, t + 0.3, LAY.gap + wp.d, LAY.gap + wp.d + 0.45), wRect(c, s, t - 0.4, t + 0.4, 0, LAY.gap + wp.d)]; wcs.push({ score: (s === opp ? 1 : 0) - Math.abs(t - (Wl.a0 + Wl.a1) / 2) * 0.1, its: [it] }); } }
   put1(c, wcs, 'суултуур');
   const vc = [];
-  for (const w of [0.6, 0.5, 0.45]) { const p = proto(mkVanity(w), 'угаалтуур', { grp: 'sink' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + w / 2, b - w / 2)) { const it = onWall(c, p, s, t); it.keep = [wRect(c, s, t - w / 2, t + w / 2, LAY.gap + p.d, LAY.gap + p.d + 0.5)]; vc.push({ score: w - (c.main ? rdist(it.rect, c.main) * 0.2 : 0), its: [it] }); } }
-  const v = put1(c, vc, 'угаалтуур'), mp = v && proto(mdl('ornate_mirror_01'), 'толь', { grp: 'sink', wall: true, deco: true, y0: 1.12 });
+  for (const [w, dd] of [[0.6, 0.45], [0.5, 0.45], [0.45, 0.4], [0.4, 0.28]]) { const p = proto(P(w + 0.02, dd + 0.01, 1.06, () => mkVanity(w, dd)), 'угаалтуур', { grp: 'sink' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + p.w / 2, b - p.w / 2)) { const it = onWall(c, p, s, t); it.keep = [wRect(c, s, t - p.w / 2, t + p.w / 2, LAY.gap + p.d, LAY.gap + p.d + 0.5)]; vc.push({ score: w - (c.main ? rdist(it.rect, c.main) * 0.2 : 0), its: [it] }); } }
+  const v = put1(c, vc, 'угаалтуур'), mw = v && Math.min(0.5, v[0].w), mp = v && proto(P(mw, 0.03, 0.7, () => mkMirror(mw, 0.7)), 'толь', { grp: 'sink', wall: true, deco: true, y0: 1.15 });
   if (mp) { const Wv = c.walls[v[0].side]; add1(c, onWall(c, mp, v[0].side, Math.min(Wv.a1 - mp.w / 2 - 0.03, Math.max(Wv.a0 + mp.w / 2 + 0.03, v[0].t)), 0.005)); }
 }
 function progHall(c) {
-  // Зөвхөн нарийн гутлын шүүгээ (орцны хаалганы ойр, чөлөөт хатуу хэсэгт) + толь; цаг хүрээнээс зайтай
+  // Зөвхөн нарийн гутлын шүүгээ (орцны хаалганы ойр, чөлөөт хатуу хэсэгт) + толь (0.5 × 1.0); цаг хүрээнээс зайтай
   const ent = c.zones.find((z) => z.door.to === 'out') || c.main;
   if (Math.min(c.x1 - c.x0, c.z1 - c.z0) < 1.2) skip(c, 'гутлын шүүгээ', 'коридор хэт нарийн (<1.2 м)');
   else {
     const cands = [];
-    for (const w of [1.0, 0.8, 0.6]) { const p = proto(mkShoeCab(w), 'гутлын шүүгээ', { grp: 'shoe' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + w / 2, b - w / 2)) { const it = onWall(c, p, s, t); cands.push({ score: w - (ent ? rdist(it.rect, ent) : 0), its: [it] }); } }
-    const sc = put1(c, cands, 'гутлын шүүгээ'), mp = sc && proto(mdl('ornate_mirror_01'), 'толь', { grp: 'shoe', wall: true, deco: true, y0: 1.15 });
+    for (const w of [1.0, 0.8, 0.6]) { const p = proto(P(w + 0.02, 0.34, 0.905, () => mkShoeCab(w)), 'гутлын шүүгээ', { grp: 'shoe' }); for (const s of SIDES) for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + p.w / 2, b - p.w / 2)) { const it = onWall(c, p, s, t); cands.push({ score: w - (ent ? rdist(it.rect, ent) : 0), its: [it] }); } }
+    const sc = put1(c, cands, 'гутлын шүүгээ'), mp = sc && proto(P(0.5, 0.03, 1.0, () => mkMirror(0.5, 1.0)), 'толь', { grp: 'shoe', wall: true, deco: true, y0: 1.0 });
     if (mp) add1(c, onWall(c, mp, sc[0].side, sc[0].t, 0.005));
   }
   if (c.zones.some((z) => z.door.to === 'out')) wallDeco(c, proto(mdl('wall_clock'), 'цаг', { grp: 'clock', wall: true, deco: true, y0: 1.74 }));
@@ -593,35 +675,38 @@ function progBalcony(c) {
   // Тагт: гүн ≥1.1 м бол 1–2 жижиг ургамал буланд, хаалга хоорондын зам чөлөөтэй
   if (Math.min(c.r.w, c.r.h) < 1.1) return skip(c, 'ургамал', 'тагт нарийн (<1.1 м)');
   for (let i = 0; i < 2; i++) {
-    const p = proto(mkPlant(), 'ургамал', { grp: 'plant' + i }), cands = [];
+    const p = proto(P(0.23, 0.23, 0.76, mkPlant), 'ургамал', { grp: 'plant' + i }), cands = [];
     for (const [x, z] of [[c.x0, c.z0], [c.x1, c.z0], [c.x0, c.z1], [c.x1, c.z1]]) { const it = at(p, x + (x === c.x0 ? 1 : -1) * (p.w / 2 + 0.03), z + (z === c.z0 ? 1 : -1) * (p.d / 2 + 0.03), 0); cands.push({ score: Math.min(3, ...c.zones.map((zz) => rdist(it.rect, zz))), its: [it] }); }
     put1(c, cands, 'ургамал');
   }
 }
 function progOffice(c) {
-  const dp = proto(mdl('dining_table', 1.2 / 2.256, 0.75 / 0.877, 0.6 / 1.39), 'ажлын ширээ', { grp: 'desk' }), ch = proto(mdl('dining_chair_02'), 'сандал', { grp: 'desk' });
-  if (dp && ch) { const cands = []; for (const s of SIDES) { const win = c.walls[s].ops.some((o) => o.t === 'win'); for (const [a, b] of solid(c, s, 0, dp.h)) for (const t of steps(a + dp.w / 2, b - dp.w / 2)) cands.push({ score: win ? 1 : 0, its: [onWall(c, dp, s, t), at(ch, ...wPt(c, s, t, LAY.gap + dp.d + 0.05 + ch.d / 2), FACE[s] + Math.PI)] }); } put1(c, cands, 'ажлын ширээ'); }
+  const dp = proto(P(1.2, 0.6, 0.75, () => mkTable(1.2, 0.6)), 'ажлын ширээ', { grp: 'desk' }), ch = proto(P(0.46, 0.48, 0.87, mkChair), 'сандал', { grp: 'desk', pull: true }), cands = [];
+  for (const s of SIDES) { const win = c.walls[s].ops.some((o) => o.t === 'win'); for (const [a, b] of solid(c, s, 0, dp.h)) for (const t of steps(a + dp.w / 2, b - dp.w / 2)) cands.push({ score: win ? 1 : 0, its: [onWall(c, dp, s, t), at(ch, ...wPt(c, s, t, LAY.gap + dp.d + 0.05 + ch.d / 2), FACE[s] + Math.PI)] }); }
+  put1(c, cands, 'ажлын ширээ');
   progShelves(c, 1);
 }
 function progShelves(c, n) {
-  for (let i = 0; i < n; i++) { const p = proto(shelfUnit(0.9, 1.9, 0.3), 'тавиур', { grp: 'shelf' + i }), cands = []; for (const s of SIDES) { const W = c.walls[s]; for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + p.w / 2, b - p.w / 2)) cands.push({ score: Math.min(t - p.w / 2 - W.a0, W.a1 - t - p.w / 2) < 0.03 ? 1 : 0, its: [onWall(c, p, s, t)] }); } put1(c, cands, 'тавиур'); }
+  for (let i = 0; i < n; i++) { const p = proto(P(0.9, 0.3, 1.9, () => shelfUnit(0.9, 1.9, 0.3)), 'тавиур', { grp: 'shelf' + i }), cands = []; for (const s of SIDES) { const W = c.walls[s]; for (const [a, b] of solid(c, s, 0, p.h)) for (const t of steps(a + p.w / 2, b - p.w / 2)) cands.push({ score: Math.min(t - p.w / 2 - W.a0, W.a1 - t - p.w / 2) < 0.03 ? 1 : 0, its: [onWall(c, p, s, t)] }); } put1(c, cands, 'тавиур'); }
 }
-const MODEL_LIST = ['modern_wooden_cabinet', 'modern_coffee_table_01', 'modern_arm_chair_01', 'dining_table', 'dining_chair_02', 'ceramic_vase_01', 'wall_clock', 'hanging_picture_frame_01', 'ornate_mirror_01', 'modern_ceiling_lamp_01'];
-async function furnishAll() {
-  await Promise.all(MODEL_LIST.map(async (n) => { FUR[n] = await loadModel(n); }));
+// Загварууд + байрлал ЗАЛХУУ: тавилга анх асаахад (эсвэл ?furn=1, листингийн зураг өлгөх үед) л ачаалж тооцно — унтраалттай үед гадаах нислэг/аялалд main thread хөндөгдөхгүй
+const MODEL_LIST = ['modern_wooden_cabinet', 'modern_coffee_table_01', 'modern_arm_chair_01', 'ceramic_vase_01', 'wall_clock', 'hanging_picture_frame_01', 'modern_ceiling_lamp_01'];
+let furP = null; const layP = {};
+const loadFur = () => (furP ||= Promise.all(MODEL_LIST.map(async (n) => { FUR[n] = await loadModel(n); })).then(() => {
   // Жаазны шил: 1k jpg-д тунгалаг суваг алга → шил тунгалаг биш болж урлагийг халхалдаг байв → цэвэр тунгалаг шил
   if (FUR.hanging_picture_frame_01) FUR.hanging_picture_frame_01.traverse((o) => { if (o.isMesh && /glass/.test(o.material.name)) o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, roughness: 0.05, depthWrite: false }); });
-  for (const r of rooms) { try { furnish(r); } catch (e) { console.error('furnish', r.id, e); } await new Promise((res) => setTimeout(res, 0)); } // өрөө бүрийн дараа main thread-д амсхийлгэнэ (аялал гацахгүй)
-  furnReady = true; furnDirty = true;
-}
-function furnish(r) {
-  const c = roomCtx(r), g = new THREE.Group(), T = r.type, t0 = performance.now(); roomLay[r.id] = c; furnGroup.add(g); roomFurn[r.id] = g;
-  if (T === 'living') progLiving(c); else if (T === 'bedroom') progBedroom(c); else if (T === 'kitchen') progDining(c, progKitchen(c, SIDES)); else if (T === 'bath') progBath(c);
+}));
+const layoutRoom = (r) => (layP[r.id] ||= (async () => { await loadFur(); await brk(); try { await furnish(r); } catch (e) { console.error('furnish', r.id, e); } furnDirty = true; })());
+async function ensureFurn() { for (const r of rooms) await layoutRoom(r); furnReady = true; }
+async function furnish(r) {
+  const c = roomCtx(r), g = new THREE.Group(), T = r.type; let ms = 0, mx = 0, t0 = performance.now(); roomLay[r.id] = c;
+  c.tick = async () => { const d = performance.now() - t0; ms += d; mx = Math.max(mx, d); await brk(); t0 = performance.now(); }; // тооцооны цэвэр хугацаа (амсхийлтгүй) + хамгийн урт тасралтгүй хэсэг
+  if (T === 'living') await progLiving(c); else if (T === 'bedroom') await progBedroom(c); else if (T === 'kitchen') { const k = progKitchen(c, SIDES); await c.tick(); await progDining(c, k, null); } else if (T === 'bath') progBath(c);
   else if (T === 'hall') progHall(c); else if (T === 'office') progOffice(c); else if (T === 'other') progShelves(c, 2); else if (T === 'balcony') progBalcony(c);
   // «Тохижуулах» дараалал: хивс → том эд зүйлс (талбайгаар) → ханын/жижиг чимэглэл
   const rank = (it) => (it.under ? 0 : it.floor ? 1 : 2);
   for (const it of c.items.filter((o) => o.obj).sort((p, q) => rank(p) - rank(q) || (rank(p) === 1 ? q.w * q.d - p.w * p.d : 0))) g.add(it.obj);
-  c.ms = Math.round(performance.now() - t0); // байрлал тооцох хугацаа (debug)
+  await c.tick(); furnGroup.add(g); roomFurn[r.id] = g; c.ms = Math.round(ms); c.mx = Math.round(mx); // байрлал тооцох хугацаа (debug)
 }
 // Debug (?debug=top): өрөөний бүсүүд — хаалганы чөлөө (улаан), цонхны бүс (цэнхэр), урд чөлөө (шар), эд зүйлс (ногоон)
 function dbgRects(c) {
@@ -712,9 +797,12 @@ function stageRoom(id, d0 = 1.2) {
   const items = g.children.map((obj, i) => { obj.userData.s = obj.scale.x || 1; obj.visible = false; return { obj, t0: d0 + i * 0.45 }; });
   staging = { items, t: 0 };
 }
-// Тавилга анхдагчаар УНТРААЛТТАЙ — хэрэглэгч «Тавилга» товчоор асаана (?furn=1 бол эхнээсээ асаалттай)
-function setFurn(on) {
-  furnGroup.visible = on; $('#bFurn').classList.toggle('on', on); stagingReset();
+// Тавилга анхдагчаар УНТРААЛТТАЙ — хэрэглэгч «Тавилга» товчоор асаана (?furn=1 бол эхнээсээ асаалттай). Анх асаахад байрлал тооцогдоно («Байрлуулж…»)
+async function setFurn(on) {
+  furnWant = on; $('#bFurn').classList.toggle('on', on);
+  // Анх асаахад: байрлал тооцоод шэйдерүүдийг зэрэгцээ (compileAsync) компиляцлана — тавилга нуугдмал хэвээр тул main thread гацахгүй
+  if (on && !furnReady) { const b = $('#bFurn'), lb = b.lastChild, t = lb.textContent; lb.textContent = 'Байрлуулж…'; b.disabled = true; try { await ensureFurn(); if (renderer && renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) { furnGroup.visible = true; const p = renderer.compileAsync(scene, camera).catch(() => {}); furnGroup.visible = false; await p; } } finally { lb.textContent = t; b.disabled = false; } if (!furnWant) return; }
+  furnGroup.visible = on; stagingReset(); furnDirty = true; // furnDirty: шэйдер компиляц + сүүдэр дараагийн frame-д
   // «тохижуулах» анимаци зөвхөн автомат аялалд камер тухайн өрөөний зогсоол дээр зогсож байхад; явж байхад/чөлөөт горимд шууд харагдана (давхар pop-in гаргахгүй)
   const p = tourPts[tourI]; if (on && mode === 'auto' && SCENE_MODE === 'interior' && !panoActive && phase === 'walk' && p && p.pause && pauseT > 0 && Math.hypot(p.x - cam.x, p.z - cam.z) < 0.05) stageRoom(p.room, 0.2);
   if (renderer) renderer.shadowMap.needsUpdate = true; // сүүдэр статик (autoUpdate=false) — асаах/унтраахад шинэчилнэ
@@ -779,7 +867,7 @@ function bindControls() {
   $('#bAuto').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(false); markModeButtons(); return; } if (panoActive) togglePano(); setMode('auto'); };
   $('#bOut').onclick = () => goExterior(0); $('#bIn').onclick = () => goInterior();
   $('#bFree').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(true); markModeButtons(); return; } if (panoActive && panoMesh.userData.exterior) hidePano(false); setMode('free'); };
-  $('#bFurn').onclick = () => setFurn(!furnGroup.visible);
+  $('#bFurn').onclick = () => setFurn(!furnWant);
   $('#bFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };
   $('#map').addEventListener('click', (e) => {
     const rect = e.currentTarget.getBoundingClientRect(); const mx = (e.clientX - rect.left) / rect.width * 440, my = (e.clientY - rect.top) / rect.height * 340;
@@ -811,14 +899,14 @@ function hangPhotos() {
   for (const r of rooms) {
     const list = assetsByType[r.type] || []; if (!list.length) continue;
     const a = list[0];
-    texLoader.load(assetUrl(a.id), (t) => {
+    // Байрлал тавилгын хөдөлгүүрээр (wallDeco): тухайн өрөөний байрлал тооцогдсоны дараа ТВ/шүүгээ/орны зураг/дээд шүүгээнээс зайтай чөлөөт хананд; тавилга унтраалттай ч харагдана
+    texLoader.load(assetUrl(a.id), async (t) => {
       t.colorSpace = THREE.SRGBColorSpace; const ar = t.image.width / t.image.height; if (ar > 1.9) return;
-      const w = 0.9, h = w / ar; const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 }));
-      const fr = box(w + 0.08, h + 0.08, 0.03, mats.dark);
-      const side = mainSide(r); const cx = r.x + r.w / 2, cz = r.y + r.h / 2, off = WALL_T + 0.02; let pos;
-      // гол ханын хажуу тал (ТВ/орны толгойтой давхцахгүй)
-      if (side === 'N') pos = [cx - Math.min(1.3, r.w / 2 - 0.6), r.y + off, 0]; else if (side === 'S') pos = [cx - Math.min(1.3, r.w / 2 - 0.6), r.y + r.h - off, Math.PI]; else if (side === 'W') pos = [r.x + off, cz - Math.min(1.3, r.h / 2 - 0.6), Math.PI / 2]; else pos = [r.x + r.w - off, cz - Math.min(1.3, r.h / 2 - 0.6), -Math.PI / 2];
-      [m, fr].forEach((o, i) => { o.position.set(pos[0], 1.55, pos[1]); o.rotation.y = pos[2]; if (i === 1) o.position.add(new THREE.Vector3(Math.sin(pos[2]) * -0.01, 0, Math.cos(pos[2]) * -0.01)); scene.add(o); });
+      const w = 0.9, h = w / ar, fh = h + 0.08, g = new THREE.Group(), m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })), fr = box(w + 0.08, fh, 0.03, mats.dark);
+      fr.position.set(0, fh / 2, 0.015); m.position.set(0, fh / 2, 0.031); g.add(fr, m);
+      await layoutRoom(r); const c = roomLay[r.id]; if (!c) return;
+      const res = wallDeco(c, proto(P(w + 0.08, 0.035, fh, () => g), 'зураг (листинг)', { grp: 'photo', wall: true, deco: true, y0: Math.max(0.95, 1.55 - fh / 2) }));
+      if (res) { scene.add(res[0].obj); if (renderer) renderer.shadowMap.needsUpdate = true; }
     });
   }
 }
@@ -921,13 +1009,13 @@ async function main() {
   // near 0.05: 0.1 үед дэлгэцийн захад хана таслагдаж байсан
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
   // Оношилгоо: консолоос zuuchBench(20) → нэг frame-ийн дундаж мс (GPU finish-тэй), pixel ratio, draw calls
-  window.zuuch = { renderer, scene, camera, roomLights, mats, THREE, cam, furnGroup };
+  window.zuuch = { renderer, scene, camera, roomLights, mats, THREE, cam, furnGroup, ensureFurn, setFurn };
   window.zuuchBench = (n = 20) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) { camera.position.set(cam.x, EYE, cam.z); renderer.render(scene, camera); } gl.finish(); const ms = (performance.now() - t) / n; return { frameMs: Math.round(ms * 10) / 10, estFps: Math.round(1000 / ms), pixelRatio: renderer.getPixelRatio(), calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, lights: roomLights.filter((l) => l.visible).length }; };
   const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
   initMats(); outdoors(); scene.add(furnGroup);
-  const furn0 = new URLSearchParams(location.search).get('furn') === '1'; furnGroup.visible = furn0; $('#bFurn').classList.toggle('on', furn0); // тавилга анхдагчаар унтраалттай
+  const furn0 = new URLSearchParams(location.search).get('furn') === '1'; furnWant = furnGroup.visible = furn0; $('#bFurn').classList.toggle('on', furn0); // тавилга анхдагчаар унтраалттай
   for (const r of rooms) scene.add(buildRoom(r));
-  const furnP = furnishAll(); // тавилгын байрлал загварууд ачаалагдмагц (Box3 хэмжээгээр) — унтраалттай ч ард бэлдэнэ
+  if (furn0) ensureFurn(); // ?furn=1: ачааллын дэлгэцийн ард байрлуулна; унтраалттай бол огт тооцохгүй (анх асаахад л)
   hangPhotos();
   if (Object.values(assetsByType).flat().length) $('#bPhotos').disabled = false;
   $('#bPhotos').onclick = showPhotos; $('#bClosePhotos').onclick = () => { $('#photos').style.display = 'none'; }; $('#bPano').onclick = togglePano;
@@ -941,14 +1029,14 @@ async function main() {
   const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
   if (EXT && !sr && q.get('in') !== '1') { SCENE_MODE = 'exterior'; EXT.setVisible(true); showInteriorHud(false); EXT.start(Number(q.get('at')) || 0); } else if (EXT) EXT.setVisible(false);
   if (sr) { enterRoom(sr); if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
-  if (q.get('debug') === 'top') { window.zuuch.topView = async (id) => { await furnP; return topView(id); }; window.zuuch.layout = async () => { await furnP; return Object.fromEntries(Object.entries(roomLay).map(([k, c]) => [k, [...c.log, { ms: c.ms }]])); }; }
+  if (q.get('debug') === 'top') { window.zuuch.topView = async (id) => { await ensureFurn(); return topView(id); }; window.zuuch.layout = async () => { await ensureFurn(); return Object.fromEntries(Object.entries(roomLay).map(([k, c]) => [k, [...c.log, { ms: c.ms, mx: c.mx }]])); }; window.zuuch.dbg = { roomLay, wallDeco, proto, P }; }
   bindControls();
   const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); if (EXT) { EXT.camera.aspect = innerWidth / innerHeight; EXT.camera.updateProjectionMatrix(); } }; addEventListener('resize', resize); resize();
-  // Тавилга асаалттай (?furn=1) бол загваруудыг (≤6с) хүлээнэ; унтраалттай бол хүлээхгүй — ард ачаалагдаж, асаахад бэлэн болно
-  const t0 = Date.now(); while (((furnGroup.visible && (loadedN < pending || !furnReady)) || texDone < texPending) && Date.now() - t0 < 6000) { $('#load').lastElementChild.textContent = furnGroup.visible && loadedN < pending ? `Тавилга ачаалж байна… ${loadedN}/${pending}` : 'Текстур ачаалж байна…'; await new Promise((r) => setTimeout(r, 120)); }
+  // Тавилга асаалттай (?furn=1) бол загвар ачаалж байрлуулахыг (≤8с) хүлээнэ; унтраалттай бол огт хүлээхгүй
+  const t0 = Date.now(); while (((furn0 && !furnReady) || texDone < texPending) && Date.now() - t0 < 8000) { $('#load').lastElementChild.textContent = furn0 && !furnReady ? (loadedN < pending ? `Тавилга ачаалж байна… ${loadedN}/${pending}` : 'Тавилга байрлуулж байна…') : 'Текстур ачаалж байна…'; await new Promise((r) => setTimeout(r, 120)); }
   // Шэйдерүүдийг урьдчилан компиляц — тавилга гарч ирэх/өрөө солигдох мөчид гацахгүй (бенчмарк: эхний frame 62 мс, дараа нь 2 мс)
-  // Тавилга нуугдсан ч түр харагдуулж материалыг нь хамруулна — дараа асаахад гацахгүй
-  const compileAll = () => { const fv = furnGroup.visible; furnGroup.visible = true; try { renderer.compile(scene, camera); } catch { /* зарим GPU-д алгасна */ } furnGroup.visible = fv; };
+  // Тавилга унтраалттай бол түүнийг компиляцад хамруулахгүй — асаахад (furnDirty) нэг удаа компиляц хийгдэнэ
+  const compileAll = () => { try { renderer.compile(scene, camera); } catch { /* зарим GPU-д алгасна */ } };
   compileAll(); try { if (EXT) renderer.compile(EXT.scene, EXT.camera); } catch { /* зарим GPU-д алгасна */ }
   markModeButtons();
   $('#load').style.display = 'none';
@@ -968,8 +1056,8 @@ async function main() {
     const extShown = panoActive && panoMesh && panoMesh.userData.exterior;
     if (id !== curRoomId && !extShown) { curRoomId = id; $('#rName').textContent = r ? r.name : '—'; $('#rArea').textContent = r ? `${(r.w * r.h).toFixed(1)} м² · ${r.w} × ${r.h} м` : ''; $('#bPano').style.display = (r && panoByRoom[r.id]) || panoActive ? '' : 'none'; }
     mapT += dt; if (mapT > 0.08) { mapT = 0; drawMap(); }
-    // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/загвар ачаалагдах үед л шинэчилнэ
-    if (staging || furnDirty || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; if (loadedN !== shadowLoaded || furnDirty) compileAll(); shadowLoaded = loadedN; furnDirty = false; } frameN++;
+    // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/байрлуулах/загвар ачаалагдах үед л шинэчилнэ; шэйдер компиляц зөвхөн тавилга харагдаж байхад (furnDirty)
+    if (staging || furnDirty || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; if (furnDirty && furnGroup.visible) compileAll(); shadowLoaded = loadedN; furnDirty = false; } frameN++;
     // Гэрлийн хасалт: 9 м-ээс хол өрөөний цэгэн гэрлийг унтраана (fragment бүр бүх гэрлийг тооцдог)
     if (frameN % 10 === 0) for (const l of roomLights) l.visible = Math.hypot(l.position.x - cam.x, l.position.z - cam.z) < 9;
     // Адаптив нягтрал: FPS < 28 бол pixel ratio-г бууруулна (доод 0.7), > 55 бол өсгөнө (дээд 1.25)
