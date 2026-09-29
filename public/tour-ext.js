@@ -201,6 +201,8 @@ export function createExterior(ext, opts = {}) {
   const homeMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeBlock(), emissive: new THREE.Color('#3a1a12'), emissiveIntensity: 0.12 });
   addM(B.home, homeMat);
 
+  // Арк (угсармал байрны доорх явган гарц): маршрут байрыг нэвт гардаг газарт харанхуй нүх (хоёр фасадаас харагдана)
+  { const archMat = new THREE.MeshLambertMaterial({ color: '#2b2d31' }); for (const [x, z, ang, len] of ext.arches || []) { const m = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.6, len + 1.2), archMat); m.position.set(x, 1.8, z); m.rotation.y = ang; scene.add(m); } }
   // Гэр (монгол гэр): эсгий хана + дээвэр — instanced
   const gers = ext.gers || [];
   if (gers.length) {
@@ -328,7 +330,11 @@ export function createExterior(ext, opts = {}) {
       changed = false;
       for (let i = 1; i < P.length - 1; i++) {
         const a = P[i - 1], b = P[i], c = P[i + 1]; const ux = b[0] - a[0], uz = b[1] - a[1], vx = c[0] - b[0], vz = c[1] - b[1]; const lu = Math.hypot(ux, uz), lv = Math.hypot(vx, vz);
-        if (lu > 0.01 && lv > 0.01 && (ux * vx + uz * vz) / (lu * lv) < -0.5 && Math.min(lu, lv) < 35) { P.splice(i, 1); changed = true; break; }
+        if (lu > 0.01 && lv > 0.01 && (ux * vx + uz * vz) / (lu * lv) < -0.5 && Math.min(lu, lv) < 35) {
+          // буцалтын оройг хасахгүй (тэгвэл барилга огтолдог): өмнөх цэгээс дараагийн хэрчим рүү перпендикуляр буулгана → явган замаа дагана
+          const t = Math.max(0, Math.min(1, ((a[0] - b[0]) * vx + (a[1] - b[1]) * vz) / (lv * lv))); P[i] = [b[0] + vx * t, b[1] + vz * t];
+          if (Math.hypot(P[i][0] - c[0], P[i][1] - c[1]) < 0.8) P.splice(i, 1); changed = true; break;
+        }
       }
     }
     return P;
@@ -344,10 +350,29 @@ export function createExterior(ext, opts = {}) {
     const sh = new THREE.Shape(); sh.moveTo(P[0][0], P[0][1]); for (const q of P.slice(1)) sh.lineTo(q[0], q[1]); sh.closePath();
     const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); return g;
   }
+  // Барилгын тор: маршрутын шугамыг ханаас ≥1.6 м зайд байлгах (дотор нь орсон бол гадагш түлхэнэ); аркийн гарц үл хамаарна
+  const BG = (() => { const cs = 20, key = (i, j) => i * 100003 + j, M = new Map(), polys = [];
+    for (const b of ext.buildings || []) { const P = pairs(b.p); if (P.length < 3) continue; const bi = polys.length; polys.push(P); let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } for (let i = Math.floor((x0 - 3) / cs); i <= Math.floor((x1 + 3) / cs); i++) for (let j = Math.floor((z0 - 3) / cs); j <= Math.floor((z1 + 3) / cs); j++) { const k = key(i, j); if (!M.has(k)) M.set(k, []); M.get(k).push(bi); } }
+    return { cs, key, M, polys };
+  })();
+  const inArch = (x, z) => (ext.arches || []).some(([ax, az, ang, len]) => { const dx = x - ax, dz = z - az, fx = Math.sin(ang), fz = Math.cos(ang); return Math.abs(dx * fx + dz * fz) < len / 2 + 2 && Math.abs(-dx * fz + dz * fx) < 2.5; });
+  function pushOut(x, z, clear = 1.6) {
+    if (inArch(x, z)) return [x, z];
+    for (let it = 0; it < 3; it++) {
+      const L = BG.M.get(BG.key(Math.floor(x / BG.cs), Math.floor(z / BG.cs))); if (!L) break; let moved = false;
+      for (const bi of L) { const P = BG.polys[bi]; const inside = inPolyB(x, z, P); let bd = Infinity, fx = 0, fz = 0;
+        for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], c = P[i], dx = c[0] - a[0], dz = c[1] - a[1], L2 = dx * dx + dz * dz || 1; const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2)); const qx = a[0] + dx * t, qz = a[1] + dz * t, d = Math.hypot(x - qx, z - qz); if (d < bd) { bd = d; fx = qx; fz = qz; } }
+        if (inside) { const ux = fx - x, uz = fz - z, l = Math.hypot(ux, uz) || 1; x = fx + (ux / l) * clear; z = fz + (uz / l) * clear; moved = true; }
+        else if (bd < clear) { const ux = x - fx, uz = z - fz, l = Math.hypot(ux, uz) || 1; x = fx + (ux / l) * clear; z = fz + (uz / l) * clear; moved = true; }
+      }
+      if (!moved) break;
+    }
+    return [x, z];
+  }
   function routeLine(pts, color, far) {
     const c = smoothCurve(pts); if (!c) return null;
     const total = c.getLength(), n = Math.max(2, Math.ceil(total / (far ? 3 : 1)) + 1);
-    const S = c.getSpacedPoints(n - 1).map((v) => [v.x, v.z]); const cum = [0];
+    let S = c.getSpacedPoints(n - 1).map((v) => (far ? [v.x, v.z] : pushOut(v.x, v.z))); if (!far) S = S.map((q, i) => (i === 0 || i === S.length - 1 ? q : [(S[i - 1][0] + 2 * q[0] + S[i + 1][0]) / 4, (S[i - 1][1] + 2 * q[1] + S[i + 1][1]) / 4])); const cum = [0]; // ханаас хол, бага зэрэг тэгшилсэн
     for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]));
     const y = far ? 2.2 : 0.6; const pos = [], off = [], side = [], dist = [], idx = [];
     for (let i = 0; i < n; i++) {
@@ -363,13 +388,14 @@ export function createExterior(ext, opts = {}) {
         vertexShader: LINE_VS, fragmentShader: LINE_FS, transparent: true, depthWrite: false, depthTest: !xray, side: THREE.DoubleSide, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending }));
       m.frustumCulled = false; m.renderOrder = xray ? 13 : core ? 12 : 11; m.visible = false; scene.add(m); return m;
     };
-    const meshes = [mk(0, 8, 0.28, false, true), mk(1, 2.6, 1, false, false), mk(1, 2.6, 0.3, true, false)]; // гэрэлтэлт, гол шугам, барилгын цаадах бүдэг
-    const arrow = new THREE.Group(); const am = (k, clr, ro) => { const m = new THREE.Mesh(arrowShape(k), new THREE.MeshBasicMaterial({ color: clr, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })); m.renderOrder = ro; arrow.add(m); };
+    const meshes = [mk(0, 8, 0.28, false, true), mk(1, 2.6, 1, false, false)]; // гэрэлтэлт, гол шугам (барилгын цаагуур нэвт харуулахгүй — камер өөрөө харагдах өнцгөө сонгоно)
+    const arrow = new THREE.Group(); const am = (k, clr, ro) => { const m = new THREE.Mesh(arrowShape(k), new THREE.MeshBasicMaterial({ color: clr, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -10 })); m.renderOrder = ro; arrow.add(m); };
     am(1.34, '#ffffff', 14); am(1, col.clone().lerp(new THREE.Color('#ffffff'), 0.1), 15); arrow.visible = false; scene.add(arrow);
+    const pointAt = (d) => { const r = at(d); return [r[0], r[1]]; };
     const at = (d) => { d = Math.max(0, Math.min(total, d)); let lo = 0, hi = n - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid; } const k = (d - cum[lo]) / (cum[hi] - cum[lo] || 1); let tx = S[hi][0] - S[lo][0], tz = S[hi][1] - S[lo][1]; const tl = Math.hypot(tx, tz) || 1; return [S[lo][0] + (S[hi][0] - S[lo][0]) * k, S[lo][1] + (S[hi][1] - S[lo][1]) * k, tx / tl, tz / tl]; };
     let mode = 'off';
     const L = {
-      total,
+      total, pointAt,
       setHead(d) { head.value = d; },
       setMode(m) { mode = m; for (const q of meshes) q.visible = m !== 'off'; if (m === 'off') arrow.visible = false; },
       distNear(x, z) { let bd = Infinity, bi = 0; for (let i = 0; i < n; i++) { const dd = Math.hypot(S[i][0] - x, S[i][1] - z); if (dd < bd) { bd = dd; bi = i; } } return cum[bi]; },
@@ -485,7 +511,10 @@ export function createExterior(ext, opts = {}) {
     for (let i = 0; i < n; i++) {
       const t = Math.min(TOTAL - 1e-3, i * LIFT_DT); while (si < segs.length - 1 && t >= segs[si + 1].t0) si++;
       const sg = segs[si]; if (!LK.has(sg.kind)) continue; fromPose = starts[si];
-      const pz = segPose(sg, Math.min(1, (t - sg.t0) / sg.dur)); need[i] = Math.min(40, Math.max(0, needY(pz.pos, pz.tgt, sg.kind === 'hover' ? 0.8 : 0.55) - pz.pos.y));
+      const uu = Math.min(1, (t - sg.t0) / sg.dur), pz = segPose(sg, uu); need[i] = Math.min(40, Math.max(0, needY(pz.pos, pz.tgt, sg.kind === 'hover' ? 0.8 : 0.55) - pz.pos.y));
+      const ln = sg.p && sg.p.line; if (ln && (sg.kind === 'fly' || sg.kind === 'hover')) { // сумны үзүүр (≈0.7 с дараах) харагдах хүртэл камерыг өргөнө (эргэлтээр шийдэгдээгүй үлдэгдэл)
+        const hd = sg.kind === 'hover' ? ln.total : ln.total * cruise(Math.min(1, (uu + 0.7 / sg.dur) * 1.1)); const B = ln.pointAt(hd); let dh = 0; while (dh < 45 && !losClear(pz.pos.x, pz.pos.y + dh, pz.pos.z, B[0], B[1])) dh += 3; need[i] = Math.max(need[i], Math.min(45, dh));
+      }
     }
     fromPose = null;
     const shot = new Int32Array(n); { let id = 0, fi = 0; const cuts = segs.filter((q) => q.kind === 'fade').map((q) => q.t0 + q.dur / 2); for (let i = 0; i < n; i++) { while (fi < cuts.length && i * LIFT_DT >= cuts[fi]) { fi++; id++; } shot[i] = id; } }
@@ -496,7 +525,50 @@ export function createExterior(ext, opts = {}) {
     LIFT = L.map((_, i) => { let a = 0, c = 0; for (let k = -3; k <= 3; k++) { const j = i + k; if (j >= 0 && j < n && shot[j] === shot[i]) { a += L[j]; c++; } } return a / c; });
   }
   // Зураг авалтууд (бүгд эргэлтгүй): нислэг = маршрутын дагуу гулсах, очих газар руу тогтмол чиглэл, ≈44° налуу
-  function flyPose(s, u) { const p = s.sp.at(s.sp.L * cruise(u)); return { pos: p.clone().addScaledVector(s.H, -40).setY(52), tgt: p.clone().addScaledVector(s.H, 12).setY(0) }; }
+  const MODES = [{ back: 40, up: 52, ahead: 12 }, { back: 20, up: 68, ahead: 8 }, { back: 7, up: 88, ahead: 4 }]; // энгийн ≈45°, огцом ≈70°, бараг дээрээс (маш нарийн завсарт)
+  // Харааны шугам: барилга бүрийн яг контур + өндөр, мод (5 м тороос нарийн) — сум барилга/модоор халхлагдах эсэх
+  const OCC = (() => { const cs = 20, key = (i, j) => i * 100003 + j, E = new Map(), Tr = new Map(); const put = (M, i, j, v) => { const k = key(i, j); if (!M.has(k)) M.set(k, []); M.get(k).push(v); };
+    for (const b of ext.buildings || []) { const P = pairs(b.p); if (P.length < 3) continue; const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)) + (b.lv <= 2 ? 1.7 : 1.2); for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], c = P[i]; for (let x = Math.floor(Math.min(a[0], c[0]) / cs); x <= Math.floor(Math.max(a[0], c[0]) / cs); x++) for (let z = Math.floor(Math.min(a[1], c[1]) / cs); z <= Math.floor(Math.max(a[1], c[1]) / cs); z++) put(E, x, z, [a[0], a[1], c[0], c[1], h]); } }
+    for (const [x, z] of treePts) put(Tr, Math.floor(x / cs), Math.floor(z / cs), [x, z]);
+    return { cs, key, E, Tr };
+  })();
+  function losClear(cx, cy, cz, tx, tz) {
+    const dx = tx - cx, dz = tz - cz, dy = 1 - cy, cs = OCC.cs; const i0 = Math.floor(Math.min(cx, tx) / cs), i1 = Math.floor(Math.max(cx, tx) / cs), j0 = Math.floor(Math.min(cz, tz) / cs), j1 = Math.floor(Math.max(cz, tz) / cs); const L2 = dx * dx + dz * dz || 1;
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const L = OCC.E.get(OCC.key(i, j)); if (L) for (const [ax, az, bx, bz, h] of L) { const sx = bx - ax, sz = bz - az, den = dx * sz - dz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((ax - cx) * sz - (az - cz) * sx) / den, u = ((ax - cx) * dz - (az - cz) * dx) / den; if (t <= 0.002 || t >= 0.995 || u < 0 || u > 1) continue; if (h + 0.4 > cy + dy * t) return false; }
+      const R = OCC.Tr.get(OCC.key(i, j)); if (R) for (const [x, z] of R) { const t = Math.max(0, Math.min(1, ((x - cx) * dx + (z - cz) * dz) / L2)); if (t > 0.97) continue; if (Math.hypot(cx + dx * t - x, cz + dz * t - z) < 2.6 && cy + dy * t < 7.5) return false; }
+    }
+    return true;
+  }
+  function planView(s) { // маршрут ба сумны үзүүр барилгаар халхлагдахгүй байх камерын чиглэл — динамик програмчлал (Витерби)
+    const N = Math.max(2, Math.ceil(s.dur / 1.0) + 1), K = 24, Y0 = Math.atan2(s.H.x, s.H.z), line = s.p.line, S = MODES.length * K; const C = [];
+    for (let i = 0; i < N; i++) {
+      const row = new Float32Array(S); const subs = [-0.35, 0, 0.35];
+      for (let m = 0; m < MODES.length; m++) for (let k = 0; k < K; k++) {
+        const dk = k < K / 2 ? k : k - K, yaw = Y0 + (dk * 2 * Math.PI) / K, fx = Math.sin(yaw), fz = Math.cos(yaw), M = MODES[m]; let c = (Math.abs(dk) / (K / 4)) ** 2 * 4 + m * 4;
+        for (const ds of subs) {
+          // бодит камер пүршийн улмаас ≈0.7 с хоцордог: хоцорсон байрлалаас одоогийн сумны үзүүр, камерын дор байгаа замын хэсэг хоёуланг шалгана
+          const u = Math.max(0, Math.min(1, (i + ds) / (N - 1))), uc = Math.max(0, u - 0.7 / s.dur), p = s.sp.at(s.sp.L * cruise(uc)); const cx = p.x - fx * M.back, cz = p.z - fz * M.back;
+          const A = line ? line.pointAt(line.total * cruise(uc)) : [p.x, p.z], B = line ? line.pointAt(line.total * cruise(Math.min(1, u * 1.1))) : A;
+          if (!losClear(cx, M.up, cz, A[0], A[1])) c += 12; if (!losClear(cx, M.up, cz, B[0], B[1])) c += 24; if (HG.at(cx, cz) + 8 > M.up) c += 10;
+        }
+        row[m * K + k] = c;
+      }
+      C.push(row);
+    }
+    const D = [C[0].slice()], BK = [];
+    for (let i = 1; i < N; i++) { const d = new Float32Array(S), bk = new Int32Array(S); for (let st = 0; st < S; st++) { const m = Math.floor(st / K), k = st % K; let best = Infinity, bi = 0; for (let pm = Math.max(0, m - 1); pm <= Math.min(MODES.length - 1, m + 1); pm++) for (let dd = -1; dd <= 1; dd++) { const pk = (k + dd + K) % K, ps = pm * K + pk, v = D[i - 1][ps] + Math.abs(dd) * 1.5 + (pm !== m ? 4 : 0); if (v < best) { best = v; bi = ps; } } d[st] = best + C[i][st]; bk[st] = bi; } D.push(d); BK.push(bk); }
+    let st = 0; for (let q = 1; q < S; q++) if (D[N - 1][q] < D[N - 1][st]) st = q; const seq = [st]; for (let i = N - 1; i > 0; i--) { st = BK[i - 1][st]; seq.unshift(st); }
+    const yaw = [], mode = []; let prev = null; for (const q of seq) { const k = q % K, dk = k < K / 2 ? k : k - K; let y = Y0 + (dk * 2 * Math.PI) / K; if (prev != null) while (y - prev > Math.PI) y -= 2 * Math.PI; while (prev != null && prev - y > Math.PI) y += 2 * Math.PI; yaw.push(y); mode.push(Math.floor(q / K)); prev = y; }
+    const sm = (a) => a.map((_, i) => (a[Math.max(0, i - 1)] + 2 * a[i] + a[Math.min(a.length - 1, i + 1)]) / 4); // зөөлрүүлэлт
+    return { yaw: sm(sm(yaw)), mode: sm(sm(mode)) };
+  }
+  const cr = (a, f) => { const n = a.length; f = Math.max(0, Math.min(n - 1, f)); const i = Math.min(n - 2, Math.floor(f)), t = f - i; const p0 = a[Math.max(0, i - 1)], p1 = a[i], p2 = a[i + 1], p3 = a[Math.min(n - 1, i + 2)]; return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t); }; // Catmull-Rom (жигд эргэлт)
+  function flyPose(s, u) {
+    const p = s.sp.at(s.sp.L * cruise(u)); const P = s.plan; const f = P ? u * (P.yaw.length - 1) : 0; const yaw = P ? cr(P.yaw, f) : Math.atan2(s.H.x, s.H.z), w = P ? Math.max(0, Math.min(MODES.length - 1, cr(P.mode, f))) : 0;
+    const d = V(Math.sin(yaw), 0, Math.cos(yaw)); const mi = Math.min(MODES.length - 2, Math.floor(w)), mt = w - mi, M0 = MODES[mi], M1 = MODES[mi + 1]; const back = M0.back + (M1.back - M0.back) * mt, up = M0.up + (M1.up - M0.up) * mt, ahead = M0.ahead + (M1.ahead - M0.ahead) * mt;
+    return { pos: p.clone().addScaledVector(d, -back).setY(up), tgt: p.clone().addScaledVector(d, ahead).setY(0) };
+  }
   const dolly = (f, k) => { const dir = f.tgt.clone().sub(f.pos).normalize(); f.pos.addScaledVector(dir, k); return f; }; // харах чиглэл өөрчлөгдөхгүй ойртолт
   function hoverPose(s, u) { return dolly(flyPose(s, 1), 16 * ease(u)); }
   function farPose(s, u) { const p = s.sp.at(s.sp.L * cruise(u)); return { pos: p.clone().addScaledVector(s.H, -270).setY(280), tgt: p.clone().addScaledVector(s.H, 10).setY(0) }; }
@@ -595,6 +667,7 @@ export function createExterior(ext, opts = {}) {
   const fadeEl = document.createElement('div'); fadeEl.style.cssText = 'position:fixed;inset:0;background:#0b1220;opacity:0;pointer-events:none;z-index:3'; document.body.appendChild(fadeEl); let fadeO = 0;
   for (const q of ['.top', '#map']) { const el = $(q); if (el && !el.style.zIndex) el.style.zIndex = '5'; }
   const setFade = (o) => { if (Math.abs(o - fadeO) > 0.004 || (o === 0 && fadeO !== 0)) { fadeO = o; fadeEl.style.opacity = o.toFixed(3); } };
+  for (let i = 0; i < segs.length; i++) if (segs[i].kind === 'fly') { segs[i].plan = planView(segs[i]); if (segs[i + 1] && segs[i + 1].kind === 'hover') segs[i + 1].plan = segs[i].plan; } // камерын чиглэл (халхлалтгүй)
   planLift();
   buildList();
 
@@ -626,7 +699,7 @@ export function createExterior(ext, opts = {}) {
       if (m.on !== m.active || m.mini !== mini) { m.on = m.active; m.mini = mini; m.el.classList.toggle('on', m.active); m.el.classList.toggle('mini', mini); m.bw = m.el.offsetWidth; m.bh = m.el.offsetHeight; } // ангилал солигдоход л хэмжинэ
       const op = m.active || m.kind === 'home' ? 1 : c.far ? 0.95 : Math.max(0.5, 1 - c.dist / 1200); if (Math.abs((m.op ?? -1) - op) > 0.03) { m.op = op; m.el.style.opacity = op.toFixed(2); }
     }
-    for (const p of [...pois, ...(main ? [main] : [])]) { const on = p.lbl.active; p.ring.visible = on || overview; p.beam.visible = on || overview; p.ring.scale.setScalar(on ? 1.35 : 1); p.beam.material.opacity = on ? 0.75 : 0.3; p.beam.scale.y = on ? 1.6 : 1; p.ring.material.depthTest = !on; p.beam.material.depthTest = !on; p.ring.renderOrder = on ? 7 : 0; p.beam.renderOrder = on ? 7 : 0; }
+    for (const p of [...pois, ...(main ? [main] : [])]) { const on = p.lbl.active; p.ring.visible = on || overview; p.beam.visible = on || overview; p.ring.scale.setScalar(on ? 1.35 : 1); p.beam.material.opacity = on ? 0.75 : 0.3; p.beam.scale.y = on ? 1.6 : 1; p.ring.material.depthTest = true; p.beam.material.depthTest = true; }
     for (const d of dests) d.beam.visible = farK || overview || d.lbl.active;
   }
   function update(dt) {
@@ -692,5 +765,5 @@ export function createExterior(ext, opts = {}) {
     g.fillStyle = '#2563eb'; g.beginPath(); g.arc(W / 2, H / 2, 6, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
   }
   const liftInfo = () => segs.map((sg) => `${sg.kind}${sg.p || sg.to ? '/' + (sg.p || sg.to).cat : ''}:${Math.round(Math.max(0, ...(LIFT || []).slice(Math.floor(sg.t0 / LIFT_DT), Math.ceil((sg.t0 + sg.dur) / LIFT_DT) + 1)))}`).join(' ');
-  return { scene, camera, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, get free() { return free; }, get running() { return running; }, get T() { return T; } };
+  return { scene, camera, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, _los: losClear, get free() { return free; }, get running() { return running; }, get T() { return T; } };
 }

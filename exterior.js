@@ -218,6 +218,22 @@ function addConnectors(G, polys, { maxD = 45, perNode = 6, within = Infinity } =
   }
   return added;
 }
+function bldIndex(list) { // барилгын контурын тор: хэрчим контур огтлох эсэх, барилга дотор явсан урт
+  const cell = 25, key = (i, j) => i * 1000003 + j, E = new Map(), B = new Map();
+  const put = (M, i, j, v) => { const k = key(i, j); if (!M.has(k)) M.set(k, []); M.get(k).push(v); };
+  list.forEach((b, bi) => {
+    const p = b.p; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } b.bb = [x0, z0, x1, z1];
+    for (let i = Math.floor(x0 / cell); i <= Math.floor(x1 / cell); i++) for (let j = Math.floor(z0 / cell); j <= Math.floor(z1 / cell); j++) put(B, i, j, bi);
+    for (let k = 0, m = p.length - 1; k < p.length; m = k++) { const a = p[m], c = p[k]; for (let i = Math.floor(Math.min(a[0], c[0]) / cell); i <= Math.floor(Math.max(a[0], c[0]) / cell); i++) for (let j = Math.floor(Math.min(a[1], c[1]) / cell); j <= Math.floor(Math.max(a[1], c[1]) / cell); j++) put(E, i, j, [a[0], a[1], c[0], c[1], bi]); }
+  });
+  const cross = (ax, az, bx, bz, cx, cz, dx, dz) => { const d1 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx), d2 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx), d3 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax), d4 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax); return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0); };
+  const at = (x, z) => { const L = B.get(key(Math.floor(x / cell), Math.floor(z / cell))); if (L) for (const bi of L) { const b = list[bi]; if (x < b.bb[0] || x > b.bb[2] || z < b.bb[1] || z > b.bb[3]) continue; if (inPoly(x, z, b.p)) return bi; } return -1; };
+  return {
+    at,
+    blocked(ax, az, bx, bz, allowInside) { const skip = allowInside ? at(ax, az) : -1; for (let i = Math.floor(Math.min(ax, bx) / cell); i <= Math.floor(Math.max(ax, bx) / cell); i++) for (let j = Math.floor(Math.min(az, bz) / cell); j <= Math.floor(Math.max(az, bz) / cell); j++) { const L = E.get(key(i, j)); if (L) for (const q of L) { if (q[4] === skip) continue; if (cross(ax, az, bx, bz, q[0], q[1], q[2], q[3])) return true; } } return false; },
+    inside(ax, az, bx, bz) { const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L)); let len = 0, lv = 0, home = false, sx = 0, sz = 0, c = 0; for (let k = 0; k < n; k++) { const t = (k + 0.5) / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t; const bi = at(x, z); if (bi >= 0) { len += L / n; lv = Math.max(lv, list[bi].lv || 1); if (list[bi].home) home = true; sx += x; sz += z; c++; } } return { len, lv, home, cx: c ? sx / c : 0, cz: c ? sz / c : 0 }; },
+  };
+}
 function nearestNode(nodes, x, z, maxD = 250) { let best = null, bd = maxD; for (const [id, n] of nodes) { const d = Math.hypot(n.x - x, n.z - z); if (d < bd) { bd = d; best = id; } } return best ? { id: best, d: bd } : null; }
 function pathTo(nodes, prev, dst) { const out = []; for (let c = dst; c != null; c = prev.get(c)) { const n = nodes.get(c); out.unshift([n.x, n.z]); } return out; }
 
@@ -445,6 +461,22 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   // ---- Алхах сүлжээ: орцноос бүх цэг рүү ----
   const walkG = graph(allWays, (t) => (WALK_OK(t.highway) ? 1 : 0), P);
   const conn = addConnectors(walkG, buildings.map((b) => b._poly), { within: R + 200 }); log(`алхах сүлжээ: ${walkG.size} цэг, хашааны холболт +${conn}`);
+  const BI = bldIndex(buildings.map((b) => ({ p: b._poly, lv: b.lv, home: b === home })));
+  const archAt = []; let thruN = 0; // барилга нэвт гарах хэрчмүүд: арк (зөвшөөрнө) эсвэл хаалттай
+  for (const [id, n] of walkG) for (const e of n.adj) {
+    const m = walkG.get(e[0]); if (!m) continue; const r = BI.inside(n.x, n.z, m.x, m.z); if (r.len <= 0.5) continue;
+    const arch = r.len <= 18 && r.lv >= 5 && !r.home; e[1] = e[2] * (arch ? 1.3 : 25); thruN++;
+    if (arch && String(id) < String(e[0])) archAt.push({ x: r.cx, z: r.cz, dx: m.x - n.x, dz: m.z - n.z, len: r.len });
+  }
+  log(`барилга нэвт гарах хэрчим ${thruN} (арк байж болох ${archAt.length})`);
+  const nearestSeg = (x, z, maxD, allowInside) => { // хамгийн ойрын явган замын ХЭРЧИМ (зангилаа биш) — холбох шугам барилга огтлохгүй
+    let best = null;
+    for (const [uid, u] of walkG) {
+      if (Math.abs(u.x - x) > maxD + 120 || Math.abs(u.z - z) > maxD + 120) continue;
+      for (const [vid, w, len] of u.adj) { const v = walkG.get(vid); if (!v || len < 0.01) continue; const dx = v.x - u.x, dz = v.z - u.z; const t = Math.max(0, Math.min(1, ((x - u.x) * dx + (z - u.z) * dz) / (len * len))); const fx = u.x + dx * t, fz = u.z + dz * t; const d = Math.hypot(x - fx, z - fz); if (d > maxD || (best && d >= best.d) || w > len * 2) continue; if (d > 0.5 && BI.blocked(x, z, fx, fz, allowInside)) continue; best = { uid, vid, t, fx, fz, d, len, wr: w / len }; }
+    }
+    return best;
+  };
   let start = null;
   if (entrance) start = nearestNode(walkG, entrance[0], entrance[1], 150);
   if (!start && home) { // орц = байрны УРТ талын дунд (угсармал блокийн орцууд урт талдаа) — сүлжээнд ойр талыг сонгоно
@@ -460,10 +492,20 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   }
   if (!start) start = nearestNode(walkG, 0, 0, 400);
   if (!entrance) entrance = start ? [walkG.get(start.id).x, walkG.get(start.id).z] : [0, 0];
-  const walk = start ? dijkstra(walkG, start.id) : null;
+  if (entrance) { // орцноос хамгийн ойрын явган зам руу перпендикуляр (20 м «гаргалт»-гүй)
+    const sg = nearestSeg(entrance[0], entrance[1], 150, false);
+    if (sg) { walkG.set('E', { x: entrance[0], z: entrance[1], adj: [] }); walkG.set('EF', { x: sg.fx, z: sg.fz, adj: [] }); const link = (a, b, len, wr) => { walkG.get(a).adj.push([b, len * wr, len]); walkG.get(b).adj.push([a, len * wr, len]); }; link('E', 'EF', sg.d, 1); link('EF', sg.uid, sg.t * sg.len, sg.wr); link('EF', sg.vid, (1 - sg.t) * sg.len, sg.wr); start = { id: 'E', d: 0 }; }
+  }
+  const walk = start ? dijkstra(walkG, start.id) : null; const usedPaths = [];
   const route = (x, z) => {
-    if (!walk) return null; const nn = nearestNode(walkG, x, z, 220); if (!nn || !walk.len.has(nn.id)) return null;
-    const pth = [entrance, ...pathTo(walkG, walk.prev, nn.id), [x, z]]; const lenM = walk.len.get(nn.id) + (start ? start.d : 0) + nn.d;
+    if (!walk) return null; let pth, lenM; const sg = nearestSeg(x, z, 220, true);
+    const lu = sg && walk.len.has(sg.uid) ? walk.len.get(sg.uid) + sg.t * sg.len : Infinity, lw = sg && walk.len.has(sg.vid) ? walk.len.get(sg.vid) + (1 - sg.t) * sg.len : Infinity;
+    if (sg && Math.min(lu, lw) < Infinity) { const via = lu <= lw ? sg.uid : sg.vid; lenM = Math.min(lu, lw) + sg.d; pth = [...pathTo(walkG, walk.prev, via), [sg.fx, sg.fz], [x, z]]; }
+    else { const nn = nearestNode(walkG, x, z, 220); if (!nn || !walk.len.has(nn.id)) return null; pth = [...pathTo(walkG, walk.prev, nn.id), [x, z]]; lenM = walk.len.get(nn.id) + nn.d; }
+    if (start && start.id !== 'E') { pth.unshift(entrance); lenM += start.d || 0; }
+    const bi = BI.at(x, z); // очих цэг барилга дотор бол (дэлгүүр, эмнэлэг…) шугам барилгын ханан дээр (хаалган дээр) зогсоно
+    if (bi >= 0 && pth.length >= 2) { const a0 = pth[pth.length - 2]; const P2 = buildings[bi]._poly; let bt = 1; for (let i = 0, j = P2.length - 1; i < P2.length; j = i++) { const rx = x - a0[0], rz = z - a0[1], sx = P2[i][0] - P2[j][0], sz = P2[i][1] - P2[j][1]; const den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((P2[j][0] - a0[0]) * sz - (P2[j][1] - a0[1]) * sx) / den, q = ((P2[j][0] - a0[0]) * rz - (P2[j][1] - a0[1]) * rx) / den; if (t >= 0 && t <= 1 && q >= 0 && q <= 1) bt = Math.min(bt, t); } if (bt < 1) { const ex = a0[0] + (x - a0[0]) * bt, ez = a0[1] + (z - a0[1]) * bt; lenM -= Math.hypot(x - ex, z - ez); pth[pth.length - 1] = [ex, ez]; } }
+    usedPaths.push(pth);
     return { p: flat(simplify(pth, 0.8)), m: Math.round(lenM), walkMin: Math.max(1, Math.round(lenM / WALK_MS / 60)) };
   };
   // ---- Цэгүүд: ангилал бүрээс сүлжээгээр хамгийн ойр ----
@@ -501,12 +543,13 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     }
   }
   const study = commuteHours ? await computeStudy({ origin: { lat, lng }, entrance, mainRoad, dests }, { log }) : null;
+  const arches = archAt.filter((a) => usedPaths.some((pth) => pth.some((q, i) => i && segDist(a.x, a.z, pth[i - 1][0], pth[i - 1][1], q[0], q[1])[0] < 2))).map((a) => [r1(a.x), r1(a.z), Math.round(Math.atan2(a.dx, a.dz) * 1000) / 1000, r1(a.len)]);
   for (const b of buildings) { delete b._poly; delete b._c; }
   log(`бэлэн: барилга ${buildings.length} (+гэр ${gers.length}, алс ${far.length}), зам ${roads.length}, талбай ${areas.length}, цэг ${pois.length}`);
   return {
     v: 1, origin: { lat, lng }, R: Math.round(R), attribution: '© OpenStreetMap contributors (ODbL)',
     home: home ? { p: home.p, lv: home.lv, n: home.n || '', no: home.no || '' } : null, entrance: entrance.map(r1),
-    buildings, gers, far, roads, areas, trees, pois, mainRoad, dests, study, generated_at: new Date().toISOString(),
+    buildings, gers, far, roads, areas, trees, pois, mainRoad, dests, arches, study, generated_at: new Date().toISOString(),
   };
 }
 
