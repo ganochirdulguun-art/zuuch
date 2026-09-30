@@ -221,6 +221,7 @@ function poiRefine(cat, nm, t = {}) {
   if (cat === 'health' && NM.pharmacy.test(n) && !/эмнэлэг|клиник|clinic|hospital/i.test(n)) cat = 'pharmacy';
   if (cat === 'grocery' && ((/худалдааны төв|их дэлгүүр|плаза|plaza|megastore|(^|\s)төв$/i.test(n) && !/хүнс/i.test(n)) || /(^|\s)зах($|\s)/i.test(n))) cat = 'mall'; // «зурагт зах» shop=supermarket → зах = худалдааны төв
   if (cat === 'mall' && !n) return null; // нэргүй худалдааны барилга ≠ худалдааны төв
+  if (cat === 'gov' && /хотхон|apartment|орон сууц|residential/i.test(n)) return null; // «Цагдаа 2 хотхон … Apartment building» = орон сууц, төрийн үйлчилгээ биш
   if (NOT[cat] && NOT[cat].test(n)) {
     if (cat === 'health' && /эмнэлэг|клиник|clinic|hospital/i.test(n) && !/мал|амьтны|(^|\s)vet/i.test(n)) return cat;
     if (cat === 'grocery' && /хүнс/i.test(n)) return cat;

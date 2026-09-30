@@ -1009,7 +1009,7 @@ window.tourPanoDel = async (id) => {
 const planCode = (pl) => JSON.stringify({ ceiling: pl.ceiling, entry: pl.entry, rooms: (pl.rooms || []).map((r) => { const o = { id: r.id, type: r.type, name: r.name, x: r.x, y: r.y, w: r.w, h: r.h }; for (const k of ['win', 'door', 'beams']) if (r[k] && r[k].length) o[k] = r[k]; for (const k of ['kitchen', 'wallColor', 'floor', 'ceiling']) if (r[k]) o[k] = r[k]; return o; }) }, null, 1);
 window.tourPlanCode = () => {
   modal(`<h3><svg class=ic><use href=#i-file-text></use></svg>План код (JSON)</h3>
-  <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Өрөө бүр: <code>type</code> (living/kitchen/bedroom/bath/hall/balcony/office), <code>x, y, w, h</code> метрээр (x — баруун тийш, y — урагш). Цонх <code>win</code> / хаалга <code>door</code>: <code>side</code> (N/S/W/E), <code>off</code> (хананы зүүн/дээд захаас, м), <code>w</code>; орцны хаалга <code>"to":"out"</code>.</div>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Өрөө бүр: <code>type</code> (living/kitchen/bedroom/bath/hall/balcony/office), <code>x, y, w, h</code> метрээр (x — баруун тийш, y — урагш). Цонх <code>win</code> / хаалга <code>door</code>: <code>side</code> (N/S/W/E), <code>off</code> (хананы зүүн/дээд захаас, м), <code>w</code>; орцны хаалга <code>"to":"out"</code>. Нэмэлтээр <code>local</code>: ойрын газрууд <code>[{cat, name, lat, lng}]</code>.</div>
   <textarea id="plan-code" spellcheck="false" style="width:100%;height:320px;font:12px/1.4 ui-monospace,Consolas,monospace">${esc(planCode(TOUR.plan))}</textarea>
   <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="navigator.clipboard.writeText($('#plan-code').value).then(()=>toast('План код хуулагдлаа'))"><svg class=ic><use href=#i-copy></use></svg>Хуулах</button><button type="button" class="primary" onclick="tourPlanApply()"><svg class=ic><use href=#i-upload></use></svg>Оруулах + 3D шинэчлэх</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
 };
@@ -1019,6 +1019,7 @@ window.tourPlanApply = async () => {
   if (!rooms || !rooms.length) return alert('«rooms» жагсаалт олдсонгүй');
   TOUR.undo.push(JSON.stringify(TOUR.plan.rooms));
   TOUR.plan = { ...TOUR.plan, rooms, ...(j.entry ? { entry: j.entry } : {}), ...(j.ceiling ? { ceiling: j.ceiling } : {}) };
+  if (Array.isArray(j.local)) { const r = await api('/tour/' + TOUR.pid + '/local-pois', { method: 'PUT', body: { items: j.local } }); if (r.error) return alert(r.error); toast(`Ойрын газар: ${r.items.length}`); } // «local» = ойрын газрууд (агент/оршин суугч)
   closeModal(); await tourSave();
 };
 window.tourSave = async () => {

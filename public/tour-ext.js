@@ -264,7 +264,9 @@ export function createExterior(ext, opts = {}) {
   // Талбай (ногоон байгууламж, тоглоомын талбай, зогсоол, сургуулийн хашаа)
   const AREA_C = { park: '#77895a', grass: '#848f63', playground: '#a88a70', pitch: '#5e7d55', parking: '#6e7176', school: '#b6ab94' };
   const areaY = { school: 0.05, grass: 0.07, park: 0.08, parking: 0.1, pitch: 0.11, playground: 0.12 };
-  const ag = new GB(); for (const a of ext.areas || []) ag.poly(pairs(a.p), areaY[a.k] || 0.06, hex(AREA_C[a.k] || '#b0b0b0'));
+  // Агент/оршин суугчийн нэмсэн тоглоомын талбай (газрын зурагт контургүй) → 14×10 м резин хучилт
+  const agentPlay = (ext.pois || []).filter((p) => p.cat === 'playground' && p.src === 'agent').map((p) => ({ k: 'playground', p: [p.x - 7, p.z - 5, p.x + 7, p.z - 5, p.x + 7, p.z + 5, p.x - 7, p.z + 5] }));
+  const ag = new GB(); for (const a of [...(ext.areas || []), ...agentPlay]) ag.poly(pairs(a.p), areaY[a.k] || 0.06, hex(AREA_C[a.k] || '#b0b0b0'));
   areaMesh = ag.mesh(stdMat({ vertexColors: true, map: fbmTex(256, [[0, '#d9d9d9'], [0.5, '#ffffff'], [1, '#e6e6e6']], 4, 23), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); if (areaMesh) { areaMesh.receiveShadow = true; scene.add(areaMesh); }
 
   // Замууд: ангиллаар өргөн, асфальт/явган замын өнгө, гол замд төвийн шугам
@@ -624,8 +626,21 @@ export function createExterior(ext, opts = {}) {
     };
     lines.push(L); return L;
   }
-  const hasFly = pois.some((p) => p.fly); const flyNear = (p) => p.src === 'agent' || !(p.m > (FLY_MAX[p.cat] || 500));
-  const flySet = new Set((hasFly ? pois.filter((p) => p.fly) : FLY_ORDER.map((cat) => pois.find((p) => p.cat === cat)).filter(Boolean)).filter(flyNear));
+  // Нислэгийн жагсаалт (худалдан авагчийг залхаахгүй): ① өдөр тутмын үйлчилгээ ≤ 5 (хүнс, эмийн сан, тоглоомын талбай эхэнд), ② сургууль/цэцэрлэг ≤ 5,
+  // ③ эмнэлэг, төрийн үйлчилгээ (тус бүр хамгийн ойр 1) → дараа нь гарц/төв зам, хотын төв. Бусад нь зөвхөн жагсаалтад. 30 м дотор давхцсан газрыг нэг зогсоол гэж үзнэ.
+  const flyNear = (p) => p.src === 'agent' || !(p.m > (FLY_MAX[p.cat] || 500));
+  const pickGroup = (cats, must, n) => {
+    const pool = pois.filter((p) => cats.includes(p.cat) && flyNear(p)).sort((a, b) => a.m - b.m); const out = [];
+    const ok = (p) => !out.includes(p) && out.every((q) => q.cat !== p.cat || Math.hypot(q.x - p.x, q.z - p.z) > 30); // ижил ангиллын 30 м дотор = нэг зогсоол
+    for (const c of must) { if (out.length >= n) break; const p = pool.find((q) => q.cat === c && ok(q)); if (p) out.push(p); }
+    for (const p of pool) { if (out.length >= n) break; if (ok(p) && !out.some((q) => q.cat === p.cat)) out.push(p); } // эхлээд олон төрөл (спорт давамгайлахгүй)
+    for (const p of pool) { if (out.length >= n) break; if (ok(p)) out.push(p); }
+    return out.sort((a, b) => a.m - b.m);
+  };
+  const nearestOf = (cat, maxM) => pois.filter((p) => p.cat === cat && (p.src === 'agent' || p.m <= maxM) && !(cat === 'gov' && /хотхон|apartment|орон сууц|residential/i.test(p.name || ''))).sort((a, b) => a.m - b.m)[0];
+  const flyList = [...pickGroup(['grocery', 'pharmacy', 'playground', 'mall', 'sport', 'park'], ['grocery', 'pharmacy', 'playground'], 5),
+    ...pickGroup(['kinder', 'school'], ['kinder', 'school', 'kinder', 'school'], 5), nearestOf('health', 1000), nearestOf('gov', 1500)].filter(Boolean);
+  const flySet = new Set(flyList);
   for (const p of [...pois, ...(main ? [main] : [])]) { p.pts = pairs(p.route || []); p.flyOn = p === main || flySet.has(p); if (p.lbl) p.lbl.fly = p.flyOn; p.line = p.flyOn ? routeLine(p.pts, (CAT[p.cat] || CAT.home).c, false) : null; }
   for (const d of dests) if (d.route) { d.pts = pairs(d.route); d.line = routeLine(d.pts, (CAT[d.cat] || CAT.center).c, true); }
   // ---------- Өндрийн тор: камер барилгад халхлагдахгүй, дотор нь орохгүй ----------
@@ -669,7 +684,7 @@ export function createExterior(ext, opts = {}) {
     return { L, at: (d) => { d = Math.max(0, Math.min(L, d)); let lo = 0, hi = n - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid; } const k = (d - cum[lo]) / (cum[hi] - cum[lo] || 1); return V(Q[lo][0] + (Q[hi][0] - Q[lo][0]) * k, 0, Q[lo][1] + (Q[hi][1] - Q[lo][1]) * k); } };
   }
   function headingOf(sp) { const h = sp.at(sp.L).sub(sp.at(0)).setY(0); return h.lengthSq() < 400 ? V(0, 0, -1) : h.normalize(); } // эхлэлээс очих газар руу (тогтмол)
-  const flyByOrder = FLY_ORDER.flatMap((cat) => pois.filter((p) => p.cat === cat && p.flyOn).sort((a, b) => a.m - b.m));
+  const flyByOrder = flyList;
   const A0 = 1.35; // тойм: байрны урд (нартай) талаас хойш харна
   const FADE = 1.3;
   const segs = [];
@@ -678,7 +693,7 @@ export function createExterior(ext, opts = {}) {
   for (const p of [...flyByOrder, ...(main ? [main] : [])]) {
     const sp = p.pts && p.pts.length > 1 ? pathSampler(p.pts) : null; if (!sp) continue; p.sp = sp; const H = headingOf(sp);
     segs.push({ kind: 'fade', dur: FADE, to: p });
-    segs.push({ kind: 'fly', dur: Math.max(6.5, Math.min(22, sp.L / 20)), p, sp, H });
+    segs.push({ kind: 'fly', dur: Math.max(5, Math.min(18, sp.L / 22)), p, sp, H }); // ойрын газар руу богино
     segs.push({ kind: 'hover', dur: p.cat === 'main' ? 6 : 4.5, p, sp, H });
   }
   const w4 = dests.find((d) => d.id === 'west4'), ce = dests.find((d) => d.id === 'center');
