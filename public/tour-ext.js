@@ -177,15 +177,61 @@ export function createExterior(ext, opts = {}) {
   const groundTex = fbmTex(512, [[0, '#a9a397'], [0.45, '#b8b2a5'], [0.62, '#b3aea1'], [0.8, '#aba898'], [1, '#bfbaad']], 5, 7); groundTex.repeat.set(1100, 1100);
   const macroTex = fbmTex(256, [[0, '#dcdcd0'], [0.4, '#f4f1ea'], [0.6, '#ffffff'], [0.85, '#e9e9dc'], [1, '#dfe2d2']], 4, 19); macroTex.colorSpace = THREE.SRGBColorSpace;
   const groundMat = stdMat({ map: groundTex, roughness: 1 });
-  groundMat.onBeforeCompile = (sh) => { sh.uniforms.macroMap = { value: macroTex }; sh.fragmentShader = 'uniform sampler2D macroMap;\n' + sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= texture2D(macroMap, vMapUv * 0.018).rgb;'); };
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), groundMat);
+  const GS = 14000, GR = 1100; // газрын хавтгайн хэмжээ (м) ба бүтцийн давталт
+  const SAT_K = 0.94; // хиймэл дагуулын өнгө → 3D альбедо (газар ба дээвэрт ижил)
+  const satU = { satMap: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) }, satRect: { value: new THREE.Vector4(0, 0, 1, 1) }, satOn: { value: 0 }, gAvg: { value: new THREE.Color('#b3aea1') } };
+  groundMat.onBeforeCompile = (sh) => {
+    sh.uniforms.macroMap = { value: macroTex }; Object.assign(sh.uniforms, satU);
+    sh.fragmentShader = 'uniform sampler2D macroMap; uniform sampler2D satMap; uniform vec4 satRect; uniform float satOn; uniform vec3 gAvg;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  vec3 gBase = diffuseColor.rgb * texture2D(macroMap, vMapUv * 0.018).rgb;
+  if (satOn > 0.5) {
+    vec2 gp = vec2((vMapUv.x / ${GR}.0 - 0.5) * ${GS}.0, (0.5 - vMapUv.y / ${GR}.0) * ${GS}.0);
+    vec2 su = vec2((gp.x - satRect.x) / satRect.z, 1.0 - (gp.y - satRect.y) / satRect.w);
+    vec4 sc = texture2D(satMap, clamp(su, 0.0, 1.0));
+    float a = sc.a * step(0.0, su.x) * step(su.x, 1.0) * step(0.0, su.y) * step(su.y, 1.0);
+    a *= mix(0.62, 1.0, smoothstep(70.0, 520.0, length(vViewPosition))); // ойрд 10 м-ийн пиксел бүдэг — нарийн бүтэцтэй холино
+    vec3 det = mix(vec3(1.0), diffuseColor.rgb / gAvg, 0.6);
+    diffuseColor.rgb = mix(gBase, sc.rgb * det * ${SAT_K.toFixed(3)}, a);
+  } else diffuseColor.rgb = gBase;`);
+  };
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(GS, GS), groundMat);
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.3; ground.receiveShadow = true; scene.add(ground);
+
+  // Хиймэл дагуулын газрын дэвсгэр (Contains modified Copernicus Sentinel data 2025): байхгүй/алдаатай бол fbm газар хэвээр
+  let areaMesh = null;
+  const loadSat = async () => {
+    const o = ext.origin; if (!o || !Number.isFinite(o.lat)) return;
+    const S = await (await fetch('/geo/s2/index.json')).json(); if (!S || !S.bbox) return;
+    const [W, S0, E, N] = S.bbox, [TI, TJ] = S.tile, [DX, DY] = S.px, SR = 3400;
+    const kx = Math.cos((o.lat * Math.PI) / 180) * 111320, kz = 110540;
+    const lngA = Math.max(W, o.lng - SR / kx), lngB = Math.min(E, o.lng + SR / kx), latA = Math.max(S0, o.lat - SR / kz), latB = Math.min(N, o.lat + SR / kz);
+    if (lngB <= lngA || latB <= latA) return;
+    const px0 = Math.floor((lngA - W) / DX), px1 = Math.ceil((lngB - W) / DX), py0 = Math.floor((N - latB) / DY), py1 = Math.ceil((N - latA) / DY);
+    const cv = document.createElement('canvas'); cv.width = px1 - px0; cv.height = py1 - py0; const g = cv.getContext('2d', { willReadFrequently: true });
+    const jobs = [];
+    for (let i = Math.floor((lngA - W) / TI); i <= Math.min(S.ni - 1, Math.floor((lngB - W) / TI)); i++) for (let j = Math.floor((latA - S0) / TJ); j <= Math.min(S.nj - 1, Math.floor((latB - S0) / TJ)); j++) {
+      const x0 = Math.round((i * TI) / DX), yN = Math.max(0, Math.round((N - (S0 + (j + 1) * TJ)) / DY));
+      jobs.push(new Promise((res) => { const im = new Image(); im.onload = () => { g.drawImage(im, x0 - px0, yN - py0); res(true); }; im.onerror = () => res(false); im.src = `/geo/s2/${i}_${j}.jpg`; }));
+    }
+    const ok = await Promise.all(jobs); if (!ok.some(Boolean)) return;
+    // Ирмэг рүү уусах (эх байршлаас 72%-иас 100% хүртэл)
+    const id = g.getImageData(0, 0, cv.width, cv.height), d = id.data; const cxp = (o.lng - W) / DX - px0, cyp = (N - o.lat) / DY - py0; const rx = SR / kx / DX, ry = SR / kz / DY;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) { const q = Math.hypot((x - cxp) / rx, (y - cyp) / ry); const a = q < 0.72 ? 1 : q > 1 ? 0 : 1 - (q - 0.72) / 0.28; d[(y * cv.width + x) * 4 + 3] = Math.round(255 * a * a * (3 - 2 * a)); }
+    g.putImageData(id, 0, 0);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = opts.renderer ? opts.renderer.capabilities.getMaxAnisotropy() : 8;
+    const xL = (px0 * DX + W - o.lng) * kx, zT = (o.lat - (N - py0 * DY)) * kz;
+    satU.satMap.value = tex; satU.satRect.value.set(xL, zT, cv.width * DX * kx, cv.height * DY * kz); satU.satOn.value = 1;
+    if (areaMesh) { areaMesh.material.transparent = true; areaMesh.material.opacity = 0.5; areaMesh.material.depthWrite = false; areaMesh.material.needsUpdate = true; } // талбайн хил тод, өнгө нь хиймэл дагуулаас
+    groundMat.needsUpdate = true; sat.on = true;
+  };
+  const sat = { on: false, ready: null };
+  sat.ready = loadSat().catch(() => {});
 
   // Талбай (ногоон байгууламж, тоглоомын талбай, зогсоол, сургуулийн хашаа)
   const AREA_C = { park: '#77895a', grass: '#848f63', playground: '#a88a70', pitch: '#5e7d55', parking: '#6e7176', school: '#b6ab94' };
   const areaY = { school: 0.05, grass: 0.07, park: 0.08, parking: 0.1, pitch: 0.11, playground: 0.12 };
   const ag = new GB(); for (const a of ext.areas || []) ag.poly(pairs(a.p), areaY[a.k] || 0.06, hex(AREA_C[a.k] || '#b0b0b0'));
-  const areaMesh = ag.mesh(stdMat({ vertexColors: true, map: fbmTex(256, [[0, '#d9d9d9'], [0.5, '#ffffff'], [1, '#e6e6e6']], 4, 23), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); if (areaMesh) { areaMesh.receiveShadow = true; scene.add(areaMesh); }
+  areaMesh = ag.mesh(stdMat({ vertexColors: true, map: fbmTex(256, [[0, '#d9d9d9'], [0.5, '#ffffff'], [1, '#e6e6e6']], 4, 23), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); if (areaMesh) { areaMesh.receiveShadow = true; scene.add(areaMesh); }
 
   // Замууд: ангиллаар өргөн, асфальт/явган замын өнгө, гол замд төвийн шугам
   const RC = { major: '#3c3f44', mid: '#43464b', minor: '#4a4d52', service: '#55575b', path: '#aba597' };
@@ -259,21 +305,21 @@ export function createExterior(ext, opts = {}) {
   function longAxis(pts) { let best = 0, ux = 1, uz = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (l > best) { best = l; ux = (b[0] - a[0]) / l; uz = (b[1] - a[1]) / l; } } return [ux, uz]; }
   const inPolyB = (x, z, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && x < ((p[j][0] - p[i][0]) * (z - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; return c; };
   const homeInfo = { c: [0, 0], h: 27, pts: null }; const playRoof = new GB();
-  let bi = 0;
+  let bi = 0; const roofRC = (b, fb) => (b.rc ? mul(hex(b.rc), SAT_K) : hex(fb));
   for (const b of ext.buildings || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; bi++;
     const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = hex(pal[Math.floor(hash(bi) * pal.length)]);
-    if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, hex('#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
+    if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
     if (b.lv <= 2 && b.k !== 'house' && b.k !== 'edu' && pArea(pts) >= 260) {
       walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7', '#c6c8c9'][Math.floor(hash(bi * 2.9) * 4)]), 0.82, true, FT_B, FT_F);
-      B.roof.poly(pts, h, hex(['#9a9c9e', '#a6a7a8', '#8d9092', '#b0b0ae'][Math.floor(hash(bi * 4.1) * 4)])); parapet(B.roof, pts, h, hex('#b8b8b4'), 0.4);
+      B.roof.poly(pts, h, roofRC(b, ['#9a9c9e', '#a6a7a8', '#8d9092', '#b0b0ae'][Math.floor(hash(bi * 4.1) * 4)])); parapet(B.roof, pts, h, hex('#b8b8b4'), 0.4);
     } else if (b.k === 'house' || b.k === 'shed' || (b.lv <= 2 && b.k !== 'com' && b.k !== 'edu')) {
       walls(B.house, pts, h, col, 0.78);
-      const roofC = hex(ROOF_H[Math.floor(hash(bi * 7.1) * ROOF_H.length)]);
+      const roofC = roofRC(b, ROOF_H[Math.floor(hash(bi * 7.1) * ROOF_H.length)]);
       if (pts.length === 4 && b.k !== 'shed' && b.lv <= 2) gable(B.house, B.roof, pts, h, col, roofC); else B.roof.poly(pts, h, b.k === 'shed' ? hex('#7d7f84') : roofC);
-    } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, hex(hash(bi * 5.3) > 0.5 ? '#86888b' : '#949597')); parapet(B.roof, pts, h, hex('#aeb1b4'), 0.6); }
+    } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 5.3) > 0.5 ? '#86888b' : '#949597')); parapet(B.roof, pts, h, hex('#aeb1b4'), 0.6); }
     else {
-      walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, hex(hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9));
+      walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9));
       if (b.lv >= 5) { // хэсэг (орц) бүрд дээвэр дээр лифтний машин өрөө
         const [ux, uz] = longAxis(pts); let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length;
         let a0 = Infinity, a1 = -Infinity; for (const [x, z] of pts) { const a = (x - cx) * ux + (z - cz) * uz; a0 = Math.min(a0, a); a1 = Math.max(a1, a); }
@@ -285,9 +331,9 @@ export function createExterior(ext, opts = {}) {
   for (const b of ext.buildings || []) if (b.rp === 'playground') { const pts = pairs(b.p); if (pts.length >= 3) playRoof.poly(pts, Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)) + 0.08, [1, 1, 1], 14); }
   for (const b of ext.far || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; const h = Math.max(2.8, b.lv * FL); const k = hash(pts[0][0] * 1.3 + pts[0][1]);
-    if (b.lv >= 3) { walls(B.far, pts, h, hex(PAL.bld[Math.floor(k * PAL.bld.length)]), 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, hex(k > 0.5 ? '#8f9193' : '#9d9e9f')); }
-    else if (pArea(pts) >= 260) { walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7'][Math.floor(k * 3)]), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, hex(['#9a9c9e', '#a6a7a8', '#8d9092'][Math.floor(k * 3)])); }
-    else { walls(B.house, pts, h, hex(PAL.house[Math.floor(k * PAL.house.length)]), 0.8); B.roof.poly(pts, h, hex(ROOF_H[Math.floor(hash(k * 7.7) * ROOF_H.length)])); }
+    if (b.lv >= 3) { walls(B.far, pts, h, hex(PAL.bld[Math.floor(k * PAL.bld.length)]), 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, k > 0.5 ? '#8f9193' : '#9d9e9f')); }
+    else if (pArea(pts) >= 260) { walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7'][Math.floor(k * 3)]), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, ['#9a9c9e', '#a6a7a8', '#8d9092'][Math.floor(k * 3)])); }
+    else { walls(B.house, pts, h, hex(PAL.house[Math.floor(k * PAL.house.length)]), 0.8); B.roof.poly(pts, h, roofRC(b, ROOF_H[Math.floor(hash(k * 7.7) * ROOF_H.length)])); }
   }
   const blockTex = facadeBlock(), comTex = facadeCom(), houseTex = facadeHouse(), indTex = facadeInd();
   const addM = (G, mat, cast = true) => { const m = G.mesh(mat); if (m) { m.castShadow = cast; m.receiveShadow = true; scene.add(m); } return m; };
@@ -583,7 +629,7 @@ export function createExterior(ext, opts = {}) {
   const A0 = 1.35; // тойм: байрны урд (нартай) талаас хойш харна
   const FADE = 1.3;
   const segs = [];
-  segs.push({ kind: 'intro', dur: 12, cap: { icon: 'plane-landing', t: 'Бодит орчны 3D нислэг', s: opts.title || 'Таны байрны орчин', d: 'OpenStreetMap + хиймэл дагуулын ML барилгын контур · GHSL өндөр' } });
+  segs.push({ kind: 'intro', dur: 12, cap: { icon: 'plane-landing', t: 'Бодит орчны 3D нислэг', s: opts.title || 'Таны байрны орчин', d: 'OpenStreetMap + хиймэл дагуулын ML барилгын контур · GHSL өндөр · Sentinel-2 газар, дээврийн өнгө' } });
   segs.push({ kind: 'orbitHome', dur: 7, cap: { icon: 'house', t: 'Таны байр', s: ext.home && ext.home.lv ? `${ext.home.lv} давхар байр` : 'Орон сууц', d: 'Эргэн тойрны үйлчилгээний цэгүүд' } });
   for (const p of [...flyByOrder, ...(main ? [main] : [])]) {
     const sp = p.pts && p.pts.length > 1 ? pathSampler(p.pts) : null; if (!sp) continue; p.sp = sp; const H = headingOf(sp);
@@ -904,5 +950,5 @@ export function createExterior(ext, opts = {}) {
     g.fillStyle = '#2563eb'; g.beginPath(); g.arc(W / 2, H / 2, 6, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
   }
   const liftInfo = () => segs.map((sg) => `${sg.kind}${sg.p || sg.to ? '/' + (sg.p || sg.to).cat : ''}:${Math.round(Math.max(0, ...(LIFT || []).slice(Math.floor(sg.t0 / LIFT_DT), Math.ceil((sg.t0 + sg.dur) / LIFT_DT) + 1)))}`).join(' ');
-  return { scene, camera, shadows: true, exposure: 1.12, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, _los: losClear, get free() { return free; }, get running() { return running; }, get T() { return T; } };
+  return { scene, camera, shadows: true, exposure: 1.12, sat, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, _los: losClear, get free() { return free; }, get running() { return running; }, get T() { return T; } };
 }

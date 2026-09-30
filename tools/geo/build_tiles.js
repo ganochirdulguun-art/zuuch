@@ -57,12 +57,24 @@ function readOverpass(prefix) {
     T(ti(c.lon) + '_' + tj(c.lat)).p.push([e.type[0], e.id, Q(c.lat), Q(c.lon), ftags(e.tags) || {}]); np++;
   }
   // 3) Overture барилга (эхний цагирагийн эхний цэгээр хавтан)
-  let nb = 0;
+  // Дээврийн бодит өнгө (build_sat.py: Sentinel-2 10 м, ≥ 250 м² барилга) — холимог пикселийн хэт ханасан/хэт цайвар утгыг бодит хүрээнд шахна
+  let RC = {}; try { RC = JSON.parse(fs.readFileSync(path.join(RAW, 'roof_colors.json'), 'utf8')); } catch { console.log('roof_colors.json алга — дээврийн өнгөгүй'); }
+  const saneRoof = (hx) => {
+    let r = parseInt(hx.slice(1, 3), 16) / 255, g = parseInt(hx.slice(3, 5), 16) / 255, b = parseInt(hx.slice(5, 7), 16) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let l = (mx + mn) / 2, s = mx === mn ? 0 : l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn);
+    let h = 0; if (mx !== mn) { const d = mx - mn; h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h /= 6; }
+    s = Math.min(s, l > 0.7 ? 0.12 : 0.42); l = Math.max(0.24, Math.min(0.8, l));
+    const q2 = l < 0.5 ? l * (1 + s) : l + s - l * s, p2 = 2 * l - q2;
+    const f = (t) => { t = (t + 1) % 1; return t < 1 / 6 ? p2 + (q2 - p2) * 6 * t : t < 0.5 ? q2 : t < 2 / 3 ? p2 + (q2 - p2) * (2 / 3 - t) * 6 : p2; };
+    return '#' + [f(h + 1 / 3), f(h), f(h - 1 / 3)].map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+  };
+  let nb = 0, nrc = 0;
   const rl = readline.createInterface({ input: fs.createReadStream(path.join(RAW, 'ov_b.ndjson'), 'utf8'), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line) continue; const b = JSON.parse(line); const p0 = b.r && b.r[0] && b.r[0][0]; if (!p0 || !inBox(p0[1], p0[0])) continue;
     const rec = { r: b.r.map((ring) => encLine(ring.map(([lo, la]) => [la, lo]))) };
     for (const k of ['c', 's', 'f', 'h', 'n', 'w', 'm']) if (b[k] != null) rec[k] = b[k];
+    if (b.i && RC[b.i]) { rec.rc = saneRoof(RC[b.i]); nrc++; }
     T(ti(p0[0]) + '_' + tj(p0[1])).b.push(rec); nb++;
   }
   // 4) Нэгтгэсэн орчны цэг (extraPois)
@@ -81,8 +93,8 @@ function readOverpass(prefix) {
     index[k] = [t.w.length, t.b.length, t.x.length];
   }
   const gh = zlib.gzipSync(fs.readFileSync(path.join(RAW, 'ghsl_city.json')), { level: 9 }); fs.writeFileSync(path.join(OUT, 'ghsl.json.gz'), gh);
-  const meta = { v: 1, built_at: new Date().toISOString(), grid: G, tiles: index, counts: { ways: nw, nodes: nn, osm_pois: np, buildings: nb, pois: nx },
-    sources: ['OpenStreetMap © contributors (ODbL-1.0) via Overpass API, osm_base ' + (G.osm_base || '?'), 'Overture Maps 2026-09-23.1: Buildings (ODbL-1.0, OSM + ML), Places (CDLA-Permissive-2.0), Base', 'GHS-BUILT-H ANBH E2018 R2023A (EU JRC, CC BY 4.0)'] };
+  const meta = { v: 1, built_at: new Date().toISOString(), grid: G, tiles: index, counts: { ways: nw, nodes: nn, osm_pois: np, buildings: nb, roof_colors: nrc, pois: nx },
+    sources: ['OpenStreetMap © contributors (ODbL-1.0) via Overpass API, osm_base ' + (G.osm_base || '?'), 'Overture Maps 2026-09-23.1: Buildings (ODbL-1.0, OSM + ML), Places (CDLA-Permissive-2.0), Base', 'GHS-BUILT-H ANBH E2018 R2023A (EU JRC, CC BY 4.0)', ...(nrc ? ['Contains modified Copernicus Sentinel data 2025 (Sentinel-2 L2A) — дээврийн өнгө', 'ESA WorldCover 2021 v200 (CC BY 4.0) — мод'] : [])] };
   fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(meta));
   console.log('хавтан', Object.keys(index).length, 'нийт', (bytes / 1048576).toFixed(1), 'MB gz + ghsl', (gh.length / 1024).toFixed(0), 'KB', JSON.stringify(meta.counts));
 })().catch((e) => { console.error(e); process.exit(1); });

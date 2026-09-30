@@ -423,7 +423,7 @@ function pathTo(nodes, prev, dst) { const out = []; for (let c = dst; c != null;
 // тиймээс server.js (heightAt/cellAt-гүй) болон демо ижил дүрмээр давхар гаргана. overrides = оршин суугчийн засвар [{lat,lng}|{x,z}, lv, k?, rp?, note?]
 // extraPois = бусад эх сурвалжаас нэгтгэсэн цэгүүд [{name, cat, lat, lng, src, ids?, sub?}] (жишээ: OSM + Overture Places/Buildings) — өөрийн OSM цэгтэй давхардлыг арилгаж нийлүүлнэ.
 // footprints = GeoJSON барилгын контур (R-ээс гадуурх цэгийн маршрутыг барилгын ханан дээр зогсоох, холбох шугамыг барилга огтлуулахгүй) — заавал биш.
-async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null, extraPois = null, footprints = null, osm = null } = {}) {
+async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null, extraPois = null, footprints = null, osm = null, sat = null } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const P = projector(lat, lng);
   // 1) Орчны цэгүүд + гол зам (2 км): amenity/healthcare/office/shop/leisure таг + барилгын таг (school/kindergarten/…) + нэртэй барилга
@@ -507,7 +507,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
       const g = f.geometry; if (!g) continue; const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((c) => c[0]) : [];
       const pr = f.properties || {}; const t = {};
       if (pr.class && CLS[pr.class]) t.building = CLS[pr.class]; if (pr.subtype) t._sub = pr.subtype;
-      if (pr.num_floors) t['building:levels'] = pr.num_floors; if (pr.height) t.height = pr.height;
+      if (pr.num_floors) t['building:levels'] = pr.num_floors; if (pr.height) t.height = pr.height; if (pr.roof_color) t._rc = pr.roof_color; // _rc = хиймэл дагуулаас хэмжсэн дээврийн өнгө
       const nm = pr.names && (pr.names.primary || (pr.names.common && Object.values(pr.names.common)[0])); if (nm) t.name = nm;
       const sr = pr.sources || [], os = sr.find((x) => x.dataset === 'OpenStreetMap'); const src = sr.length && !os ? 'ml' : null; // OSM биш бүх эх сурвалж = ML
       const oid = os && /^w\d+/.test(os.record_id || '') ? parseInt(os.record_id.slice(1), 10) : null;
@@ -620,11 +620,11 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   let home = null;
   for (const q of pool) {
     if (q.zn >= 2) continue;
-    if (q.zn === 1) { if (q.A < 350 && q.lv < 5) continue; const fb = { p: flat(simplify(q.p, 1.6)), lv: q.lv }; if (!q.kn) fb.e = 1; far.push(fb); continue; }
+    if (q.zn === 1) { if (q.A < 350 && q.lv < 5) continue; const fb = { p: flat(simplify(q.p, 1.6)), lv: q.lv }; if (!q.kn) fb.e = 1; if (q.t && q.t._rc) fb.rc = q.t._rc; far.push(fb); continue; }
     if (q.k === 'ger') { gers.push([r1(q.cx), r1(q.cz), r1(Math.max(2.2, Math.min(4.5, Math.sqrt(q.A / Math.PI))))]); continue; }
     const sp = simplify(q.p, 0.45); if (sp.length < 3) continue; const t = q.t;
     const b = { p: flat(sp), lv: q.lv, k: q.k }; if (t.name) b.n = String(t.name).slice(0, 40); if (t['addr:housenumber']) b.no = String(t['addr:housenumber']).slice(0, 10); if (q.src) b.s = q.src;
-    if (!q.kn) b.e = 1; if (q.rp) b.rp = q.rp; if (q === hq) { b.t = 1; home = b; } // e = таамаг өндөр; rp = дээвэр дээрх (playground г.м.)
+    if (!q.kn) b.e = 1; if (q.rp) b.rp = q.rp; if (t._rc) b.rc = t._rc; if (q === hq) { b.t = 1; home = b; } // e = таамаг өндөр; rp = дээвэр дээрх (playground г.м.)
     // rf = 'flat': ≥ 300 м², 1–2 давхар, байшин/саравч/худалдаа/сургууль биш → хавтгай дээвэр (үзэгч одоогоор 1–2 давхар 'bld'-г байшин загвараар зурдаг)
     if (q.lv <= 2 && q.A >= 300 && !['house', 'shed', 'com', 'edu', 'ger'].includes(q.k)) b.rf = 'flat';
     b._poly = sp; b._c = [q.cx, q.cz]; buildings.push(b);
@@ -783,7 +783,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
   const arches = archAt.filter((a) => usedPaths.some((pth) => pth.some((q, i) => i && segDist(a.x, a.z, pth[i - 1][0], pth[i - 1][1], q[0], q[1])[0] < 2))).map((a) => [r1(a.x), r1(a.z), Math.round(Math.atan2(a.dx, a.dz) * 1000) / 1000, r1(a.len)]);
   for (const b of buildings) { delete b._poly; delete b._c; }
   log(`бэлэн: барилга ${buildings.length} (+гэр ${gers.length}, алс ${far.length}), зам ${roads.length}, талбай ${areas.length}, цэг ${pois.length} (+${poisMore.length})`);
-  const attribution = '© OpenStreetMap contributors (ODbL)' + ([...pois, ...poisMore].some((p) => /overture/.test(p.src)) || (extBuildings && extBuildings.features) ? ' · Overture Maps Foundation (CDLA-Permissive-2.0 / ODbL)' : '');
+  const attribution = '© OpenStreetMap contributors (ODbL)' + ([...pois, ...poisMore].some((p) => /overture/.test(p.src)) || (extBuildings && extBuildings.features) ? ' · Overture Maps Foundation (CDLA-Permissive-2.0 / ODbL)' : '') + (sat ? ' · Contains modified Copernicus Sentinel data 2025 · ESA WorldCover (CC BY 4.0)' : '');
   return {
     v: 1, origin: { lat, lng }, R: Math.round(R), attribution,
     home: home ? { p: home.p, lv: home.lv, n: home.n || '', no: home.no || '' } : null, entrance: entrance.map(r1),

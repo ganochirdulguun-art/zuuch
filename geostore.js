@@ -2,9 +2,28 @@
 // exterior.generate-ийн 4 OSM асуулгыг (орчны цэг / ойрын бүс / алс бүс / алхах сүлжээ) ижил утгаар орлуулна.
 const fs = require('fs'); const path = require('path'); const zlib = require('zlib');
 const DIR = process.env.ZUUCH_GEO_DIR || path.join(__dirname, 'data', 'geo');
-let INDEX = null, GHSL = null;
+let INDEX = null, GHSL = null, SAT = null, TREES = null;
 function index() { if (INDEX === null) { try { INDEX = JSON.parse(fs.readFileSync(path.join(DIR, 'index.json'), 'utf8')); } catch { INDEX = false; } } return INDEX; }
 function ghsl() { if (GHSL === null) { try { GHSL = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(DIR, 'ghsl.json.gz'))).toString('utf8')); } catch { GHSL = false; } } return GHSL; }
+// Хиймэл дагуулын мод (ESA WorldCover 10 м, build_sat.py): uint8 маск NY×NX, баруун-хойд булангаас
+function sat() { if (SAT === null) { try { SAT = JSON.parse(fs.readFileSync(path.join(DIR, 'sat.json'), 'utf8')); } catch { SAT = false; } } return SAT; }
+function trees() { if (TREES === null) { try { TREES = sat() ? zlib.gunzipSync(fs.readFileSync(path.join(DIR, 'trees.bin.gz'))) : false; } catch { TREES = false; } } return TREES; }
+const TREE_CAP = 3200;
+function treeNodes(lat, lng, R) {
+  const S = sat(), T = trees(); if (!S || !T) return [];
+  const [W, , , N] = S.bbox, [DX, DY] = S.px, NX = Math.round((S.bbox[2] - W) / DX), NY = Math.round((N - S.bbox[1]) / DY);
+  const kx = Math.cos((lat * Math.PI) / 180) * 111320, kz = 110540;
+  const x0 = Math.max(0, Math.floor((lng - R / kx - W) / DX)), x1 = Math.min(NX - 1, Math.ceil((lng + R / kx - W) / DX));
+  const y0 = Math.max(0, Math.floor((N - (lat + R / kz)) / DY)), y1 = Math.min(NY - 1, Math.ceil((N - (lat - R / kz)) / DY));
+  const pts = [];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (!T[y * NX + x]) continue; const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453, fr = h - Math.floor(h); // давтагдахуйц жижиг шилжилт (±3 м)
+    const la = N - (y + 0.2 + 0.6 * fr) * DY, lo = W + (x + 0.8 - 0.6 * fr) * DX; const d = Math.hypot((lo - lng) * kx, (lat - la) * kz);
+    if (d <= R) pts.push([d, la, lo, y * NX + x]);
+  }
+  if (pts.length > TREE_CAP) { pts.sort((a, b) => a[0] - b[0]); pts.length = TREE_CAP; } // ойрынх нь эхэнд
+  return pts.map(([, la, lo, id]) => ({ type: 'node', id: 'wc' + id, lat: la, lon: lo, tags: { natural: 'tree', _src: 'worldcover' } }));
+}
 function covers(lat, lng) { const I = index(); if (!I) return false; const b = I.grid.bbox; return lng >= b[0] + 0.02 && lng < b[2] - 0.02 && lat >= b[1] + 0.015 && lat < b[3] - 0.015; }
 
 // ---- Хавтан ачаалах (LRU) + задлах ----
@@ -19,7 +38,7 @@ function tile(key) {
     ways: raw.w.map(([id, tags, nodes, line]) => ({ type: 'way', id, tags, nodes: decIds(nodes), geometry: decLine(line).map(([lat, lon]) => ({ lat, lon })) })),
     nodes: raw.n.map(([id, a, o, tags]) => ({ type: 'node', id, lat: a / 1e6, lon: o / 1e6, tags })),
     pois: raw.p.map(([ty, id, a, o, tags]) => { const type = { n: 'node', w: 'way', r: 'relation' }[ty]; return type === 'node' ? { type, id, lat: a / 1e6, lon: o / 1e6, tags } : { type, id, center: { lat: a / 1e6, lon: o / 1e6 }, tags }; }),
-    blds: raw.b.map((b) => ({ rings: b.r.map((r) => decLine(r).map(([la, lo]) => [lo, la])), c: b.c, s: b.s, f: b.f, h: b.h, n: b.n, w: b.w, m: b.m })),
+    blds: raw.b.map((b) => ({ rings: b.r.map((r) => decLine(r).map(([la, lo]) => [lo, la])), c: b.c, s: b.s, f: b.f, h: b.h, n: b.n, w: b.w, m: b.m, rc: b.rc })),
     xp: raw.x.map((q) => ({ name: q.n, cat: q.c, lat: q.a / 1e6, lng: q.o / 1e6, src: q.s, sub: q.u, verified: !!q.v, ids: q.i || [] })),
   };
   cache.set(key, t); if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
@@ -66,7 +85,7 @@ const CLS = (c) => c || 'yes';
 function options(lat, lng) {
   const M = meter(lat, lng);
   const bldFeature = (b) => ({ type: 'Feature', geometry: b.rings.length > 1 ? { type: 'MultiPolygon', coordinates: b.rings.map((r) => [r]) } : { type: 'Polygon', coordinates: [b.rings[0]] },
-    properties: { class: b.c || null, subtype: b.s || null, num_floors: b.f || null, height: b.h || null, names: b.n ? { primary: b.n } : null, sources: b.w ? [{ dataset: 'OpenStreetMap', record_id: 'w' + b.w }] : b.m ? [{ dataset: 'ml' }] : [] } });
+    properties: { class: b.c || null, subtype: b.s || null, num_floors: b.f || null, height: b.h || null, names: b.n ? { primary: b.n } : null, roof_color: b.rc || null, sources: b.w ? [{ dataset: 'OpenStreetMap', record_id: 'w' + b.w }] : b.m ? [{ dataset: 'ml' }] : [] } });
   const bldNear = (R) => { const out = []; const seen = new Set(); for (const t of tilesAround(lat, lng, R + 60)) for (const b of t.blds) { const [lo, la] = b.rings[0][0]; const [x, z] = M(la, lo); if (Math.hypot(x, z) > R + 40) continue; const k = b.w || lo + ',' + la; if (seen.has(k)) continue; seen.add(k); out.push(b); } return out; };
   const osm = {
     poi(reach, reach2) {
@@ -79,6 +98,8 @@ function options(lat, lng) {
         for (const w of t.ways) { const tg = w.tags || {}; if (tg.highway ? wayWithin(w, M, R + 150) : ((/^(park|playground|garden|pitch)$/.test(tg.leisure || '') || /^(grass|recreation_ground|village_green|meadow|forest)$/.test(tg.landuse || '') || /^(parking|school|kindergarten)$/.test(tg.amenity || '')) && wayWithin(w, M, R))) out.push(w); }
         for (const n of t.nodes) { const [x, z] = M(n.lat, n.lon); const d = Math.hypot(x, z); const tg = n.tags || {}; if ((tg.natural === 'tree' && d <= R) || (tg.entrance && d <= 200)) out.push(n); }
       }
+      // Хиймэл дагуулын мод (OSM-д мод бараг зураагүй): WorldCover «Tree cover» нүд бүрд нэг мод
+      out.push(...treeNodes(lat, lng, R));
       // OSM барилгын таг (Overture-т OSM way id-тай) — generate зөвхөн тагийн нэмэлтэд ашиглана
       for (const b of bldNear(R)) if (b.w) out.push({ type: 'way', id: b.w, tags: { building: CLS(b.c), ...(b.n ? { name: b.n } : {}), ...(b.f ? { 'building:levels': String(b.f) } : {}) }, geometry: b.rings[0].map(([lo, la]) => ({ lat: la, lon: lo })) });
       return uniq(out);
@@ -88,7 +109,7 @@ function options(lat, lng) {
       for (const t of tilesInBox(s, w, n, e)) {
         for (const wy of t.ways) { if (/^(trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$/.test((wy.tags || {}).highway || '') && !seen.has('w' + wy.id)) { seen.add('w' + wy.id); out.push(wy); } }
         // Алс бүсийн барилга = OSM-ийн барилга (Overture-т OSM way id-тай нь) — ML контур алс бүсэд орохгүй (Overpass-тай ижил)
-        for (const b of t.blds) { if (!b.w || seen.has('b' + b.w)) continue; const [lo, la] = b.rings[0][0]; if (la < s || la > n || lo < w || lo > e) continue; seen.add('b' + b.w); out.push({ type: 'way', id: b.w, tags: { building: CLS(b.c), ...(b.f ? { 'building:levels': String(b.f) } : {}) }, geometry: b.rings[0].map(([x, y]) => ({ lat: y, lon: x })) }); }
+        for (const b of t.blds) { if (!b.w || seen.has('b' + b.w)) continue; const [lo, la] = b.rings[0][0]; if (la < s || la > n || lo < w || lo > e) continue; seen.add('b' + b.w); out.push({ type: 'way', id: b.w, tags: { building: CLS(b.c), ...(b.f ? { 'building:levels': String(b.f) } : {}), ...(b.rc ? { _rc: b.rc } : {}) }, geometry: b.rings[0].map(([x, y]) => ({ lat: y, lon: x })) }); }
       }
       return out;
     },
@@ -105,6 +126,7 @@ function options(lat, lng) {
   const cr = (la, lo) => { if (!Gh) return null; const c = Math.floor((lo - Gh.x0) / Gh.sc) - Gh.c0, r = Math.floor((Gh.y0 - la) / Gh.sc) - Gh.r0; return c < 0 || r < 0 || c >= Gh.w || r >= Gh.h ? null : [c, r]; };
   return {
     osm, buildings: { type: 'FeatureCollection', features: near }, footprints: { type: 'FeatureCollection', features: foot }, extraPois, overrides,
+    sat: sat() ? { date: sat().date, source: sat().source, trees: sat().trees } : null,
     heightAt: Gh ? (la, lo) => { const q = cr(la, lo); return q ? Gh.v[q[1] * Gh.w + q[0]] : null; } : null,
     cellAt: Gh ? (la, lo) => cr(la, lo) : null,
   };
