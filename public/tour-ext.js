@@ -104,6 +104,16 @@ const facadeCom = () => texPair(512, 360, (g, w, h, R) => { // шилэн фас
     if (!R) for (let k = 0; k < 5; k++) { g.fillStyle = `rgba(255,255,255,${0.05 + r() * 0.08})`; g.fillRect(r() * w, y, 30 + r() * 60, hh); }
   }
 });
+const facadeInd = () => texPair(512, 360, (g, w, h, R) => { // 1 текстур = 4 зай × 3 давхар өндөр; намхан барилгад доод 1–2 «давхар» л харагдана
+  const r = rngOf(17); g.fillStyle = R ? '#e0e0e0' : '#dcd9d2'; g.fillRect(0, 0, w, h); const fh = h / FT_F, bw = w / FT_B;
+  if (!R) { for (let x = 0; x < w; x += 16) { g.fillStyle = `rgba(0,0,0,${0.03 + (x / 16 % 2) * 0.03})`; g.fillRect(x, 0, 8, h); } for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(110,100,85,${0.03 + r() * 0.05})`; g.fillRect(r() * w, r() * h, 30 + r() * 60, 10 + r() * 30); } }
+  for (let f = 0; f < FT_F; f++) for (let b = 0; b < FT_B; b++) { // давхар бүрийн дээд хэсэгт хэвтээ цонхны тууз
+    const x = b * bw + 10, y = h - (f + 1) * fh + fh * 0.18, ww = bw - 20, hh = fh * 0.26; const gl = g.createLinearGradient(0, y, 0, y + hh);
+    gl.addColorStop(0, R ? '#303030' : '#9fb0bd'); gl.addColorStop(1, R ? '#3a3a3a' : '#556573'); g.fillStyle = gl; g.fillRect(x, y, ww, hh);
+    g.fillStyle = R ? '#8a8a8a' : '#e9e7e2'; for (let k = 1; k < 3; k++) g.fillRect(x + (ww * k) / 3 - 2, y, 4, hh);
+  }
+  g.fillStyle = R ? '#cfcfcf' : 'rgba(80,75,65,.22)'; for (let f = 0; f < FT_F; f++) g.fillRect(0, h - f * fh - 3, w, 3);
+});
 const facadeHouse = () => texPair(256, 240, (g, w, h, R) => { // хувийн байшин: шавардлага/тоосго, жижиг цонх
   const r = rngOf(5); g.fillStyle = R ? '#efefef' : '#efe8dc'; g.fillRect(0, 0, w, h);
   if (!R) { for (let k = 0; k < 60; k++) { g.fillStyle = `rgba(110,90,70,${0.03 + r() * 0.05})`; g.fillRect(r() * w, r() * h, 8 + r() * 30, 4 + r() * 14); } g.fillStyle = 'rgba(0,0,0,.05)'; for (let y = 0; y < h; y += 14) g.fillRect(0, y, w, 1); }
@@ -217,7 +227,8 @@ export function createExterior(ext, opts = {}) {
   const FL = 3.0, BAY = 3.2;
   const PAL = { bld: ['#d3cbbb', '#c8c5bd', '#dcd2bf', '#c3c2bc', '#d1c6b1', '#c7cbca', '#d8ccb6', '#bfbfb8', '#c9cdc4', '#cfd0c7'], apt: ['#d3cbbb', '#c8c5bd', '#dad0bc', '#c3c2bc'], com: ['#b9c2ca', '#c3c9ce', '#adb7c0'], edu: ['#d6b98d', '#cfae85', '#dcc59c'], house: ['#d6cab2', '#cbb99b', '#c0ab8c', '#dad0be', '#b69b7d'], shed: ['#a6a298', '#99958d', '#afa99d'] };
   const ROOF_H = ['#7a4b43', '#4f6576', '#5a6a4b', '#7a7d81', '#6d5447', '#88837a'];
-  const B = { block: new GB(), com: new GB(), house: new GB(), home: new GB(), roof: new GB(), far: new GB() };
+  const B = { block: new GB(), com: new GB(), house: new GB(), home: new GB(), roof: new GB(), far: new GB(), ind: new GB() };
+  const pArea = (P) => { let a = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) a += (P[j][0] + P[i][0]) * (P[j][1] - P[i][1]); return Math.abs(a / 2); };
   const orient = (pts) => { let s = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j][0] - pts[i][0]) * (pts[j][1] + pts[i][1]); return s < 0 ? pts.slice().reverse() : pts; };
   function walls(G, pts, h, col, dark = 0.72, uvScale = true, tb = 1, tf = 1) {
     const P = orient(pts); let acc = 0; const n = P.length;
@@ -253,7 +264,10 @@ export function createExterior(ext, opts = {}) {
     const pts = pairs(b.p); if (pts.length < 3) continue; bi++;
     const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = hex(pal[Math.floor(hash(bi) * pal.length)]);
     if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, hex('#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
-    if (b.k === 'house' || b.k === 'shed' || (b.lv <= 2 && b.k !== 'com' && b.k !== 'edu')) {
+    if (b.lv <= 2 && b.k !== 'house' && b.k !== 'edu' && pArea(pts) >= 260) {
+      walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7', '#c6c8c9'][Math.floor(hash(bi * 2.9) * 4)]), 0.82, true, FT_B, FT_F);
+      B.roof.poly(pts, h, hex(['#9a9c9e', '#a6a7a8', '#8d9092', '#b0b0ae'][Math.floor(hash(bi * 4.1) * 4)])); parapet(B.roof, pts, h, hex('#b8b8b4'), 0.4);
+    } else if (b.k === 'house' || b.k === 'shed' || (b.lv <= 2 && b.k !== 'com' && b.k !== 'edu')) {
       walls(B.house, pts, h, col, 0.78);
       const roofC = hex(ROOF_H[Math.floor(hash(bi * 7.1) * ROOF_H.length)]);
       if (pts.length === 4 && b.k !== 'shed' && b.lv <= 2) gable(B.house, B.roof, pts, h, col, roofC); else B.roof.poly(pts, h, b.k === 'shed' ? hex('#7d7f84') : roofC);
@@ -269,14 +283,20 @@ export function createExterior(ext, opts = {}) {
     }
   }
   for (const b of ext.buildings || []) if (b.rp === 'playground') { const pts = pairs(b.p); if (pts.length >= 3) playRoof.poly(pts, Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)) + 0.08, [1, 1, 1], 14); }
-  for (const b of ext.far || []) { const pts = pairs(b.p); if (pts.length < 3) continue; const h = b.lv * FL; const c = hex(['#cfc7b8', '#c6c5c1', '#d4cab7', '#c2c3c2'][Math.floor(hash(pts[0][0]) * 4)]); walls(B.far, pts, h, c, 0.8, false); B.far.poly(pts, h, hex('#8e9092')); }
-  const blockTex = facadeBlock(), comTex = facadeCom(), houseTex = facadeHouse();
+  for (const b of ext.far || []) {
+    const pts = pairs(b.p); if (pts.length < 3) continue; const h = Math.max(2.8, b.lv * FL); const k = hash(pts[0][0] * 1.3 + pts[0][1]);
+    if (b.lv >= 3) { walls(B.far, pts, h, hex(PAL.bld[Math.floor(k * PAL.bld.length)]), 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, hex(k > 0.5 ? '#8f9193' : '#9d9e9f')); }
+    else if (pArea(pts) >= 260) { walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7'][Math.floor(k * 3)]), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, hex(['#9a9c9e', '#a6a7a8', '#8d9092'][Math.floor(k * 3)])); }
+    else { walls(B.house, pts, h, hex(PAL.house[Math.floor(k * PAL.house.length)]), 0.8); B.roof.poly(pts, h, hex(ROOF_H[Math.floor(hash(k * 7.7) * ROOF_H.length)])); }
+  }
+  const blockTex = facadeBlock(), comTex = facadeCom(), houseTex = facadeHouse(), indTex = facadeInd();
   const addM = (G, mat, cast = true) => { const m = G.mesh(mat); if (m) { m.castShadow = cast; m.receiveShadow = true; scene.add(m); } return m; };
   addM(B.block, stdMat({ vertexColors: true, map: blockTex.map, roughnessMap: blockTex.rough, roughness: 1 }));
   addM(B.com, stdMat({ vertexColors: true, map: comTex.map, roughnessMap: comTex.rough, roughness: 1 }));
   addM(B.house, stdMat({ vertexColors: true, map: houseTex.map, roughnessMap: houseTex.rough, roughness: 1 }));
   addM(B.roof, stdMat({ vertexColors: true, side: THREE.DoubleSide, map: fbmTex(256, [[0, '#e3e3e3'], [0.5, '#ffffff'], [1, '#ececec']], 5, 41), roughness: 0.9 }));
-  addM(B.far, stdMat({ vertexColors: true }));
+  addM(B.far, stdMat({ vertexColors: true, map: blockTex.map, roughnessMap: blockTex.rough, roughness: 1 }));
+  addM(B.ind, stdMat({ vertexColors: true, map: indTex.map, roughnessMap: indTex.rough, roughness: 1 }));
   addM(playRoof, new THREE.MeshLambertMaterial({ vertexColors: true, map: canvasTex(256, 256, (g, w, h) => { // резин хучилттай тоглоомын талбай
     g.fillStyle = '#c8664f'; g.fillRect(0, 0, w, h); const C = ['#e7c24a', '#6f9fd8', '#79b98a', '#d98fa6', '#ef8f4f']; let sd = 7; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
     for (let i = 0; i < 14; i++) { g.fillStyle = C[i % C.length]; g.beginPath(); g.ellipse(r() * w, r() * h, 18 + r() * 40, 14 + r() * 30, r() * 3, 0, 7); g.fill(); }
