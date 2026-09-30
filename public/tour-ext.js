@@ -56,38 +56,88 @@ function canvasTex(w, h, draw, repeat = true) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(cv); if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }
-// 1 давталт = 1 цонхны зай (3.2 м) × 1 давхар (3.0 м): угсармал хавтан, цонх, хүрээ
-const facadeBlock = () => canvasTex(256, 240, (g, w, h) => {
-  g.fillStyle = '#f2f0ea'; g.fillRect(0, 0, w, h);
-  g.fillStyle = 'rgba(0,0,0,.07)'; g.fillRect(0, h - 10, w, 10); g.fillRect(w - 6, 0, 6, h); // хавтангийн заадас
-  g.fillStyle = '#5b6b7a'; g.fillRect(58, 58, 140, 120); // цонхны нүх
-  const gr = g.createLinearGradient(0, 62, 0, 174); gr.addColorStop(0, '#9fb8cf'); gr.addColorStop(1, '#3f5366'); g.fillStyle = gr; g.fillRect(64, 64, 128, 108);
-  g.fillStyle = '#f7f7f4'; g.fillRect(124, 64, 8, 108); g.fillRect(64, 112, 128, 6); // хүрээ
-  g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(70, 68, 48, 40);
-  g.fillStyle = '#dcd8cf'; g.fillRect(52, 176, 152, 10); // цонхны тавцан
+// ---------- Бодит фасадын текстур: 1 текстур = FT_B цонхны зай × FT_F давхар; өнгө (map) + гялгар (roughnessMap) хос ----------
+// Угсармал байр: хавтангийн заадас, цонх бүр өөр (хөшиг, тусгал), шилжүүлсэн тагт, доошоо бага зэрэг бохирдол
+const FT_B = 4, FT_F = 3;
+function texPair(w, h, draw) { // draw(g, w, h, rough) — rough=true үед гялгарын зургийг (цагаан = барзгар) зурна
+  const mk = (rough) => canvasTex(w, h, (g) => draw(g, w, h, rough));
+  const map = mk(false), rough = mk(true); rough.colorSpace = THREE.NoColorSpace; return { map, rough };
+}
+function rngOf(seed) { let sd = seed; return () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; }; }
+const facadeBlock = () => texPair(512, 360, (g, w, h, R) => {
+  const r = rngOf(11); const bw = w / FT_B, fh = h / FT_F;
+  g.fillStyle = R ? '#ececec' : '#f0ece4'; g.fillRect(0, 0, w, h);
+  if (!R) { // хавтангийн бүдэг толбо, заадас
+    for (let k = 0; k < 90; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '120,110,95' : '255,255,250'},${0.03 + r() * 0.04})`; g.fillRect(r() * w, r() * h, 20 + r() * 60, 10 + r() * 40); }
+    g.fillStyle = 'rgba(70,60,50,.16)'; for (let f = 0; f <= FT_F; f++) g.fillRect(0, f * fh - 1, w, 2); for (let b = 0; b <= FT_B; b++) g.fillRect(b * bw - 1, 0, 2, h);
+  }
+  for (let f = 0; f < FT_F; f++) for (let b = 0; b < FT_B; b++) {
+    const x0 = b * bw, y0 = f * fh; const balcony = (b % 2 === 1) && r() < 0.8;
+    if (balcony) { // шилжүүлсэн (хаалттай) тагт — хүрээтэй шил, доод хэсэг хавтан
+      const bx = x0 + 10, by = y0 + 18, bww = bw - 20, bh = fh - 26;
+      g.fillStyle = R ? '#dedede' : '#e4dfd6'; g.fillRect(bx - 3, by - 3, bww + 6, bh + 6);
+      g.fillStyle = R ? '#e0e0e0' : ['#d9d4ca', '#cfc6b8', '#e2ddd3'][Math.floor(r() * 3)]; g.fillRect(bx, by + bh * 0.58, bww, bh * 0.42);
+      const gl = g.createLinearGradient(0, by, 0, by + bh * 0.58); gl.addColorStop(0, R ? '#303030' : '#aebfcc'); gl.addColorStop(1, R ? '#404040' : '#55677a'); g.fillStyle = gl; g.fillRect(bx, by, bww, bh * 0.58);
+      g.fillStyle = R ? '#9a9a9a' : '#f3f1ec'; for (let k = 1; k < 4; k++) g.fillRect(bx + (bww * k) / 4 - 2, by, 4, bh * 0.58); g.fillRect(bx, by + bh * 0.58 - 3, bww, 5);
+    } else { // энгийн цонх: гүн нүх, хүрээ, шил (хөшиг/тусгал өөр өөр)
+      const ww = bw * 0.52, wh = fh * 0.56, wx = x0 + (bw - ww) / 2, wy = y0 + fh * 0.2;
+      g.fillStyle = R ? '#c8c8c8' : 'rgba(60,55,50,.55)'; g.fillRect(wx - 4, wy - 4, ww + 8, wh + 10);
+      const t = r(); const gl = g.createLinearGradient(wx, wy, wx + ww * 0.6, wy + wh);
+      if (R) { gl.addColorStop(0, '#262626'); gl.addColorStop(1, '#3a3a3a'); }
+      else if (t < 0.35) { gl.addColorStop(0, '#c3d3df'); gl.addColorStop(1, '#5d7185'); } // тэнгэрийн тусгал
+      else if (t < 0.7) { gl.addColorStop(0, '#6f7a82'); gl.addColorStop(1, '#2f363d'); } // бараан
+      else { gl.addColorStop(0, '#e9e1cf'); gl.addColorStop(1, '#b9ab8f'); } // хөшигтэй
+      g.fillStyle = gl; g.fillRect(wx, wy, ww, wh);
+      g.fillStyle = R ? '#8c8c8c' : (r() < 0.8 ? '#f4f2ed' : '#7a5a44'); g.fillRect(wx + ww * 0.5 - 2, wy, 4, wh); g.fillRect(wx, wy + wh * 0.32, ww, 4); // хүрээ
+      g.fillStyle = R ? '#d0d0d0' : '#d8d3ca'; g.fillRect(wx - 6, wy + wh + 3, ww + 12, 6); // тавцан
+    }
+  }
+  if (!R) { const gd = g.createLinearGradient(0, 0, 0, h); gd.addColorStop(0, 'rgba(255,255,255,0)'); gd.addColorStop(1, 'rgba(90,80,65,.08)'); g.fillStyle = gd; g.fillRect(0, 0, w, h); }
 });
-const facadeCom = () => canvasTex(256, 240, (g, w, h) => {
-  g.fillStyle = '#e8edf2'; g.fillRect(0, 0, w, h);
-  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#8fb1cc'); gr.addColorStop(1, '#3e5a73'); g.fillStyle = gr; g.fillRect(14, 30, w - 28, h - 60);
-  g.fillStyle = '#e8edf2'; for (let x = 14; x < w; x += 76) g.fillRect(x, 30, 6, h - 60); g.fillRect(0, h / 2 - 3, w, 6);
-  g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(24, 40, 40, 60);
+const facadeCom = () => texPair(512, 360, (g, w, h, R) => { // шилэн фасад + хөндлөн хавтан (худалдаа, оффис, сургууль)
+  const r = rngOf(29); g.fillStyle = R ? '#e6e6e6' : '#e3e5e6'; g.fillRect(0, 0, w, h); const fh = h / FT_F;
+  for (let f = 0; f < FT_F; f++) {
+    const y = f * fh + fh * 0.18, hh = fh * 0.64; const gl = g.createLinearGradient(0, y, w * 0.3, y + hh);
+    if (R) { gl.addColorStop(0, '#1e1e1e'); gl.addColorStop(1, '#2e2e2e'); } else { gl.addColorStop(0, '#9fb4c4'); gl.addColorStop(0.55, '#5f7486'); gl.addColorStop(1, '#3d4c5a'); }
+    g.fillStyle = gl; g.fillRect(0, y, w, hh);
+    g.fillStyle = R ? '#7a7a7a' : '#c9cdd0'; for (let x = 0; x < w; x += w / 8) g.fillRect(x - 2, y, 4, hh);
+    if (!R) for (let k = 0; k < 5; k++) { g.fillStyle = `rgba(255,255,255,${0.05 + r() * 0.08})`; g.fillRect(r() * w, y, 30 + r() * 60, hh); }
+  }
 });
-const facadeHouse = () => canvasTex(256, 240, (g, w, h) => {
-  g.fillStyle = '#f4efe6'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.05)'; for (let y = 0; y < h; y += 16) g.fillRect(0, y, w, 1);
-  g.fillStyle = '#6b5a4a'; g.fillRect(84, 70, 88, 90); g.fillStyle = '#7f9ab0'; g.fillRect(90, 76, 76, 78); g.fillStyle = '#f4efe6'; g.fillRect(125, 76, 6, 78);
+const facadeHouse = () => texPair(256, 240, (g, w, h, R) => { // хувийн байшин: шавардлага/тоосго, жижиг цонх
+  const r = rngOf(5); g.fillStyle = R ? '#efefef' : '#efe8dc'; g.fillRect(0, 0, w, h);
+  if (!R) { for (let k = 0; k < 60; k++) { g.fillStyle = `rgba(110,90,70,${0.03 + r() * 0.05})`; g.fillRect(r() * w, r() * h, 8 + r() * 30, 4 + r() * 14); } g.fillStyle = 'rgba(0,0,0,.05)'; for (let y = 0; y < h; y += 14) g.fillRect(0, y, w, 1); }
+  g.fillStyle = R ? '#bbbbbb' : '#5a4a3c'; g.fillRect(86, 72, 84, 92); const gl = g.createLinearGradient(0, 78, 0, 158); gl.addColorStop(0, R ? '#303030' : '#9fb2c0'); gl.addColorStop(1, R ? '#404040' : '#4c5d6b'); g.fillStyle = gl; g.fillRect(92, 78, 72, 80);
+  g.fillStyle = R ? '#999' : '#efe8dc'; g.fillRect(125, 78, 6, 80);
 });
+// Зөөлөн, давтагдахгүй шуугиан (value noise, олон октав) → өнгөний шатлал
+function fbmTex(size, stops, oct = 5, seed = 3) {
+  return canvasTex(size, size, (g, w, h) => {
+    const r = rngOf(seed); const grids = [];
+    for (let o = 0; o < oct; o++) { const n = 4 << o; const a = new Float32Array((n + 1) * (n + 1)); for (let i = 0; i < a.length; i++) a[i] = r(); for (let k = 0; k <= n; k++) { a[k * (n + 1) + n] = a[k * (n + 1)]; a[n * (n + 1) + k] = a[k]; } grids.push([n, a]); }
+    const im = g.createImageData(w, h); const cs = stops.map(([t, c]) => [t, new THREE.Color(c)]);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = 0, amp = 0.5, tot = 0;
+      for (const [n, a] of grids) { const fx = (x / w) * n, fy = (y / h) * n, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy; const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty); const q = (i, j) => a[(iy + j) * (n + 1) + ix + i]; v += amp * ((q(0, 0) * (1 - sx) + q(1, 0) * sx) * (1 - sy) + (q(0, 1) * (1 - sx) + q(1, 1) * sx) * sy); tot += amp; amp *= 0.55; }
+      v /= tot; let k = 0; while (k < cs.length - 2 && v > cs[k + 1][0]) k++; const [t0, c0] = cs[k], [t1, c1] = cs[k + 1]; const u = Math.max(0, Math.min(1, (v - t0) / (t1 - t0 || 1)));
+      const o = (y * w + x) * 4; im.data[o] = (c0.r + (c1.r - c0.r) * u) * 255; im.data[o + 1] = (c0.g + (c1.g - c0.g) * u) * 255; im.data[o + 2] = (c0.b + (c1.b - c0.b) * u) * 255; im.data[o + 3] = 255;
+    }
+    g.putImageData(im, 0, 0);
+  });
+}
 const noiseTex = (base, amp = 18, size = 256) => canvasTex(size, size, (g, w, h) => {
   const im = g.createImageData(w, h); const c = new THREE.Color(base); const R = c.r * 255, G = c.g * 255, B = c.b * 255;
   for (let i = 0; i < w * h; i++) { const n = (Math.random() - 0.5) * amp; im.data[i * 4] = R + n; im.data[i * 4 + 1] = G + n; im.data[i * 4 + 2] = B + n * 0.9; im.data[i * 4 + 3] = 255; }
   g.putImageData(im, 0, 0);
 });
+const stdMat = (o) => new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, ...o });
 
 // ---------- Сцен барих ----------
 export function createExterior(ext, opts = {}) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 12000);
-  const SKY_H = new THREE.Color('#dfe9f3'), SKY_Z = new THREE.Color('#5d97d6');
-  scene.fog = new THREE.Fog(SKY_H, 900, 6200);
+  const SKY_H = new THREE.Color('#e4e3dc'), SKY_Z = new THREE.Color('#6a9bcf');
+  scene.fog = new THREE.FogExp2(SKY_H, 0.00021); // агаарын гүн: 1 км ≈ 4%, 3 км ≈ 33%, 5 км ≈ 67%
   // Тэнгэр: босоо градиент бөмбөрцөг
   {
     const g = new THREE.SphereGeometry(9000, 32, 16); const col = []; const pos = g.attributes.position;
@@ -95,23 +145,40 @@ export function createExterior(ext, opts = {}) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
   }
-  scene.add(new THREE.HemisphereLight(0xdbeaff, 0xb9a88c, 1.05));
-  const sun = new THREE.DirectionalLight(0xfff1dc, 2.1); sun.position.set(-900, 1100, 1300); scene.add(sun); // өмнөд-баруунаас (намрын үдээс хойш)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+  scene.add(new THREE.HemisphereLight(0xe2e6ea, 0x8b857a, 0.72));
+  // Нар: өмнөд-баруунаас ~30° өндөрт (намрын үдээс хойш) — урт, бодит сүүдэр. Сүүдрийн хайрцаг камерын харж буй цэгийг дагана (update)
+  const SUN_DIR = new THREE.Vector3(-900, 900, 1300).normalize();
+  const sun = new THREE.DirectionalLight(0xfff0d6, 2.7); sun.position.copy(SUN_DIR).multiplyScalar(1600);
+  const SH_MAP = Math.min(4096, (opts.renderer && opts.renderer.capabilities.maxTextureSize) || 2048) >= 4096 && !(navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 900) ? 4096 : 2048;
+  sun.castShadow = true; sun.shadow.mapSize.set(SH_MAP, SH_MAP); sun.shadow.bias = -0.00035; sun.shadow.normalBias = 0.45;
+  Object.assign(sun.shadow.camera, { near: 50, far: 4200, left: -400, right: 400, top: 400, bottom: -400 }); sun.shadow.camera.updateProjectionMatrix();
+  scene.add(sun, sun.target);
+  // Орчны гэрэл/тусгал (цонхны шил тэнгэрийг тусгана): тэнгэр + газраас PMREM
+  if (opts.renderer) {
+    try {
+      const es = new THREE.Scene(); const sg = new THREE.SphereGeometry(100, 32, 16); const sc = []; const sp = sg.attributes.position;
+      for (let i = 0; i < sp.count; i++) { const y = sp.getY(i) / 100; const c = y < 0 ? new THREE.Color('#7d7563') : SKY_H.clone().lerp(SKY_Z, Math.pow(y, 0.55)); sc.push(c.r, c.g, c.b); }
+      sg.setAttribute('color', new THREE.Float32BufferAttribute(sc, 3)); es.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+      const pm = new THREE.PMREMGenerator(opts.renderer); scene.environment = pm.fromScene(es, 0.03).texture; scene.environmentIntensity = 0.38; pm.dispose();
+    } catch { /* сул GPU — орчны тусгалгүй */ }
+  }
 
   // Газар
-  const groundTex = noiseTex('#c4bdae', 20); groundTex.repeat.set(900, 900);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), new THREE.MeshLambertMaterial({ map: groundTex }));
-  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.3; scene.add(ground);
+  const groundTex = fbmTex(512, [[0, '#a9a397'], [0.45, '#b8b2a5'], [0.62, '#b3aea1'], [0.8, '#aba898'], [1, '#bfbaad']], 5, 7); groundTex.repeat.set(1100, 1100);
+  const macroTex = fbmTex(256, [[0, '#dcdcd0'], [0.4, '#f4f1ea'], [0.6, '#ffffff'], [0.85, '#e9e9dc'], [1, '#dfe2d2']], 4, 19); macroTex.colorSpace = THREE.SRGBColorSpace;
+  const groundMat = stdMat({ map: groundTex, roughness: 1 });
+  groundMat.onBeforeCompile = (sh) => { sh.uniforms.macroMap = { value: macroTex }; sh.fragmentShader = 'uniform sampler2D macroMap;\n' + sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= texture2D(macroMap, vMapUv * 0.018).rgb;'); };
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), groundMat);
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.3; ground.receiveShadow = true; scene.add(ground);
 
   // Талбай (ногоон байгууламж, тоглоомын талбай, зогсоол, сургуулийн хашаа)
-  const AREA_C = { park: '#8fb56a', grass: '#9fbd78', playground: '#e2b98a', pitch: '#6aa35c', parking: '#8a8e95', school: '#d8c8a4' };
+  const AREA_C = { park: '#77895a', grass: '#848f63', playground: '#a88a70', pitch: '#5e7d55', parking: '#6e7176', school: '#b6ab94' };
   const areaY = { school: 0.05, grass: 0.07, park: 0.08, parking: 0.1, pitch: 0.11, playground: 0.12 };
   const ag = new GB(); for (const a of ext.areas || []) ag.poly(pairs(a.p), areaY[a.k] || 0.06, hex(AREA_C[a.k] || '#b0b0b0'));
-  const areaMesh = ag.mesh(new THREE.MeshLambertMaterial({ vertexColors: true, map: noiseTex('#ffffff', 26, 128), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); if (areaMesh) scene.add(areaMesh);
+  const areaMesh = ag.mesh(stdMat({ vertexColors: true, map: fbmTex(256, [[0, '#d9d9d9'], [0.5, '#ffffff'], [1, '#e6e6e6']], 4, 23), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); if (areaMesh) { areaMesh.receiveShadow = true; scene.add(areaMesh); }
 
   // Замууд: ангиллаар өргөн, асфальт/явган замын өнгө, гол замд төвийн шугам
-  const RC = { major: '#4a4e55', mid: '#575b62', minor: '#62666d', service: '#6d7178', path: '#c4bdae' };
+  const RC = { major: '#3c3f44', mid: '#43464b', minor: '#4a4d52', service: '#55575b', path: '#aba597' };
   const RY = { major: 0.34, mid: 0.31, minor: 0.28, service: 0.25, path: 0.22 };
   const rg = new GB();
   const ribbon = (B, pts, w, y, col) => {
@@ -125,24 +192,39 @@ export function createExterior(ext, opts = {}) {
     }
     for (let i = 0; i + 1 < pts.length; i++) B.quad(L[i], L[i + 1], R[i + 1], R[i], 0, 1, 0, [[0, 0], [1, 0], [1, 1], [0, 1]], col);
   };
+  const sw = new GB(), mk = new GB(); const SWC = hex('#a7a296'), MKC = hex('#e6e4dc');
+  // Тэмдэглэгээ: төвийн тасархай шугам (гол/дунд зам), гол замд захын тасралтгүй шугам
+  const dashes = (pts, off, y, wd, dash, gap) => {
+    let acc = 0, on = true, left = dash;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.01) continue; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L, nx = -uz, nz = ux; let t = 0;
+      while (t < L) { const step = Math.min(left, L - t); if (on) { const p0 = [a[0] + ux * t + nx * off, a[1] + uz * t + nz * off], p1 = [a[0] + ux * (t + step) + nx * off, a[1] + uz * (t + step) + nz * off]; ribbon(mk, [p0, p1], wd, y, MKC); } t += step; left -= step; if (left <= 1e-6) { on = !on; left = on ? dash : gap; } }
+      acc += L;
+    }
+  };
   for (const r of ext.roads || []) {
-    const pts = pairs(r.p); const col = hex(RC[r.k] || '#666'); ribbon(rg, pts, r.w, RY[r.k] || 0.1, col);
+    const pts = pairs(r.p); const col = hex(RC[r.k] || '#666'); const y = RY[r.k] || 0.1; ribbon(rg, pts, r.w, y, col);
+    if (r.k === 'major' || r.k === 'mid' || r.k === 'minor') ribbon(sw, pts, r.w + (r.k === 'minor' ? 2.2 : 3.4), y - 0.012, SWC); // хашлага + явган хүний зам
+    if (r.k === 'major') { dashes(pts, 0.25, y + 0.015, 0.16, 1e9, 0); dashes(pts, -0.25, y + 0.015, 0.16, 1e9, 0); dashes(pts, r.w / 2 - 0.6, y + 0.015, 0.15, 1e9, 0); dashes(pts, -(r.w / 2 - 0.6), y + 0.015, 0.15, 1e9, 0); }
+    else if (r.k === 'mid' && r.w >= 7) dashes(pts, 0, y + 0.015, 0.15, 3, 6);
   }
-  const roadMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: noiseTex('#ffffff', 16, 128), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  const roadMesh = rg.mesh(roadMat); if (roadMesh) scene.add(roadMesh);
+  const roadMat = stdMat({ vertexColors: true, side: THREE.DoubleSide, map: fbmTex(256, [[0, '#cfcfcf'], [0.5, '#ffffff'], [1, '#d9d9d9']], 5, 31), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const roadMesh = rg.mesh(roadMat); if (roadMesh) { roadMesh.receiveShadow = true; scene.add(roadMesh); }
+  const swMesh = sw.mesh(stdMat({ vertexColors: true, side: THREE.DoubleSide, map: noiseTex('#ffffff', 14, 128), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1.5, polygonOffsetUnits: -3 })); if (swMesh) { swMesh.receiveShadow = true; scene.add(swMesh); }
+  const mkMesh = mk.mesh(stdMat({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 })); if (mkMesh) { mkMesh.receiveShadow = true; scene.add(mkMesh); }
 
   // Барилгууд: хана (давхрын өндөр 3 м, цонхны зай 3.2 м) + дээвэр; ёроол руу бараан (хуурамч AO)
   const FL = 3.0, BAY = 3.2;
-  const PAL = { bld: ['#dcd6ca', '#d3d6d8', '#e0d6c4', '#cfd6c9', '#e3dccf', '#d9cfc3', '#cdd3da'], apt: ['#d8d3c8', '#cfd4d7', '#dfd5c2', '#cdd6c8'], com: ['#cfd9e3', '#d6dde4', '#c9d3dd'], edu: ['#ecc986', '#e9b87c', '#efd49a'], house: ['#e5d6b8', '#d9c4a0', '#ccb38f', '#e8dcc6', '#c7a57e'], shed: ['#b9b3a8', '#a9a39a', '#c3bcb0'] };
-  const ROOF_H = ['#8a3a30', '#3d6b8a', '#56703a', '#8c8f94', '#6b4a3a'];
+  const PAL = { bld: ['#d3cbbb', '#c8c5bd', '#dcd2bf', '#c3c2bc', '#d1c6b1', '#c7cbca', '#d8ccb6', '#bfbfb8', '#c9cdc4', '#cfd0c7'], apt: ['#d3cbbb', '#c8c5bd', '#dad0bc', '#c3c2bc'], com: ['#b9c2ca', '#c3c9ce', '#adb7c0'], edu: ['#d6b98d', '#cfae85', '#dcc59c'], house: ['#d6cab2', '#cbb99b', '#c0ab8c', '#dad0be', '#b69b7d'], shed: ['#a6a298', '#99958d', '#afa99d'] };
+  const ROOF_H = ['#7a4b43', '#4f6576', '#5a6a4b', '#7a7d81', '#6d5447', '#88837a'];
   const B = { block: new GB(), com: new GB(), house: new GB(), home: new GB(), roof: new GB(), far: new GB() };
   const orient = (pts) => { let s = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j][0] - pts[i][0]) * (pts[j][1] + pts[i][1]); return s < 0 ? pts.slice().reverse() : pts; };
-  function walls(G, pts, h, col, dark = 0.72, uvScale = true) {
+  function walls(G, pts, h, col, dark = 0.72, uvScale = true, tb = 1, tf = 1) {
     const P = orient(pts); let acc = 0; const n = P.length;
     for (let i = 0; i < n; i++) {
       const a = P[i], b = P[(i + 1) % n]; const len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 0.05) continue;
       const nx = (b[1] - a[1]) / len, nz = -(b[0] - a[0]) / len; // гадагш
-      const u0 = uvScale ? acc / BAY : 0, u1 = uvScale ? (acc + len) / BAY : 1, v1 = uvScale ? h / FL : 1;
+      const u0 = uvScale ? acc / (BAY * tb) : 0, u1 = uvScale ? (acc + len) / (BAY * tb) : 1, v1 = uvScale ? h / (FL * tf) : 1;
       G.quad([b[0], 0, b[1]], [a[0], 0, a[1]], [a[0], h, a[1]], [b[0], h, b[1]], nx, 0, nz, [[u1, 0], [u0, 0], [u0, v1], [u1, v1]], mul(col, dark), col); // гадагш харсан эргэлт
       acc += len;
     }
@@ -170,14 +252,14 @@ export function createExterior(ext, opts = {}) {
   for (const b of ext.buildings || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; bi++;
     const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = hex(pal[Math.floor(hash(bi) * pal.length)]);
-    if (b.t) { walls(B.home, pts, h, hex('#f3e7d3'), 0.8); B.roof.poly(pts, h, hex('#b4533f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
+    if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, hex('#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
     if (b.k === 'house' || b.k === 'shed' || (b.lv <= 2 && b.k !== 'com' && b.k !== 'edu')) {
       walls(B.house, pts, h, col, 0.78);
       const roofC = hex(ROOF_H[Math.floor(hash(bi * 7.1) * ROOF_H.length)]);
       if (pts.length === 4 && b.k !== 'shed' && b.lv <= 2) gable(B.house, B.roof, pts, h, col, roofC); else B.roof.poly(pts, h, b.k === 'shed' ? hex('#7d7f84') : roofC);
-    } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.75); B.roof.poly(pts, h, hex('#7f8388')); parapet(B.roof, pts, h, hex('#b9bcc0'), 0.6); }
+    } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, hex(hash(bi * 5.3) > 0.5 ? '#86888b' : '#949597')); parapet(B.roof, pts, h, hex('#aeb1b4'), 0.6); }
     else {
-      walls(B.block, pts, h, col, 0.7); B.roof.poly(pts, h, hex(hash(bi * 3.7) > 0.5 ? '#5f6368' : '#7b7f84')); parapet(B.roof, pts, h, mul(col, 0.92));
+      walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, hex(hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9));
       if (b.lv >= 5) { // хэсэг (орц) бүрд дээвэр дээр лифтний машин өрөө
         const [ux, uz] = longAxis(pts); let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length;
         let a0 = Infinity, a1 = -Infinity; for (const [x, z] of pts) { const a = (x - cx) * ux + (z - cz) * uz; a0 = Math.min(a0, a); a1 = Math.max(a1, a); }
@@ -187,20 +269,20 @@ export function createExterior(ext, opts = {}) {
     }
   }
   for (const b of ext.buildings || []) if (b.rp === 'playground') { const pts = pairs(b.p); if (pts.length >= 3) playRoof.poly(pts, Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)) + 0.08, [1, 1, 1], 14); }
-  for (const b of ext.far || []) { const pts = pairs(b.p); if (pts.length < 3) continue; const h = b.lv * FL; const c = hex(['#d6d4ce', '#cfd3d7', '#dcd3c4', '#c9ced4'][Math.floor(hash(pts[0][0]) * 4)]); walls(B.far, pts, h, c, 0.7, false); B.far.poly(pts, h, hex('#8f9296')); }
+  for (const b of ext.far || []) { const pts = pairs(b.p); if (pts.length < 3) continue; const h = b.lv * FL; const c = hex(['#cfc7b8', '#c6c5c1', '#d4cab7', '#c2c3c2'][Math.floor(hash(pts[0][0]) * 4)]); walls(B.far, pts, h, c, 0.8, false); B.far.poly(pts, h, hex('#8e9092')); }
   const blockTex = facadeBlock(), comTex = facadeCom(), houseTex = facadeHouse();
-  const addM = (G, mat) => { const m = G.mesh(mat); if (m) scene.add(m); return m; };
-  addM(B.block, new THREE.MeshLambertMaterial({ vertexColors: true, map: blockTex }));
-  addM(B.com, new THREE.MeshLambertMaterial({ vertexColors: true, map: comTex }));
-  addM(B.house, new THREE.MeshLambertMaterial({ vertexColors: true, map: houseTex }));
-  addM(B.roof, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: noiseTex('#ffffff', 34, 128) }));
-  addM(B.far, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const addM = (G, mat, cast = true) => { const m = G.mesh(mat); if (m) { m.castShadow = cast; m.receiveShadow = true; scene.add(m); } return m; };
+  addM(B.block, stdMat({ vertexColors: true, map: blockTex.map, roughnessMap: blockTex.rough, roughness: 1 }));
+  addM(B.com, stdMat({ vertexColors: true, map: comTex.map, roughnessMap: comTex.rough, roughness: 1 }));
+  addM(B.house, stdMat({ vertexColors: true, map: houseTex.map, roughnessMap: houseTex.rough, roughness: 1 }));
+  addM(B.roof, stdMat({ vertexColors: true, side: THREE.DoubleSide, map: fbmTex(256, [[0, '#e3e3e3'], [0.5, '#ffffff'], [1, '#ececec']], 5, 41), roughness: 0.9 }));
+  addM(B.far, stdMat({ vertexColors: true }));
   addM(playRoof, new THREE.MeshLambertMaterial({ vertexColors: true, map: canvasTex(256, 256, (g, w, h) => { // резин хучилттай тоглоомын талбай
     g.fillStyle = '#c8664f'; g.fillRect(0, 0, w, h); const C = ['#e7c24a', '#6f9fd8', '#79b98a', '#d98fa6', '#ef8f4f']; let sd = 7; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
     for (let i = 0; i < 14; i++) { g.fillStyle = C[i % C.length]; g.beginPath(); g.ellipse(r() * w, r() * h, 18 + r() * 40, 14 + r() * 30, r() * 3, 0, 7); g.fill(); }
     g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 3; g.beginPath(); g.arc(w / 2, h / 2, 60, 0, 7); g.stroke();
   }), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
-  const homeMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: facadeBlock(), emissive: new THREE.Color('#3a1a12'), emissiveIntensity: 0.12 });
+  const homeTex = facadeBlock(); const homeMat = stdMat({ vertexColors: true, map: homeTex.map, roughnessMap: homeTex.rough, roughness: 1, emissive: new THREE.Color('#3a1a12'), emissiveIntensity: 0.08 });
   addM(B.home, homeMat);
 
   // Арк (угсармал байрны доорх явган гарц): маршрут байрыг нэвт гардаг газарт харанхуй нүх (хоёр фасадаас харагдана)
@@ -210,11 +292,17 @@ export function createExterior(ext, opts = {}) {
   if (gers.length) {
     const wallG = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true); wallG.translate(0, 0.5, 0);
     const roofG = new THREE.ConeGeometry(1.04, 1, 14, 1, true); roofG.translate(0, 0.5, 0);
-    const wm = new THREE.InstancedMesh(wallG, new THREE.MeshLambertMaterial({ color: '#f4f1ea', side: THREE.DoubleSide }), gers.length);
-    const rm = new THREE.InstancedMesh(roofG, new THREE.MeshLambertMaterial({ color: '#e7e1d3', side: THREE.DoubleSide }), gers.length);
+    const wm = new THREE.InstancedMesh(wallG, stdMat({ color: '#e9e3d5', side: THREE.DoubleSide, roughness: 1 }), gers.length);
+    const rm = new THREE.InstancedMesh(roofG, stdMat({ color: '#d9d1bf', side: THREE.DoubleSide, roughness: 1 }), gers.length);
+    const tG = new THREE.CylinderGeometry(1, 1, 1, 10); tG.translate(0, 0.5, 0); const dG = new THREE.BoxGeometry(1, 1, 1); dG.translate(0, 0.5, 0);
+    const tn = new THREE.InstancedMesh(tG, stdMat({ color: '#6e5b47' }), gers.length), dn = new THREE.InstancedMesh(dG, stdMat({ color: '#a8612f', roughness: 0.7 }), gers.length);
     const M = new THREE.Matrix4(), q = new THREE.Quaternion();
-    gers.forEach(([x, z, r], i) => { M.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(r, 1.55, r)); wm.setMatrixAt(i, M); M.compose(new THREE.Vector3(x, 1.55, z), q, new THREE.Vector3(r, 0.8 + r * 0.12, r)); rm.setMatrixAt(i, M); });
-    scene.add(wm, rm);
+    gers.forEach(([x, z, r], i) => {
+      M.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(r, 1.55, r)); wm.setMatrixAt(i, M); const rh = 0.8 + r * 0.12; M.compose(new THREE.Vector3(x, 1.55, z), q, new THREE.Vector3(r, rh, r)); rm.setMatrixAt(i, M);
+      M.compose(new THREE.Vector3(x, 1.55 + rh * 0.86, z), q, new THREE.Vector3(r * 0.2, 0.14, r * 0.2)); tn.setMatrixAt(i, M); // тооно
+      M.compose(new THREE.Vector3(x, 0, z + r * 0.98), q, new THREE.Vector3(0.8, 1.35, 0.12)); dn.setMatrixAt(i, M); // урд (өмнө) хаалга
+    });
+    for (const m of [wm, rm, tn, dn]) { m.castShadow = true; m.receiveShadow = true; } scene.add(wm, rm, tn, dn);
   }
 
   // Мод: OSM мод + ногоон байгууламж/хашаанд санамсаргүй (давтагдахуйц seed)
@@ -227,21 +315,39 @@ export function createExterior(ext, opts = {}) {
     const areaBox = (x1 - x0) * (z1 - z0); const n = Math.min(80, Math.round(areaBox / (a.k === 'school' ? 380 : 150)));
     for (let i = 0; i < n; i++) { const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0); if (inPoly(x, z, p) && (a.k !== 'school' || rnd() < 0.5)) treePts.push([x, z]); }
   }
+  // Гудамжны мод: гол/дунд замын явган замын дагуу ~15 м тутамд (барилгын дотор биш)
+  {
+    const bl = []; for (const b of ext.buildings || []) { const p = pairs(b.p); if (p.length < 3) continue; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } bl.push([x0 - 1.5, x1 + 1.5, z0 - 1.5, z1 + 1.5, p]); }
+    const G = new Map(), gk = (x, z) => Math.floor(x / 40) * 100003 + Math.floor(z / 40); for (const q of bl) for (let i = Math.floor(q[0] / 40); i <= Math.floor(q[1] / 40); i++) for (let j = Math.floor(q[2] / 40); j <= Math.floor(q[3] / 40); j++) { const k = i * 100003 + j; if (!G.has(k)) G.set(k, []); G.get(k).push(q); }
+    const blocked = (x, z) => (G.get(gk(x, z)) || []).some((q) => x >= q[0] && x <= q[1] && z >= q[2] && z <= q[3]);
+    for (const r of ext.roads || []) {
+      if (r.k !== 'major' && r.k !== 'mid') continue; const pts = pairs(r.p); const off = r.w / 2 + 2.3; let carry = 7;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.5) continue; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+        for (let t = carry; t < L; t += 15) { for (const sd of [1, -1]) { const x = a[0] + ux * t - uz * off * sd, z = a[1] + uz * t + ux * off * sd; if (Math.hypot(x, z) < 1600 && hash(x * 0.37 + z * 0.11) > 0.18 && !blocked(x, z)) treePts.push([x, z]); } carry = t + 15 - L; }
+        if (carry < 0) carry = 0;
+      }
+    }
+  }
   if (treePts.length) {
-    const tn = Math.min(4000, treePts.length);
-    const crown = new THREE.IcosahedronGeometry(1, 0); crown.translate(0, 0, 0);
+    const tn = Math.min(7000, treePts.length);
+    const crown = (() => { // 4 бөмбөлгөөс титэм (нэг mesh)
+      const parts = [[0, 0, 0, 1], [0.45, 0.35, 0.2, 0.72], [-0.4, 0.25, -0.25, 0.7], [0.1, 0.62, -0.1, 0.62]].map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 1); g.translate(x, y, z); return g; });
+      const pos = [], nor = []; for (const g of parts) { const P = g.attributes.position, N = g.attributes.normal; for (let i = 0; i < P.count; i++) { pos.push(P.getX(i), P.getY(i), P.getZ(i)); nor.push(N.getX(i), N.getY(i), N.getZ(i)); } }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); return g;
+    })();
     const trunk = new THREE.CylinderGeometry(0.12, 0.18, 1, 5); trunk.translate(0, 0.5, 0);
-    const cm = new THREE.InstancedMesh(crown, new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), tn);
-    const tm = new THREE.InstancedMesh(trunk, new THREE.MeshLambertMaterial({ color: '#6b5238' }), tn);
+    const cm = new THREE.InstancedMesh(crown, stdMat({ color: '#ffffff', flatShading: true, roughness: 1 }), tn);
+    const tm = new THREE.InstancedMesh(trunk, stdMat({ color: '#5e4a36' }), tn);
     const M = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
-    const TC = ['#5f8a3e', '#6f9a45', '#4e7a36', '#c9a53a', '#d8b24a', '#8a9a3c'];
+    const TC = ['#5d6f3e', '#6c7a44', '#7b7f45', '#96843d', '#a58d42', '#566a3c', '#8a7c3f', '#b0964a']; // намар: ногоон-шаргал холимог
     for (let i = 0; i < tn; i++) {
       const [x, z] = treePts[i]; const s = 1.6 + hash(i * 3.3) * 1.6, th = 2 + hash(i * 1.7) * 2.2;
       M.compose(new THREE.Vector3(x, th + s * 0.7, z), q, new THREE.Vector3(s, s * 1.25, s)); cm.setMatrixAt(i, M);
       M.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, th + 0.4, 1)); tm.setMatrixAt(i, M);
       col.set(TC[Math.floor(hash(i * 9.1) * TC.length)]); cm.setColorAt(i, col);
     }
-    scene.add(cm, tm);
+    for (const m of [cm, tm]) { m.castShadow = true; m.receiveShadow = true; } scene.add(cm, tm);
   }
 
   // Зогсоол дээрх машинууд (хэлбэр: их бие + кабин)
@@ -261,10 +367,10 @@ export function createExterior(ext, opts = {}) {
       }
     }
     if (spots.length) {
-      const n = Math.min(3000, spots.length); const cm = new THREE.InstancedMesh(carG, new THREE.MeshLambertMaterial({ color: '#ffffff' }), n);
-      const M = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(); const CC = ['#f4f4f4', '#c9ccd1', '#1f2328', '#6b7280', '#b91c1c', '#1e3a8a', '#e5e7eb', '#9ca3af'];
+      const n = Math.min(3000, spots.length); const cm = new THREE.InstancedMesh(carG, stdMat({ color: '#ffffff', roughness: 0.45, metalness: 0.25 }), n);
+      const M = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(); const CC = ['#e8e8e6', '#b9bcc0', '#2a2d31', '#5f646b', '#7d2a26', '#2f3f5e', '#d6d7d5', '#8f949a', '#4a4e44'];
       for (let i = 0; i < n; i++) { const [x, z, r] = spots[i]; q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r); M.compose(new THREE.Vector3(x, 0.13, z), q, new THREE.Vector3(1, 1, 1)); cm.setMatrixAt(i, M); col.set(CC[Math.floor(hash(i * 5.3) * CC.length)]); cm.setColorAt(i, col); }
-      scene.add(cm);
+      cm.castShadow = true; cm.receiveShadow = true; scene.add(cm);
     }
   }
   function mergeBoxes(list) { // BufferGeometryUtils-гүй энгийн нэгтгэл
@@ -733,6 +839,16 @@ export function createExterior(ext, opts = {}) {
     const clr = camera.position.y - HG.at(camera.position.x, camera.position.z); const nr = Math.max(0.25, Math.min(30, clr * 0.15));
     if (Math.abs(nr - camera.near) > camera.near * 0.08) { camera.near = nr; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();
+    { // сүүдэр: харж буй цэг (pose.tgt) эсвэл камерын доор; хэмжээ өндрөөс хамаарч шатлалтай (200/400/800/1600 м)
+      const tg = (pose && pose.tgt) ? pose.tgt : camera.position; const cl = Math.max(20, camera.position.y);
+      let half = 200; while (half < 1600 && half < cl * 1.25) half *= 2;
+      const sc = sun.shadow.camera; if (sc.right !== half) { Object.assign(sc, { left: -half, right: half, top: half, bottom: -half }); sc.updateProjectionMatrix(); }
+      // Гэрлийн орон зайд текселийн хэмжээгээр бүхэлчилнэ → камер хөдлөхөд сүүдрийн ирмэг чичрэхгүй
+      const tex = (2 * half) / SH_MAP; const lz = SUN_DIR.clone().negate(), lx = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), lz).normalize(), ly = new THREE.Vector3().crossVectors(lz, lx);
+      const c = new THREE.Vector3(tg.x, 0, tg.z); const a = Math.round(c.dot(lx) / tex) * tex, b = Math.round(c.dot(ly) / tex) * tex, d = c.dot(lz);
+      const snapped = lx.multiplyScalar(a).add(ly.multiplyScalar(b)).add(lz.multiplyScalar(d));
+      sun.target.position.copy(snapped); sun.position.copy(snapped).addScaledVector(SUN_DIR, 1800); sun.target.updateMatrixWorld(); sun.updateMatrixWorld();
+    }
     LINE_U.uPx.value = (2 * Math.tan((camera.fov * Math.PI) / 360)) / Math.max(1, innerHeight); LINE_U.uTime.value = now;
     for (const L of lines) L.tick();
     updateLabels(now);
@@ -768,5 +884,5 @@ export function createExterior(ext, opts = {}) {
     g.fillStyle = '#2563eb'; g.beginPath(); g.arc(W / 2, H / 2, 6, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
   }
   const liftInfo = () => segs.map((sg) => `${sg.kind}${sg.p || sg.to ? '/' + (sg.p || sg.to).cat : ''}:${Math.round(Math.max(0, ...(LIFT || []).slice(Math.floor(sg.t0 / LIFT_DT), Math.ceil((sg.t0 + sg.dur) / LIFT_DT) + 1)))}`).join(' ');
-  return { scene, camera, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, _los: losClear, get free() { return free; }, get running() { return running; }, get T() { return T; } };
+  return { scene, camera, shadows: true, exposure: 1.12, update, start, setFree, drag, setVisible, drawMap, segs, TOTAL, liftInfo, _los: losClear, get free() { return free; }, get running() { return running; }, get T() { return T; } };
 }

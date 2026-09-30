@@ -1334,7 +1334,7 @@ async function main() {
   tourPts = buildTour(); tourI = 0; pauseT = AUTO.pausePlain; sweep = 0; if (tourPts[0]) tourPts[0].yaw0 = tourPts[0].yawC ?? cam.yaw;
   if (data.exterior && Array.isArray(data.exterior.buildings)) {
     $('#load').lastElementChild.textContent = 'Гадаах орчныг бүтээж байна…'; await new Promise((r) => setTimeout(r, 30));
-    try { EXT = createExterior(data.exterior, { title: $('#title').textContent, keys, onDone: () => goInterior() }); window.zuuch.ext = EXT; $('#bOut').style.display = ''; $('#bIn').style.display = ''; }
+    try { EXT = createExterior(data.exterior, { title: $('#title').textContent, keys, renderer, onDone: () => goInterior() }); window.zuuch.ext = EXT; $('#bOut').style.display = ''; $('#bIn').style.display = ''; }
     catch (err) { console.error('exterior', err); EXT = null; }
   }
   const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
@@ -1353,13 +1353,21 @@ async function main() {
   markModeButtons();
   $('#load').style.display = 'none';
   let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1, fpsAcc = 0, fpsN = 0; // эхний frame-д минимап зурагдана
+  // Гадаах/дотоод рендер төлөв солих (зөвхөн шилжих үед; материалууд дахин компиляц)
+  const INT_RS = { sh: renderer.shadowMap.enabled, tm: renderer.toneMapping, type: renderer.shadowMap.type }; let extRS = null;
+  const extRenderState = (on) => {
+    if (extRS === on) return; extRS = on;
+    if (on) { renderer.shadowMap.enabled = !!(EXT && EXT.shadows); renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.toneMapping = THREE.ACESFilmicToneMapping; }
+    else { renderer.shadowMap.enabled = INT_RS.sh; renderer.shadowMap.type = INT_RS.type; renderer.toneMapping = INT_RS.tm; }
+    const sc = on ? EXT && EXT.scene : scene; if (sc) sc.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
+  };
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (SCENE_MODE === 'exterior' && EXT) {
       EXT.update(dt); mapT += dt; if (mapT > 0.1) { mapT = 0; EXT.drawMap($('#map').getContext('2d'), 440, 340); }
       fpsAcc += dt; fpsN++;
       if (fpsAcc >= 2) { const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; const pr = renderer.getPixelRatio(); if (fps < 28 && pr > 0.6) renderer.setPixelRatio(Math.max(0.6, pr - 0.15)); else if (fps > 55 && pr < Math.min(devicePixelRatio, 1.25)) renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25, pr + 0.1)); if (renderer.getPixelRatio() !== pr) renderer.setSize(innerWidth, innerHeight, false); }
-      renderer.toneMappingExposure = 1.0; renderer.render(EXT.scene, EXT.camera); requestAnimationFrame(frame); return; // гадаах: bloom-гүй, өөрчлөлтгүй
+      extRenderState(true); renderer.toneMappingExposure = EXT.exposure || 1.0; renderer.shadowMap.needsUpdate = true; renderer.render(EXT.scene, EXT.camera); requestAnimationFrame(frame); return; // гадаах: bloom-гүй; нарны сүүдэр камерыг дагадаг тул кадр бүр
     }
     if (mode === 'auto') stepAuto(dt); else if (!panoActive) stepFree(dt);
     stepStaging(dt);
@@ -1371,7 +1379,7 @@ async function main() {
     // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/байрлуулах/загвар ачаалагдах үед л шинэчилнэ; шэйдер компиляц зөвхөн тавилга харагдаж байхад (furnDirty)
     if (staging || furnDirty || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; if (furnDirty && furnGroup.visible) compileAll(); shadowLoaded = loadedN; furnDirty = false; } frameN++;
     // Гэрлийн сан (ойрын гэрлүүд, тогтмол тоо) + чанарын хяналт (FPS → түвшин/нягтрал)
-    stepLights(dt); stepFov(dt, false); perfTick(now); renderer.toneMappingExposure = INT_EXP;
+    extRenderState(false); stepLights(dt); stepFov(dt, false); perfTick(now); renderer.toneMappingExposure = INT_EXP;
     if (Q.composer) { Q.rp.camera = topCam || camera; Q.composer.render(dt); } else renderer.render(scene, topCam || camera); // bloom зөвхөн интерьерт
     requestAnimationFrame(frame);
   }
