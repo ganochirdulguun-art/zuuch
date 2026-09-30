@@ -668,7 +668,7 @@ function renderTour() {
   const hasLoc = p.lat != null && p.lng != null && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
   const extBox = `<div class="card" style="margin-top:16px"><h3><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг</h3>
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Объектын газрын зураг дээр тэмдэглэсэн байршлаас ~1.5 км радиуст бодит барилга, зам, сургууль · цэцэрлэг · эмнэлэг · дэлгүүр, явган маршрут (минутаар), түгжрэлийн судалгааг автоматаар бүрдүүлж, аяллын эхэнд тэнгэрээс бууж ирэх нислэг нэмнэ. 1–3 минут үргэлжилнэ.</div>
-      ${hasLoc ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="primary" id="ext-btn" onclick="tourExterior(${p.id})"><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг бэлтгэх</button><span id="ext-st" style="font-size:12.5px">…</span></div>`
+      ${hasLoc ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="primary" id="ext-btn" onclick="tourExterior(${p.id})"><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг бэлтгэх</button><button onclick="localPoisView(${p.id})" title="Нээлттэй газрын зурагт дутуу ойрын дэлгүүр, эмийн сан, тоглоомын талбайг тэмдэглэх"><svg class=ic><use href=#i-map-pin></use></svg>Ойрын газар нэмэх</button><span id="ext-st" style="font-size:12.5px">…</span></div>`
         : `<span class="badge warn">Байршил тэмдэглээгүй</span> <span style="font-size:12.5px">Объект → засах → газрын зураг дээр байршлыг дарж тэмдэглээд хадгална уу.</span> <button class="small" onclick="propForm(TOUR.property)">Байршил тэмдэглэх</button>`}</div>`;
   const shareBox = extBox + `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
@@ -734,6 +734,43 @@ function renderTour() {
   drawTourPlan(); bindTourCanvas();
   if (hasLoc) tourExtStatus(p.id);
 }
+// Ойрын газар (агент/оршин суугчийн баталсан): газрын зураг дээр дарж ангилал + нэр → дараагийн «бэлтгэх»-д нислэг/маршрутад тэргүүн ээлжинд
+let LPOI = null;
+window.localPoisView = async (pid) => {
+  const d = await api('/tour/' + pid + '/local-pois'); if (d.error) return alert(d.error);
+  LPOI = { pid, items: d.items || [], cats: d.cats || {}, pick: null, map: null, layer: null, tmp: null };
+  modal(`<h3><svg class=ic><use href=#i-map-pin></use></svg>Ойрын газар нэмэх</h3>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Нээлттэй газрын зурагт (OpenStreetMap, Overture) бүртгэгдээгүй ойрын дэлгүүр, эмийн сан, тоглоомын талбай г.м.-ийг газрын зураг дээр дарж тэмдэглэнэ. Эдгээрийг баталгаатай гэж үзэж, нислэг болон алхах маршрутад тэргүүн ээлжинд оруулна.</div>
+  <div id="lpoi-map" style="height:320px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2)"></div>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center"><select id="lpoi-cat">${Object.entries(LPOI.cats).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select><input id="lpoi-name" placeholder="Нэр (ж: Эмийн сан, 16-р байрны 1 давхар)" style="flex:1;min-width:180px"><button type="button" class="small" onclick="lpoiAdd()">+ Нэмэх</button></div>
+  <div id="lpoi-hint" style="font-size:12px;color:var(--muted);margin-top:4px">Газрын зураг дээр газрын байршлыг дарж заана уу</div>
+  <div id="lpoi-list" style="margin-top:8px"></div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" class="primary" onclick="lpoiSave(true)">Хадгалах + 3D дахин бэлтгэх</button><button type="button" onclick="lpoiSave(false)">Хадгалах</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
+  lpoiList();
+  const el = document.getElementById('lpoi-map'); if (!el || typeof L === 'undefined' || !d.center || d.center.lat == null) { if (el) el.innerHTML = '<div style="padding:12px;font-size:12px">Газрын зураг ачаалагдсангүй</div>'; return; }
+  const map = L.map(el).setView([Number(d.center.lat), Number(d.center.lng)], 17); LPOI.map = map;
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  L.circleMarker([Number(d.center.lat), Number(d.center.lng)], { radius: 7, color: '#dc2626', weight: 3, fillOpacity: 0.3 }).addTo(map).bindTooltip('Объект');
+  LPOI.layer = L.layerGroup().addTo(map); lpoiDraw();
+  map.on('click', (e) => { LPOI.pick = e.latlng; if (LPOI.tmp) LPOI.tmp.setLatLng(e.latlng); else LPOI.tmp = L.marker(e.latlng).addTo(map); $('#lpoi-hint').textContent = `Сонгосон: ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)} — ангилал, нэрээ оруулаад «Нэмэх»`; });
+  setTimeout(() => map.invalidateSize(), 250);
+};
+function lpoiDraw() { if (!LPOI || !LPOI.layer) return; LPOI.layer.clearLayers(); LPOI.items.forEach((q) => L.circleMarker([q.lat, q.lng], { radius: 6, color: '#16a34a', weight: 2, fillOpacity: 0.6 }).addTo(LPOI.layer).bindTooltip(`${LPOI.cats[q.cat] || q.cat}: ${q.name || ''}`)); }
+function lpoiList() {
+  const el = $('#lpoi-list'); if (!el) return;
+  el.innerHTML = LPOI.items.length ? `<table><tbody>${LPOI.items.map((q, i) => `<tr><td>${esc(LPOI.cats[q.cat] || q.cat)}</td><td>${esc(q.name || '—')}</td><td style="font-size:11.5px;color:var(--muted)">${q.lat.toFixed(5)}, ${q.lng.toFixed(5)}</td><td><button type="button" class="small" onclick="lpoiDel(${i})">✕</button></td></tr>`).join('')}</tbody></table>` : '<div style="font-size:12.5px;color:var(--muted)">Одоогоор нэмсэн газар алга</div>';
+}
+window.lpoiAdd = () => {
+  if (!LPOI.pick) return alert('Эхлээд газрын зураг дээр байршлыг дарж заана уу');
+  LPOI.items.push({ cat: $('#lpoi-cat').value, name: $('#lpoi-name').value.trim(), lat: +LPOI.pick.lat.toFixed(6), lng: +LPOI.pick.lng.toFixed(6) });
+  LPOI.pick = null; if (LPOI.tmp) { LPOI.tmp.remove(); LPOI.tmp = null; } $('#lpoi-name').value = ''; $('#lpoi-hint').textContent = 'Нэмэгдлээ — дараагийн газрыг дарж заана уу'; lpoiList(); lpoiDraw();
+};
+window.lpoiDel = (i) => { LPOI.items.splice(i, 1); lpoiList(); lpoiDraw(); };
+window.lpoiSave = async (regen) => {
+  const d = await api('/tour/' + LPOI.pid + '/local-pois', { method: 'PUT', body: { items: LPOI.items } });
+  if (d.error) return alert(d.error);
+  toast(`Ойрын газар хадгалагдлаа (${d.items.length})`); closeModal(); if (regen) tourExterior(LPOI.pid);
+};
 // Гадаах орчны 3D нислэг: серверт арын горимд үүсгэнэ (1–3 мин) → төлөвийг асууж, бэлэн болмогц урьдчилан харахыг шинэчилнэ
 let TOUR_EXT_T = null;
 window.tourExtStatus = async (pid, watching) => {

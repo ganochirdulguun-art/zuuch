@@ -528,7 +528,9 @@ app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
       // Хотын хавтан сангийн хүрээнд: Overpass-гүй, Overture контур + GHSL өндөр + нэгтгэсэн орчны цэг (өндөр чанар, хурдан); гадуур — шууд OSM
       const geo = geostore.covers(prop.lat, prop.lng) ? geostore.options(prop.lat, prop.lng) : null;
       if (geo) job.msg = 'Хотын хавтан сангаас бэлтгэж байна…';
-      const data = await exterior.generate(prop.lat, prop.lng, { ...(geo || {}), log: (m) => { job.msg = m; } });
+      const lr = await db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+      const local = ((lr && lr.local_pois) || []).map((q) => ({ ...q, src: 'agent', verified: true }));
+      const data = await exterior.generate(prop.lat, prop.lng, { ...(geo || {}), extraPois: [...local, ...((geo && geo.extraPois) || [])], log: (m) => { job.msg = m; } });
       data.data_source = geo ? { kind: 'geostore', ...(geostore.info() || {}) } : { kind: 'overpass' };
       let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
       if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
@@ -537,6 +539,24 @@ app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
     } catch (e) { Object.assign(job, { status: 'error', msg: String(e.message || e).slice(0, 200) }); }
   })();
   res.status(202).json(job);
+}));
+// Ойрын газар (агент/оршин суугчийн баталсан): нээлттэй газрын зурагт байхгүй дэлгүүр, эмийн сан, тоглоомын талбай г.м. — дараагийн «бэлтгэх»-д нэгтгэгдэнэ
+app.get('/api/tour/:pid/local-pois', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const t = await db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  res.json({ items: (t && t.local_pois) || [], cats: Object.fromEntries(Object.entries(exterior.CAT).map(([k, v]) => [k, v.mn])), center: { lat: prop.lat, lng: prop.lng } });
+}));
+app.put('/api/tour/:pid/local-pois', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return res.status(400).json({ error: 'Объектын байршлыг эхлээд заана уу' });
+  const kx = Math.cos((prop.lat * Math.PI) / 180) * 111320;
+  const items = (Array.isArray(req.body && req.body.items) ? req.body.items : []).slice(0, 60).map((q) => ({ cat: String(q.cat || ''), name: String(q.name || '').trim().slice(0, 60), lat: Number(q.lat), lng: Number(q.lng) }))
+    .filter((q) => exterior.CAT[q.cat] && Number.isFinite(q.lat) && Number.isFinite(q.lng) && Math.hypot((q.lng - prop.lng) * kx, (q.lat - prop.lat) * 110540) <= 2500)
+    .map((q) => ({ ...q, lat: +q.lat.toFixed(6), lng: +q.lng.toFixed(6) }));
+  let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+  await db.run('UPDATE tours SET local_pois=?, updated_at=NOW() WHERE company_id=? AND property_id=?', JSON.stringify(items), req.user.company_id, prop.id);
+  res.json({ ok: true, items });
 }));
 // Хотын хавтан сан Ш2: аль ч цэгийн алхалтын хүртээмж (ангилал бүрийн хамгийн ойр байгууллага, зай, минут, алхалтын оноо)
 app.get('/api/geo/access', auth, wrap(async (req, res) => {

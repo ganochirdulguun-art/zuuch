@@ -344,6 +344,8 @@ function clusterPois(list) {
 }
 // Ангилал бүр: reach = алхах сүлжээгээр хүрэх зай (м) — дотор нь БҮГДИЙГ; cap = маршруттай хадгалах тоо (хамгийн ойр, үлдсэн нь poisMore-д маршрутгүй);
 // fly = нисэх тоо (хамгийн ойр). Дараалал = нислэгийн дараалал.
+// Нислэгийн дээд зай (алхах маршрутаар, м): үүнээс хол бол тухайн ангилалд нислэг хийхгүй (жагсаалтад хэвээр) — «хажууд байхад хол руу хөтөлдөг» алдаанаас
+const FLY_MAX = { grocery: 450, pharmacy: 450, health: 450, parking: 350, playground: 450, park: 500, sport: 450, bus: 600, kinder: 800, school: 800, mall: 800 };
 const CAT = {
   grocery: { mn: 'Хүнсний дэлгүүр', reach: 1500, cap: 12, fly: 1 }, pharmacy: { mn: 'Эмийн сан', reach: 1500, cap: 12, fly: 1 },
   parking: { mn: 'Авто зогсоол', reach: 600, cap: 4, fly: 1 },
@@ -724,6 +726,9 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     if (sg) { walkG.set('E', { x: entrance[0], z: entrance[1], adj: [] }); walkG.set('EF', { x: sg.fx, z: sg.fz, adj: [] }); const link = (a, b, len, wr) => { walkG.get(a).adj.push([b, len * wr, len]); walkG.get(b).adj.push([a, len * wr, len]); }; link('E', 'EF', sg.d, 1); link('EF', sg.uid, sg.t * sg.len, sg.wr); link('EF', sg.vid, (1 - sg.t) * sg.len, sg.wr); start = { id: 'E', d: 0 }; }
   }
   const walk = start ? dijkstra(walkG, start.id) : null; const usedPaths = [];
+  // Гол зам (trunk/primary/secondary) — хашааны шууд алхалт эдгээрийг хөндлөн гарахгүй
+  const majorSegs = []; for (const r of roads) if (r.k === 'major') for (let i = 2; i < r.p.length; i += 2) majorSegs.push([r.p[i - 2], r.p[i - 1], r.p[i], r.p[i + 1]]);
+  const segX = (ax, az, bx, bz, s) => { const [cx, cz, dx, dz] = s; const d1 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx), d2 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx), d3 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax), d4 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax); return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0); };
   const route = (x, z) => {
     if (!walk) return null; let pth, lenM; let sg = null, best = Infinity, via = null;
     for (const c of nearSegs(x, z, 220, true)) { // нийт зай хамгийн бага холбох хэрчим
@@ -733,6 +738,10 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     if (sg && best < Infinity) { lenM = best; pth = [...pathTo(walkG, walk.prev, via), [sg.fx, sg.fz], [x, z]]; }
     else { const nn = nearestNode(walkG, x, z, 220); if (!nn || !walk.len.has(nn.id)) return null; pth = [...pathTo(walkG, walk.prev, nn.id), [x, z]]; lenM = walk.len.get(nn.id) + nn.d; }
     if (start && start.id !== 'E') { pth.unshift(entrance); lenM += start.d || 0; }
+    if (entrance) {
+      const dd = Math.hypot(x - entrance[0], z - entrance[1]);
+      if (dd <= 260 && dd * 1.15 < lenM && !BI.blocked(x, z, entrance[0], entrance[1], true) && !majorSegs.some((s) => segX(x, z, entrance[0], entrance[1], s))) { pth = [[entrance[0], entrance[1]], [x, z]]; lenM = dd * 1.15; }
+    }
     // очих цэг барилга дотор бол (дэлгүүр, эмнэлэг…) шугам барилгын ханан дээр (хаалган дээр) зогсоно — ойр бүс: buildings, алс: farPolys
     const bi = BI.at(x, z); let P2 = bi >= 0 ? buildings[bi]._poly : null; if (!P2 && BF) { const fi = BF.at(x, z); if (fi >= 0) P2 = farPolys[fi].p; }
     if (P2 && pth.length >= 2) { const a0 = pth[pth.length - 2]; let bt = 1; for (let i = 0, j = P2.length - 1; i < P2.length; j = i++) { const rx = x - a0[0], rz = z - a0[1], sx = P2[i][0] - P2[j][0], sz = P2[i][1] - P2[j][1]; const den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((P2[j][0] - a0[0]) * sz - (P2[j][1] - a0[1]) * sx) / den, q = ((P2[j][0] - a0[0]) * rz - (P2[j][1] - a0[1]) * rx) / den; if (t >= 0 && t <= 1 && q >= 0 && q <= 1) bt = Math.min(bt, t); } if (bt < 1) { const ex = a0[0] + (x - a0[0]) * bt, ez = a0[1] + (z - a0[1]) * bt; lenM -= Math.hypot(x - ex, z - ez); pth[pth.length - 1] = [ex, ez]; } }
@@ -746,7 +755,9 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     for (const c of cands) { if (c.cat !== cat || c.d0 > meta.reach) continue; const r = route(c.x, c.z); nRouted++; if (r && r.m <= meta.reach) got.push({ c, r }); }
     got.sort((a, b) => a.r.m - b.r.m || a.c.d0 - b.c.d0);
     // нислэг: хамгийн ойр «баталгаатай» (OSM-д бий / олон эх сурвалж / Overture итгэл ≥ 0.6) fly ширхэг; ганц сул Places цэг рүү нисэхгүй
-    let flyI = got.map((o, i) => (o.c.ver ? i : -1)).filter((i) => i >= 0).slice(0, meta.fly); if (!flyI.length) flyI = got.slice(0, meta.fly).map((_, i) => i);
+    const flyOk = (i) => got[i].r.m <= (FLY_MAX[cat] || 500) || got[i].c.src === 'agent'; // агент/оршин суугчийн баталсан цэг — үргэлж
+    // баталгаатай цэг давуу, гэхдээ сул цэг 1.6 дахин ойр бол түүнийг (142 м-ийн дэлгүүрийг орхиж 445 м-ийнх рүү нисэхгүй)
+    const flyI = got.map((o, i) => i).filter(flyOk).sort((i, j) => got[i].r.m * (got[i].c.ver ? 1 : 1.6) - got[j].r.m * (got[j].c.ver ? 1 : 1.6)).slice(0, meta.fly);
     got.forEach(({ c, r }, i) => {
       const o = { cat, mn: meta.mn, name: c.name || meta.mn, x: r1(c.x), z: r1(c.z), m: r.m, walkMin: r.walkMin };
       if (i < meta.cap) { o.route = r.p; usedPaths.push(r.pth); }

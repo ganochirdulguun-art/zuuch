@@ -15,6 +15,7 @@ const CAT = {
   bank: { c: '#0891b2', ic: 'building-2', mn: 'Банк' }, post: { c: '#64748b', ic: 'archive', mn: 'Шуудан' }, gov: { c: '#475569', ic: 'shield-check', mn: 'Төрийн үйлчилгээ' },
 };
 const FLY_ORDER = ['grocery', 'pharmacy', 'health', 'parking', 'playground', 'park', 'sport', 'kinder', 'school', 'bus', 'mall'];
+const FLY_MAX = { grocery: 450, pharmacy: 450, health: 450, parking: 350, playground: 450, park: 500, sport: 450, bus: 600, kinder: 800, school: 800, mall: 800 }; // алхах, м — хол бол нисэхгүй (exterior.js-тэй ижил; хуучин өгөгдөлд ч үйлчилнэ)
 const LIST_ORDER = [...FLY_ORDER, 'college', 'bank', 'post', 'gov']; // жагсаалтад бүгд; нислэг зөвхөн fly тэмдэгтэй (эсвэл ангилал бүрийн хамгийн ойр)
 const ic = (n) => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -623,7 +624,8 @@ export function createExterior(ext, opts = {}) {
     };
     lines.push(L); return L;
   }
-  const hasFly = pois.some((p) => p.fly); const flySet = new Set(hasFly ? pois.filter((p) => p.fly) : FLY_ORDER.map((cat) => pois.find((p) => p.cat === cat)).filter(Boolean));
+  const hasFly = pois.some((p) => p.fly); const flyNear = (p) => p.src === 'agent' || !(p.m > (FLY_MAX[p.cat] || 500));
+  const flySet = new Set((hasFly ? pois.filter((p) => p.fly) : FLY_ORDER.map((cat) => pois.find((p) => p.cat === cat)).filter(Boolean)).filter(flyNear));
   for (const p of [...pois, ...(main ? [main] : [])]) { p.pts = pairs(p.route || []); p.flyOn = p === main || flySet.has(p); if (p.lbl) p.lbl.fly = p.flyOn; p.line = p.flyOn ? routeLine(p.pts, (CAT[p.cat] || CAT.home).c, false) : null; }
   for (const d of dests) if (d.route) { d.pts = pairs(d.route); d.line = routeLine(d.pts, (CAT[d.cat] || CAT.center).c, true); }
   // ---------- Өндрийн тор: камер барилгад халхлагдахгүй, дотор нь орохгүй ----------

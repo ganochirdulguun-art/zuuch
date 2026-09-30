@@ -398,6 +398,7 @@ CREATE TABLE IF NOT EXISTS tours (
   UNIQUE (company_id, property_id)
 );
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS exterior JSONB;
+ALTER TABLE tours ADD COLUMN IF NOT EXISTS local_pois JSONB;
 `;
 
 async function init() {
