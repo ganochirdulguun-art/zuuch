@@ -114,6 +114,7 @@ function finalize(plan) {
     for (const d of doors) if (d.manual && d.b !== 'out' && (d.a === id || d.b === id) && !out.some((o) => o.other === (d.a === id ? d.b : d.a))) out.push({ e: null, other: d.a === id ? d.b : d.a, manual: true });
     return out;
   };
+  const balcManual = new Set(); for (const k of manualPairs) for (const id of k.split('|')) if (byId[id] && byId[id].type === 'balcony') balcManual.add(id);
   // Коридор өрөөнүүдийг ТЭРГҮҮНД боловсруулна → өрөөнүүд коридороос орно (унтлагын хооронд хаалга үүсэхгүй)
   const visited = new Set(entry ? [entry] : []); const hallQ = [], otherQ = []; const order = entry ? [entry] : [];
   const enqueue = (id) => ((byId[id] && byId[id].type === 'hall') ? hallQ : otherQ).push(id); if (entry) enqueue(entry);
@@ -123,6 +124,7 @@ function finalize(plan) {
     for (const { e, other, manual } of nbrsOf(cur)) {
       if (visited.has(other)) continue;
       if (!manual && !isHall && byId[other].type === 'bath') continue;
+      if (!manual && byId[other].type === 'balcony' && balcManual.has(other)) continue; // гар хаалгатай тагт — зөвхөн тэр хаалгаар (унтлагын өрөөний тагт тал нь цонх байж болно)
       visited.add(other); queue.push(other); order.push(other);
       if (!manual && e) doors.push(mkDoor(e, cur, other));
     }

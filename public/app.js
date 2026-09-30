@@ -727,7 +727,7 @@ function renderTour() {
   }
   $('#main').innerHTML = `
   <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
-    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button></div></div>
+    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="tourPlanCode()" title="Планыг код (JSON) хэлбэрээр хуулах эсвэл бэлэн планыг буулгах"><svg class=ic><use href=#i-file-text></use></svg>План код</button><button onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button></div></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '<svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план')}${tab('measure', '<svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI + 360°')}${tab('build', '<svg class=ic><use href=#i-brick-wall></use></svg>Блок өрж бүтээх')}</div>
   ${body}
   ${shareBox}`;
@@ -967,6 +967,22 @@ window.tourPanoUpload = async (roomId, input) => {
 window.tourPanoDel = async (id) => {
   const d = await api('/tour/' + TOUR.pid + '/pano/' + id, { method: 'DELETE' }); if (d.error) return alert(d.error);
   TOUR.assets = d.assets; renderTour();
+};
+// План код: өрөөнүүдийг (метр, x баруун, y урагш) JSON-оор хуулах / буулгах — өөр объект, агент, AI-аас бэлтгэсэн планыг нэг дор оруулна
+const planCode = (pl) => JSON.stringify({ ceiling: pl.ceiling, entry: pl.entry, rooms: (pl.rooms || []).map((r) => { const o = { id: r.id, type: r.type, name: r.name, x: r.x, y: r.y, w: r.w, h: r.h }; for (const k of ['win', 'door', 'beams']) if (r[k] && r[k].length) o[k] = r[k]; for (const k of ['kitchen', 'wallColor', 'floor', 'ceiling']) if (r[k]) o[k] = r[k]; return o; }) }, null, 1);
+window.tourPlanCode = () => {
+  modal(`<h3><svg class=ic><use href=#i-file-text></use></svg>План код (JSON)</h3>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Өрөө бүр: <code>type</code> (living/kitchen/bedroom/bath/hall/balcony/office), <code>x, y, w, h</code> метрээр (x — баруун тийш, y — урагш). Цонх <code>win</code> / хаалга <code>door</code>: <code>side</code> (N/S/W/E), <code>off</code> (хананы зүүн/дээд захаас, м), <code>w</code>; орцны хаалга <code>"to":"out"</code>.</div>
+  <textarea id="plan-code" spellcheck="false" style="width:100%;height:320px;font:12px/1.4 ui-monospace,Consolas,monospace">${esc(planCode(TOUR.plan))}</textarea>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="navigator.clipboard.writeText($('#plan-code').value).then(()=>toast('План код хуулагдлаа'))"><svg class=ic><use href=#i-copy></use></svg>Хуулах</button><button type="button" class="primary" onclick="tourPlanApply()"><svg class=ic><use href=#i-upload></use></svg>Оруулах + 3D шинэчлэх</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
+};
+window.tourPlanApply = async () => {
+  let j; try { j = JSON.parse($('#plan-code').value); } catch (e) { return alert('JSON алдаатай: ' + e.message); }
+  const rooms = Array.isArray(j) ? j : j && Array.isArray(j.rooms) ? j.rooms : null;
+  if (!rooms || !rooms.length) return alert('«rooms» жагсаалт олдсонгүй');
+  TOUR.undo.push(JSON.stringify(TOUR.plan.rooms));
+  TOUR.plan = { ...TOUR.plan, rooms, ...(j.entry ? { entry: j.entry } : {}), ...(j.ceiling ? { ceiling: j.ceiling } : {}) };
+  closeModal(); await tourSave();
 };
 window.tourSave = async () => {
   const d = await api('/tour/' + TOUR.pid, { method: 'PUT', body: { plan: TOUR.plan } });
