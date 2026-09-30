@@ -124,7 +124,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="accessView(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})" title="Орчны алхалтын профайл (хотын өгөгдлийн сан)"><svg class="ic solo"><use href=#i-footprints></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -231,6 +231,22 @@ window.commuteView = async function (pid, force = false) {
   ${prof.rows.map((r) => `<tr><td><b>${esc(r.name)}</b>${r.w > 1 ? ' <span style="color:var(--muted);font-size:11px">×' + r.w + '</span>' : ''}</td><td class="num">${r.free ? r.free.km : '—'}</td>${prof.slots.map((s) => `<td class="num">${badge(r[s.id] && r[s.id].min, r.free && r.free.min)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
   <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Эх: ${esc(prof.provider)} · тооцсон ${String(prof.computed_at).slice(0, 16).replace('T', ' ')}${prof.cached ? ' (кэш)' : ''} · ×N = жин (хотын төв 3, яамд/4 зам/гүүр 2). Улаан = оргил цагт чөлөөтөөс 1.6 дахин удаан.</div>
   <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="commuteView(${pid},true)">↻ Дахин тооцох</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
+};
+
+// Орчны алхалтын профайл — хотын өгөгдлийн сан (50 м нүд): ангилал бүрийн хамгийн ойр байгууллага хүртэлх явган замын зай
+window.accessView = async function (pid, lat, lng) {
+  if (lat == null || lng == null) { alert('Эхлээд объектыг «Засах» дараад газрын зураг дээр байршлыг нь заана уу'); return; }
+  const d = await api(`/geo/access?lat=${lat}&lng=${lng}`);
+  if (!d.ok) return alert(d.error || 'Алдаа');
+  const ORDER = ['kinder', 'school', 'health', 'pharmacy', 'grocery', 'bus', 'playground', 'park', 'sport', 'mall', 'bank', 'post', 'gov', 'college'];
+  const badge = (v) => !v ? '<span class="badge mut">3 км+ </span>' : `<span class="badge ${v.m <= 500 ? 'ok' : v.m <= 1000 ? '' : 'warn'}">${v.m} м · ${v.min} мин</span>`;
+  modal(`<h3><svg class=ic><use href=#i-footprints></use></svg>Орчны алхалтын профайл</h3>
+  <div class="tiles" style="margin-bottom:12px"><div class="tile"><div class="v">${d.score}<small style="font-size:12px">/100</small></div><div class="k">Алхалтын оноо (өдөр тутмын 8 хэрэгцээ)</div></div></div>
+  <div class="tablebox"><table><thead><tr><th>Ангилал</th><th>Хамгийн ойр</th><th class="num">Явган замаар</th></tr></thead><tbody>
+  ${ORDER.filter((k) => k in d.cats).map((k) => { const v = d.cats[k]; return `<tr><td>${esc(d.labels[k] || k)}</td><td>${v ? esc(v.name || '(нэргүй)') : '—'}</td><td class="num">${badge(v)}</td></tr>`; }).join('')}
+  </tbody></table></div>
+  <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Хотын өгөгдлийн сан (${esc(String(d.built_at || '').slice(0, 10))}): OpenStreetMap + Overture Maps нэгтгэсэн байгууллага, явган замын сүлжээгээр · ${d.cell} м нүдний нарийвчлал · алхах хурд ≈ 4.5 км/ц</div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" onclick="closeModal()">Хаах</button></div>`);
 };
 
 // ---------- Харилцагч ----------
@@ -421,7 +437,7 @@ async function mylist() {
     <thead><tr><th>Объект</th><th class="num">Өрөө · м²</th><th class="num">Үнэ</th><th>Төлөв</th><th>Хэрэгслүүд</th></tr></thead>
     <tbody>${list.map((p) => `<tr><td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')}<br><span style="font-size:12px;color:var(--muted)">${p.deal_type === 'rent' ? 'түрээс' : 'зарна'} · ${p.floor ? p.floor + '/' + (p.total_floors || '—') + ' давхар · ' : ''}${p.is_new ? 'шинэ' : 'хуучин'}${p.notes ? ' · ' + esc(p.notes) : ''}</span></td>
       <td class="num">${p.rooms}ө · ${p.area}</td><td class="num">${fmt(p.price)} сая</td><td>${badge(p.status)}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="findBuyersFor(${p.id})"><svg class=ic><use href=#i-user-search></use></svg>Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="accessView(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})" title="Орчны алхалтын профайл (хотын өгөгдлийн сан)"><svg class="ic solo"><use href=#i-footprints></use></svg></button> <button class="small" onclick="findBuyersFor(${p.id})"><svg class=ic><use href=#i-user-search></use></svg>Худалдан авагч</button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted)">Объект алга</td></tr>'}</tbody>
   </table></div>`;
 }
 async function studio() {
@@ -734,6 +750,7 @@ window.tourExtStatus = async (pid, watching) => {
   if (j && j.status === 'error') el.innerHTML = `<span class="badge warn">Алдаа</span> ${esc(j.msg)}`;
   else if (s.has) el.innerHTML = `<span class="badge ok"><svg class=ic><use href=#i-check></use></svg>Бэлэн</span> ${s.pois} байгууллага${s.generated_at ? ' · ' + new Date(s.generated_at).toLocaleString('mn-MN') : ''}`;
   else el.innerHTML = '<span style="color:var(--muted)">Гадаах орчин одоогоор бэлтгээгүй — аялал зөвхөн байрны дотор хэсгээр явна</span>';
+  if (s.geostore && !(j && j.status === 'running')) el.innerHTML += ' <span class="badge" title="Overture барилгын контур + GHSL өндөр + OSM/Overture нэгтгэсэн орчны цэг — урьдчилан бэлтгэсэн">Хотын өгөгдлийн сан · өндөр нарийвчлал</span>';
   if (watching && j && j.status === 'done') { const f = $('#tour-frame'); if (f) f.src = f.src.replace(/v=\d+/, 'v=' + Date.now()); toast('Гадаах орчны 3D нислэг бэлэн боллоо'); }
 };
 window.tourExterior = async (pid) => {

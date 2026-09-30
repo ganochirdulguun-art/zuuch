@@ -423,7 +423,7 @@ function pathTo(nodes, prev, dst) { const out = []; for (let c = dst; c != null;
 // тиймээс server.js (heightAt/cellAt-гүй) болон демо ижил дүрмээр давхар гаргана. overrides = оршин суугчийн засвар [{lat,lng}|{x,z}, lv, k?, rp?, note?]
 // extraPois = бусад эх сурвалжаас нэгтгэсэн цэгүүд [{name, cat, lat, lng, src, ids?, sub?}] (жишээ: OSM + Overture Places/Buildings) — өөрийн OSM цэгтэй давхардлыг арилгаж нийлүүлнэ.
 // footprints = GeoJSON барилгын контур (R-ээс гадуурх цэгийн маршрутыг барилгын ханан дээр зогсоох, холбох шугамыг барилга огтлуулахгүй) — заавал биш.
-async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null, extraPois = null, footprints = null } = {}) {
+async function generate(lat, lng, { commuteHours = true, log = () => {}, buildings: extBuildings = null, heightAt = null, cellAt = null, homeLevels = null, overrides = null, ghslRules = false, debug = null, extraPois = null, footprints = null, osm = null } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const P = projector(lat, lng);
   // 1) Орчны цэгүүд + гол зам (2 км): amenity/healthcare/office/shop/leisure таг + барилгын таг (school/kindergarten/…) + нэртэй барилга
@@ -440,7 +440,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     wr["building"~"^(school|kindergarten|university|college|hospital|clinic)$"]${AR};
     wr["building"]["name"~"${NAME_RE}"]${AR};
   );out center tags;`;
-  const poiRaw = (await overpass(qPoi)).elements || [];
+  const poiRaw = osm ? osm.poi(POI_REACH, 1600) : (await overpass(qPoi)).elements || []; // osm = хотын хавтан сан (geostore.js)
   let cands = []; const seenOsm = new Set();
   for (const e of poiRaw) {
     const c = e.center || e; if (c.lat == null) continue; const t = e.tags || {}; const nm = poiName(t); const cat = poiRefine(poiCat(t), nm, t); if (!cat || !CAT[cat]) continue;
@@ -469,17 +469,17 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     node["natural"="tree"](around:${R},${lat},${lng});
     node["entrance"](around:200,${lat},${lng});
   );out body geom;`;
-  const near = (await overpass(qNear)).elements || [];
+  const near = osm ? osm.near(R) : (await overpass(qNear)).elements || [];
   // 3) Алс бүс: гэр → Баруун 4 зам → хотын төв (томоохон барилга + гол зам)
   const pts = [[lat, lng], [WEST4.lat, WEST4.lng], [CENTER.lat, CENTER.lng]];
-  const s = 0.0065, bb = [Math.min(...pts.map((p) => p[0])) - s, Math.min(...pts.map((p) => p[1])) - s * 1.5, Math.max(...pts.map((p) => p[0])) + s, Math.max(...pts.map((p) => p[1])) + s * 1.5].map((v) => v.toFixed(5)).join(',');
+  const s = 0.0065, bbN = [Math.min(...pts.map((p) => p[0])) - s, Math.min(...pts.map((p) => p[1])) - s * 1.5, Math.max(...pts.map((p) => p[0])) + s, Math.max(...pts.map((p) => p[1])) + s * 1.5], bb = bbN.map((v) => v.toFixed(5)).join(',');
   log('OSM: алс бүс (хотын төв хүртэл)…');
   const qFar = `[out:json][timeout:170];(way["building"](${bb});way["highway"~"^(trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$"](${bb}););out body geom;`;
-  const farRaw = (await overpass(qFar)).elements || [];
+  const farRaw = osm ? osm.far(...bbN) : (await overpass(qFar)).elements || [];
   // 3б) Алхах сүлжээ: хамгийн холын хүрэх зай (POI_REACH) хүртэлх БҮХ зам/явган зам — зөвхөн маршрутад (зурахгүй).
   // POI_REACH-ээс урт маршрутын бүх цэг гэрээс POI_REACH дотор байна → +100 м хангалттай.
   log(`OSM: алхах сүлжээ (${POI_REACH + 100} м)…`);
-  const walkRaw = (await overpass(`[out:json][timeout:170];way["highway"](around:${POI_REACH + 100},${lat},${lng});out body geom;`)).elements || [];
+  const walkRaw = osm ? osm.walk(POI_REACH + 100) : (await overpass(`[out:json][timeout:170];way["highway"](around:${POI_REACH + 100},${lat},${lng});out body geom;`)).elements || [];
 
   // ---- Барилгууд ----
   // pool: бүх барилга (zn 0 = ойр, 1 = алс, 2 = R-ээс гадуурх Overture — зөвхөн нүдний барилгын талбайд, 3 = давхардал) → өндөр → гаралт
@@ -808,4 +808,4 @@ async function computeStudy(ext, { log = () => {} } = {}) {
   return { provider: commute.provider() === 'tomtom' ? 'TomTom Routing (түүхэн түгжрэл)' : 'Google Routes API (TRAFFIC_AWARE_OPTIMAL)', day: 'Ажлын өдөр (Мягмар)', rows, computed_at: new Date().toISOString() };
 }
 
-module.exports = { generate, computeStudy, WEST4, CENTER, CAT, poiCat, poiRefine, poiSub, poiName, normName, nameSim, samePoi, clusterPois, genericName };
+module.exports = { generate, computeStudy, WEST4, CENTER, CAT, WALK_OK, poiCat, poiRefine, poiSub, poiName, normName, nameSim, samePoi, clusterPois, genericName };

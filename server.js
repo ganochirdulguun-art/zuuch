@@ -232,6 +232,7 @@ app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locati
 // ---- Д-5: Замын/түгжрэлийн профайл ----
 const commute = require('./commute');
 const exterior = require('./exterior');
+const geostore = require('./geostore'); // хотын 500×500 м хавтан сан (data/geo)
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -524,7 +525,11 @@ app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
   const job = { status: 'running', msg: 'Эхэлж байна…', started: new Date().toISOString() }; extJobs.set(key, job);
   (async () => {
     try {
-      const data = await exterior.generate(prop.lat, prop.lng, { log: (m) => { job.msg = m; } });
+      // Хотын хавтан сангийн хүрээнд: Overpass-гүй, Overture контур + GHSL өндөр + нэгтгэсэн орчны цэг (өндөр чанар, хурдан); гадуур — шууд OSM
+      const geo = geostore.covers(prop.lat, prop.lng) ? geostore.options(prop.lat, prop.lng) : null;
+      if (geo) job.msg = 'Хотын хавтан сангаас бэлтгэж байна…';
+      const data = await exterior.generate(prop.lat, prop.lng, { ...(geo || {}), log: (m) => { job.msg = m; } });
+      data.data_source = geo ? { kind: 'geostore', ...(geostore.info() || {}) } : { kind: 'overpass' };
       let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
       if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
       await db.run('UPDATE tours SET exterior=?, updated_at=NOW() WHERE company_id=? AND property_id=?', JSON.stringify(data), req.user.company_id, prop.id);
@@ -533,11 +538,19 @@ app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
   })();
   res.status(202).json(job);
 }));
+// Хотын хавтан сан Ш2: аль ч цэгийн алхалтын хүртээмж (ангилал бүрийн хамгийн ойр байгууллага, зай, минут, алхалтын оноо)
+app.get('/api/geo/access', auth, wrap(async (req, res) => {
+  const lat = Number(req.query.lat), lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'lat/lng шаардлагатай' });
+  const a = geostore.access(lat, lng);
+  res.json(a ? { ok: true, ...a, labels: Object.fromEntries(Object.keys(a.cats).map((k) => [k, (exterior.CAT[k] || {}).mn || k])) } : { ok: false, error: 'Энэ байршил хотын өгөгдлийн сангийн хүрээнээс гадуур' });
+}));
+app.get('/api/geo/info', auth, wrap(async (req, res) => res.json(geostore.info() || { error: 'хавтан сан алга' })));
 app.get('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   const job = extJobs.get(`${req.user.company_id}:${prop.id}`) || null;
   const t = await db.one("SELECT (exterior IS NOT NULL) AS has, exterior->>'generated_at' AS at, jsonb_array_length(COALESCE(exterior->'pois','[]'::jsonb)) AS pois FROM tours WHERE company_id=? AND property_id=?", req.user.company_id, prop.id);
-  res.json({ job, has: !!(t && t.has), generated_at: t && t.at, pois: t ? t.pois : 0 });
+  res.json({ job, has: !!(t && t.has), generated_at: t && t.at, pois: t ? t.pois : 0, geostore: Number.isFinite(prop.lat) && geostore.covers(prop.lat, prop.lng) });
 }));
 // AI зургийн шинжилгээ → бодит орон зайн параметр (таазны өндөр, хаалга/цонх/довжоо, дам нуруу, шал, ханын өнгө) → plan.style
 app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
