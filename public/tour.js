@@ -1205,6 +1205,7 @@ function togglePano() {
 function markModeButtons() {
   const auto = SCENE_MODE === 'exterior' ? !!(EXT && !EXT.free) : mode === 'auto';
   $('#bAuto').classList.toggle('on', auto); $('#bFree').classList.toggle('on', !auto);
+  document.body.classList.toggle('touring', auto && SCENE_MODE === 'exterior');
   $('#bOut').classList.toggle('on', SCENE_MODE === 'exterior'); $('#bIn').classList.toggle('on', SCENE_MODE === 'interior');
 }
 function showInteriorHud(on) { for (const q of ['.room', '.help']) { const el = $(q); if (el) el.style.display = on ? '' : 'none'; } $('#bFurn').style.display = on ? '' : 'none'; }
@@ -1341,7 +1342,7 @@ async function main() {
   if (sr) { enterRoom(sr); if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
   if (q.get('debug') === 'top') { window.zuuch.topView = async (id) => { await ensureFurn(); return topView(id); }; window.zuuch.layout = async () => { await ensureFurn(); return Object.fromEntries(Object.entries(roomLay).map(([k, c]) => [k, [...c.log, { ms: c.ms, mx: c.mx }]])); }; window.zuuch.dbg = { roomLay, wallDeco, proto, P }; }
   bindControls();
-  const resize = () => { renderer.setSize(innerWidth, innerHeight, false); const asp = innerWidth / innerHeight; camera.aspect = asp; stepFov(0, true); camera.updateProjectionMatrix(); sizePost(); if (EXT) { EXT.camera.aspect = innerWidth / innerHeight; EXT.camera.updateProjectionMatrix(); } }; addEventListener('resize', resize); resize();
+  const resize = () => { renderer.setSize(innerWidth, innerHeight, false); const asp = innerWidth / innerHeight; camera.aspect = asp; stepFov(0, true); camera.updateProjectionMatrix(); sizePost(); if (EXT) { EXT.camera.aspect = asp; EXT.camera.fov = Math.min(78, Math.max(55, (2 * Math.atan(Math.tan((22 * Math.PI) / 180) / asp) * 180) / Math.PI)); EXT.camera.updateProjectionMatrix(); /* босоо утсанд хэвтээ өнцөг ≥44° байхаар босоо FOV-ийг өргөсгөнө (хэвтээ дэлгэцэд 55° хэвээр) */ } }; addEventListener('resize', resize); resize();
   // Тавилга асаалттай (?furn=1) бол загвар ачаалж байрлуулахыг (≤8с) хүлээнэ; унтраалттай бол огт хүлээхгүй
   const t0 = Date.now(); while (((furn0 && !furnReady) || texDone < texPending) && Date.now() - t0 < 8000) { $('#load').lastElementChild.textContent = furn0 && !furnReady ? (loadedN < pending ? `Тавилга ачаалж байна… ${loadedN}/${pending}` : 'Тавилга байрлуулж байна…') : 'Текстур ачаалж байна…'; await new Promise((r) => setTimeout(r, 120)); }
   // Шэйдерүүдийг урьдчилан компиляц — тавилга гарч ирэх/өрөө солигдох мөчид гацахгүй (бенчмарк: эхний frame 62 мс, дараа нь 2 мс)

@@ -71,7 +71,23 @@
   #extList li span b { display:block; font-weight:600; line-height:1.2; } #extList li span i { display:block; font-style:normal; opacity:.7; font-size:11px; }
   #extList li em { font-style:normal; font-weight:700; text-align:right; white-space:nowrap; } #extList li em small { display:block; font-weight:500; opacity:.75; }
   .xp-src { font-size:10.5px; opacity:.65; margin:8px 4px 2px; line-height:1.4; }
-  @media (max-width:760px) { #extPanel { display:none; } #extCaption { bottom:150px; min-width:0; } }
+  body.touring .pad { display:none; } /* гадаах автомат аялалд удирдлагын товч хэрэггүй — доод хэсгийг чөлөөлнө */
+  /* Утас: дээд цэс зөвхөн дүрс, минимап баруун дээд буланд, тайлбар доод ирмэгт нягт 2 мөр — үзэгдлийн төв чөлөөтэй */
+  @media (max-width:760px) {
+    #extPanel { display:none; }
+    .top { padding:8px 10px; gap:6px; }
+    .brand { font-size:0; } .brand img { width:28px; height:28px; margin:0 !important; }
+    .title { display:none; }
+    .top button { font-size:0; padding:8px 9px; } .top button .ic { width:18px; height:18px; margin:0; } .top button:disabled { display:none; }
+    #map { top:54px; right:10px; bottom:auto; width:112px; height:86px; }
+    #extCaption { left:10px; right:10px; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateY(12px); min-width:0; max-width:none; gap:10px; padding:8px 12px 9px; border-radius:12px; background:rgba(15,23,42,.72); }
+    #extCaption.show { transform:none; }
+    .xc-ic { width:32px; height:32px; border-radius:9px; } .xc-ic .ic { width:18px; height:18px; }
+    .xc-b { min-width:0; }
+    .xc-t, .xc-s { display:inline; } .xc-t { font-size:14px; } .xc-s { font-size:13px; margin:0; } .xc-s::before { content:' · '; opacity:.6; }
+    .xc-d { font-size:11.5px; margin-top:2px; line-height:1.35; }
+    .xc-chart { margin-top:5px; width:100%; max-height:48px; }
+  }
 </style>
 </head>
 <body>
