@@ -296,7 +296,11 @@ async function seedSources() {
   await db.run(S, 'fb_group', 'FB «УБ орон сууц» групп', 'fb', 0, 0.50, 1, 0, 'ГАР оруулалт — ToS-оор автомат ухахгүй');
 }
 async function ensureTiers() {
-  const tiers = { remax: 'green', orgil: 'green', unegui: 'yellow', barilga: 'yellow', fb_group: 'red' };
+  // Шинэ бодит адаптертай эхүүд (хуучин санд байхгүй бол нэмнэ)
+  const S = 'INSERT INTO sources (name,label,kind,auto,trust,max_concurrency,interval_sec,note) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (name) DO NOTHING';
+  await db.run(S, 'omch', 'omch.mn', 'listing_site', 1, 0.82, 1, 1800, 'Sitemap + schema.org JSON-LD · үнэ, талбай, дүүрэг/хороо бүтэцтэй');
+  await db.run(S, 'myzar', 'my-zar.mn (OSMO)', 'listing_site', 1, 0.60, 1, 900, '16k+ зар · байршлыг гарчиг/тайлбараас таамаглана');
+  const tiers = { remax: 'green', orgil: 'green', unegui: 'yellow', barilga: 'yellow', omch: 'yellow', myzar: 'yellow', fb_group: 'red' };
   for (const [name, t] of Object.entries(tiers)) await db.run('UPDATE sources SET tier=? WHERE name=?', t, name);
   await db.run("UPDATE sources SET max_concurrency=6 WHERE name='unegui' AND max_concurrency<6"); // ангилал бүр тусдаа бот — 6 зэрэг
 }

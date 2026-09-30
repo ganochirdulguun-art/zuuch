@@ -5,6 +5,14 @@
 const crypto = require('node:crypto');
 const { db, ready } = require('./db');
 const unegui = require('./adapters/unegui');
+const omch = require('./adapters/omch');
+const myzar = require('./adapters/myzar');
+// unegui-ээс гадна бодит адаптертай эх сурвалжууд: мөчлөгийн давтамж (сек) + нэг мөчлөгт татах дэлгэрэнгүйн дээд хэмжээ
+const EXTRA = {
+  omch: { adapter: omch, intervalSec: Number(process.env.ZUUCH_OMCH_INTERVAL || 1800), detailPerCycle: 60 },
+  myzar: { adapter: myzar, intervalSec: Number(process.env.ZUUCH_MYZAR_INTERVAL || 900) },
+};
+const LIVE_SOURCES = ['unegui', ...Object.keys(EXTRA)];
 
 const LIVE = process.env.ZUUCH_COLLECTOR_LIVE === '1';
 const LIVE_INTERVAL_SEC = Math.max(120, Number(process.env.ZUUCH_UNEGUI_INTERVAL || 600));
@@ -31,7 +39,7 @@ const hashPhone = (p) => (p ? crypto.createHash('sha256').update(SALT + '|' + p)
 const contactOf = (l) => (l.phone ? hashPhone(l.phone) : l.contactKey ? hashPhone(l.contactKey) : null);
 const tdKey = (l) => (l.contactHash || contactOf(l)) + '|' + l.district;
 
-const freshLive = () => ({ lastCycleAt: null, cycles: 0, updated: 0, priceChanges: 0, detailFetched: 0, delisted: 0, errors: 0, known: new Map(), pageHash: {} });
+const freshLive = () => ({ lastCycleAt: null, cycles: 0, updated: 0, priceChanges: 0, detailFetched: 0, delisted: 0, errors: 0, known: new Map(), pageHash: {}, memo: {}, bySource: {} });
 const state = {
   running: false,
   workers: Array.from({ length: WORKER_COUNT }, (_, i) => ({ id: i + 1, status: 'сул', source: '', since: Date.now() })),
@@ -221,17 +229,22 @@ async function orchestrate() {
     if (c >= COLLECT_CAP) { state.note = 'Демо хязгаар (' + COLLECT_CAP + ' цуглуулсан) — Reset дарж дахин эхлүүлнэ үү'; return; }
     await retentionTick();
     const q = await db.one("SELECT COUNT(*)::int c FROM fetch_jobs WHERE status='queued'");
-    if (q.c > 30) return;
-    // Бодит горимд зөвхөн адаптертай эх (unegui) ажиллана; симуляц эхүүд зогсоно
+    if (!LIVE && q.c > 30) return;
+    // Бодит горимд зөвхөн адаптертай эхүүд (unegui, omch, my-zar) ажиллана; симуляц эхүүд зогсоно
     const sources = LIVE
-      ? await db.all("SELECT * FROM sources WHERE name='unegui' AND status='active'")
+      ? await db.all(`SELECT * FROM sources WHERE name IN (${LIVE_SOURCES.map(() => '?').join(',')}) AND status='active'`, ...LIVE_SOURCES)
       : await db.all("SELECT * FROM sources WHERE auto=1 AND status='active' AND tier <> 'red'");
     for (const s of sources) {
-      const intervalSec = LIVE ? LIVE_INTERVAL_SEC : s.interval_sec;
+      const intervalSec = LIVE ? (EXTRA[s.name] ? EXTRA[s.name].intervalSec : LIVE_INTERVAL_SEC) : s.interval_sec;
       const due = !lastRun[s.name] || Date.now() - lastRun[s.name] >= intervalSec * 1000;
       if (!due) continue;
-      if (LIVE && q.c > 0) continue; // өмнөх мөчлөгийн ажлууд дуусаагүй
+      if (LIVE) { // тухайн эхийн өмнөх мөчлөгийн ажлууд дуусаагүй бол хүлээнэ (эхүүд бие биеэ хүлээхгүй)
+        const pend = await db.one("SELECT COUNT(*)::int c FROM fetch_jobs WHERE source_name=? AND status IN ('queued','running')", s.name);
+        if (pend.c > 0) continue;
+      }
       lastRun[s.name] = Date.now();
+      if (LIVE && s.name === 'omch') { await db.run("INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, 'sitemap', 6)", s.name); continue; }
+      if (LIVE && s.name === 'myzar') { for (const key of Object.keys(myzar.CATS)) await db.run('INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, ?, ?)', s.name, key, key.startsWith('apt') ? 6 : 4); continue; }
       if (LIVE && s.name === 'unegui') {
         // Ангилал бүр = тусдаа ажил → олон бот зэрэг (адаптерийн 4 сек зай нийтлэг тул сайтад ачаалал нэмэгдэхгүй)
         for (const key of Object.keys(unegui.CATS)) await db.run('INSERT INTO fetch_jobs (source_name,kind,priority) VALUES (?, ?, ?)', s.name, key, key === 'sale' || key === 'rent' ? 9 : 5);
@@ -295,6 +308,68 @@ async function liveCycle(source, w, catKey) {
   live.byCat = live.byCat || {}; live.byCat[catKey] = { label: cat.label, adverts: r.adverts.length, pages: r.pages.length, at: Date.now() };
   if (catKey === 'sale') { live.cycles++; live.lastCycleAt = Date.now(); }
 }
+// Өмнө нь боловсруулсан, үнэ нь өөрчлөгдөөгүй зарыг дахин тоолохгүй (татгалзсан зар мөчлөг бүр «татгалзсан» статистикийг хөөргөхгүй)
+function memoSkip(srcName, raw) {
+  const m = (state.live.memo[srcName] = state.live.memo[srcName] || new Map());
+  const key = raw.priceText + '|' + raw.districtText;
+  if (m.get(raw.source_id) === key) return true;
+  m.set(raw.source_id, key); return false;
+}
+function noteSource(name, info) { state.live.bySource[name] = { ...(state.live.bySource[name] || {}), ...info, at: Date.now() }; }
+const jsonIds = (ids) => JSON.stringify(ids.map(String));
+
+// ---- omch.mn: sitemap → шинэ/өөрчлөгдсөн зарын дэлгэрэнгүй (JSON-LD) → шүүлт → сан; sitemap-аас алга болсон = хасагдсан ----
+async function omchCycle(source, w) {
+  const live = state.live; const cfg = EXTRA.omch;
+  w.status = 'omch · sitemap'; w.source = 'omch.mn';
+  let entries;
+  try { entries = await omch.sitemap(); } catch (e) { live.errors++; logEvent({ kind: 'error', source: source.name, reason: 'sitemap: ' + e.message }); return; }
+  state.stats.fetched++;
+  const rows = await db.all("SELECT source_id, last_seen FROM market_listings WHERE source='omch'");
+  const have = new Map(rows.map((r) => [r.source_id, r.last_seen ? new Date(r.last_seen).getTime() : 0]));
+  const ids = entries.map((e) => e.id);
+  // Өөрчлөгдөөгүй, sitemap-д байгаа → амьд
+  if (ids.length) await db.run("UPDATE market_listings SET last_seen=NOW(), active=1, delisted_at=NULL WHERE source='omch' AND source_id IN (SELECT jsonb_array_elements_text(?::jsonb))", jsonIds(ids.filter((id) => have.has(id))));
+  // sitemap-аас алга болсон идэвхтэй зар = хасагдсан (зарагдсан/буцаасан) — sitemap хоосорсон мэт алдааг хамгаалж 20+ мөртэй үед л
+  if (ids.length >= 20) {
+    const r = await db.run("UPDATE market_listings SET active=0, delisted_at=NOW() WHERE source='omch' AND active=1 AND collected_at IS NOT NULL AND source_id NOT IN (SELECT jsonb_array_elements_text(?::jsonb))", jsonIds(ids));
+    if (r.changes) { live.delisted += r.changes; logEvent({ kind: 'delisted', source: source.name, count: r.changes, reason: 'omch sitemap-аас хасагдсан' }); }
+  }
+  // Шинэ эсвэл манай сүүлд харснаас хойш өөрчлөгдсөн (lastmod) зар л дэлгэрэнгүйг нь татна
+  const todo = entries.filter((e) => !have.has(e.id) || (e.lastmod && Date.parse(e.lastmod) > have.get(e.id) + 60000)).slice(0, cfg.detailPerCycle);
+  let done = 0;
+  for (const e of todo) {
+    w.status = `omch · ${++done}/${todo.length}`;
+    let d;
+    try { d = await omch.detail(e); live.detailFetched++; state.stats.fetched++; }
+    catch (err) { live.errors++; if (/хөргөлт/.test(err.message)) break; continue; }
+    if (d.gone || (d.raw && d.raw.active === false)) { await db.run("UPDATE market_listings SET active=0, delisted_at=NOW() WHERE source='omch' AND source_id=? AND active=1", e.id); continue; }
+    if (!d.raw) continue;
+    try { await process1(d.raw, source); } catch (err) { live.errors++; console.error('[collector omch process1]', err.message); }
+  }
+  noteSource('omch', { label: 'omch.mn', listed: entries.length, detailed: done, pending: Math.max(0, entries.filter((e) => !have.has(e.id)).length - done) });
+}
+
+// ---- my-zar.mn: ангиллын жагсаалт хуудсууд → (дүүрэггүй шинэ зарын дэлгэрэнгүй) → шүүлт → сан ----
+let myzarKnown = null;
+async function myzarCycle(source, w, catKey) {
+  const live = state.live; const cat = myzar.CATS[catKey]; if (!cat) return;
+  if (!myzarKnown) myzarKnown = new Set((await db.all("SELECT source_id FROM market_listings WHERE source='myzar'")).map((r) => r.source_id));
+  w.status = 'my-zar · ' + cat.label; w.source = cat.label;
+  let r;
+  try { r = await myzar.cycle(catKey, { isKnown: (id) => myzarKnown.has(id) }); }
+  catch (e) { live.errors++; logEvent({ kind: 'error', source: source.name, reason: cat.label + ': ' + e.message }); return; }
+  state.stats.fetched += r.pages.length + (r.details || 0); live.detailFetched += r.details || 0;
+  w.status = 'боловсруулж · ' + cat.label;
+  for (const raw of r.adverts) {
+    if (memoSkip('myzar', raw)) continue;
+    // «Мэдэгдэж буй» = дахин дэлгэрэнгүй татах шаардлагагүй (дүүрэгтэй, дэлгэрэнгүйг үзсэн, эсвэл үнэгүй)
+    try { await process1(raw, source); if (raw.districtText || raw._detailTried || !raw.priceText) myzarKnown.add(raw.source_id); } catch (e) { live.errors++; console.error('[collector myzar process1]', e.message); }
+  }
+  const bs = live.bySource.myzar || {}; const cats = { ...(bs.cats || {}), [catKey]: { label: cat.label, total: r.total, adverts: r.adverts.length, pages: r.pages.length } };
+  noteSource('myzar', { label: 'my-zar.mn', cats, listed: Object.values(cats).reduce((s, c) => s + (c.total || 0), 0) });
+}
+
 // Толгой хуудсанд удаан харагдаагүй зар сайтад хэвээр байна уу — 404 бол «хасагдсан» (зарагдсан/буцаасан): зах зээлд байсан хоног = баримт
 async function recheckDelisted(source, w) {
   const rows = await db.all(`SELECT id, source_url, title FROM market_listings WHERE source=? AND active=1 AND collected_at IS NOT NULL AND source_url IS NOT NULL
@@ -335,6 +410,8 @@ async function worker(w) {
       try {
         if (LIVE) {
           if (source.name === 'unegui') { if (job.kind === 'recheck') await recheckDelisted(source, w); else await liveCycle(source, w, job.kind); }
+          else if (source.name === 'omch') await omchCycle(source, w);
+          else if (source.name === 'myzar') await myzarCycle(source, w, job.kind);
           await db.run("UPDATE fetch_jobs SET status='done' WHERE id=?", job.id);
           continue;
         }
@@ -360,7 +437,12 @@ async function worker(w) {
 }
 
 let started = false;
-function boot() { if (started) return; started = true; for (const w of state.workers) worker(w); setInterval(orchestrate, 2000); }
+function boot() {
+  if (started) return; started = true;
+  // Өмнөх процесс дундаас нь тасарсан «running» ажлууд эх сурвалжийг хаахгүйн тулд дахин дараалалд
+  db.run("UPDATE fetch_jobs SET status='queued', claimed_by=NULL WHERE status='running'").catch(() => {});
+  for (const w of state.workers) worker(w); setInterval(orchestrate, 2000);
+}
 function start() { boot(); state.running = true; state.note = ''; if (!state.stats.startedAt) state.stats.startedAt = Date.now(); }
 function stop() { state.running = false; }
 async function reset() {
@@ -382,9 +464,9 @@ async function status() {
     db.one("SELECT COUNT(*)::int c FROM fetch_jobs WHERE status='queued'"),
     db.all("SELECT name,label,kind,auto,tier,trust,max_concurrency,collected,rejected,note,status FROM sources ORDER BY (tier='green') DESC, auto DESC, trust DESC"),
   ]);
-  const { known, pageHash, ...liveInfo } = state.live;
+  const { known, pageHash, memo, ...liveInfo } = state.live;
   return {
-    live: LIVE, liveInfo: { ...liveInfo, knownCount: known.size, intervalSec: LIVE_INTERVAL_SEC, nextCycleIn: LIVE && lastRun.unegui ? Math.max(0, Math.round((lastRun.unegui + LIVE_INTERVAL_SEC * 1000 - Date.now()) / 1000)) : null, adapter: LIVE ? unegui.stats() : null },
+    live: LIVE, liveInfo: { ...liveInfo, knownCount: known.size, intervalSec: LIVE_INTERVAL_SEC, nextCycleIn: LIVE && lastRun.unegui ? Math.max(0, Math.round((lastRun.unegui + LIVE_INTERVAL_SEC * 1000 - Date.now()) / 1000)) : null, adapter: LIVE ? unegui.stats() : null, adapters: LIVE ? { omch: omch.stats(), myzar: myzar.stats() } : null },
     running: state.running, note: state.note || '', monitoring: MONITORING_MODE, ua: USER_AGENT, retentionDays: RETENTION_DAYS,
     takedownCount: td.c, workers: state.workers.map((w) => ({ id: w.id, status: w.status, source: w.source })),
     queued: q.c, stats: { ...state.stats, ratePerMin: Math.round(state.stats.collected / mins) },

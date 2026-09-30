@@ -1105,14 +1105,23 @@ async function collector() {
   async function render() {
     const s = await api('/collector/status');
     const li = s.liveInfo || {};
+    const ads = [li.adapter, ...Object.values(li.adapters || {})].filter(Boolean);
+    const reqAll = ads.reduce((n, a) => n + (a.requests || 0), 0), mbAll = ads.reduce((n, a) => n + (a.bytes || 0), 0) / 1048576;
     $('#col-mode').textContent = s.live
-      ? `Шат 2 БОДИТ — unegui.mn ажиглах горим · ${Math.round((li.intervalSec || 600) / 60)} мин тутам · хүсэлт ${li.adapter ? li.adapter.requests : 0} / ${li.adapter ? (li.adapter.bytes / 1048576).toFixed(1) : 0} MB`
+      ? `Шат 2 БОДИТ — ${1 + Object.keys(li.adapters || {}).length} эх сурвалж (unegui.mn · omch.mn · my-zar.mn) ажиглах горим · хүсэлт ${reqAll} / ${mbAll.toFixed(1)} MB`
       : 'Шат 2 демо — симуляц эх сурвалж (жинхэнэ сайт руу хандахгүй)';
+    const coolAny = ads.some((a) => a.cooldownUntil && a.cooldownUntil > Date.now());
+    const bs = li.bySource || {};
+    const srcLine = s.live && Object.keys(bs).length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+      ${bs.omch ? `<span class="badge" title="${Math.round((Date.now() - bs.omch.at) / 60000)} мин өмнө">omch.mn: ${bs.omch.listed} зар (sitemap) · дэлгэрэнгүй ${bs.omch.detailed}${bs.omch.pending ? ' · хүлээгдэж буй ' + bs.omch.pending : ''}</span>` : ''}
+      ${bs.myzar ? `<span class="badge">my-zar.mn: ${fmt(bs.myzar.listed)} зар</span>${Object.values(bs.myzar.cats || {}).map((c) => `<span class="badge mut">${esc(c.label)}: ${fmt(c.total || c.adverts)}</span>`).join('')}` : ''}
+    </div>` : '';
     const liveLine = s.live ? `<div style="background:color-mix(in srgb,var(--accent) 10%,var(--surface));border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">
       <svg class=ic><use href=#i-radio-tower></use></svg><b>Бодит мониторинг</b> — мөчлөг: <b>${li.cycles || 0}</b> · сүүлийнх: <b>${li.lastCycleAt ? Math.round((Date.now() - li.lastCycleAt) / 60000) + ' мин өмнө' : '—'}</b> · дараагийн мөчлөг: <b>${li.nextCycleIn != null ? (li.nextCycleIn > 0 ? Math.floor(li.nextCycleIn / 60) + ':' + String(li.nextCycleIn % 60).padStart(2, '0') : 'одоо') : '—'}</b> (ботууд мөчлөг хооронд сул зогсдог — хэвийн) ·
       дахин харагдсан: <b>${li.updated || 0}</b> · үнэ өөрчлөгдсөн: <b>${li.priceChanges || 0}</b> · дэлгэрэнгүй татсан: <b>${li.detailFetched || 0}</b> ·
-      сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${li.adapter && li.adapter.cooldownUntil && li.adapter.cooldownUntil > Date.now() ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
-      ${li.byCat ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${Object.values(li.byCat).map((c) => `<span class="badge mut" title="${Math.round((Date.now() - c.at) / 60000)} мин өмнө">${esc(c.label)}: ${c.adverts}</span>`).join('')}</div>` : ''}
+      сайтаас хасагдсан: <b>${li.delisted || 0}</b> · алдаа: <b>${li.errors || 0}</b>${coolAny ? ' · <span class="badge warn">хөргөлт (429/5xx)</span>' : ''}
+      ${li.byCat ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"><span class="badge">unegui.mn</span>${Object.values(li.byCat).map((c) => `<span class="badge mut" title="${Math.round((Date.now() - c.at) / 60000)} мин өмнө">${esc(c.label)}: ${c.adverts}</span>`).join('')}</div>` : ''}
+      ${srcLine}
     </div>` : '';
     const wcard = s.workers.map((w) => {
       const busy = w.status !== 'сул';
