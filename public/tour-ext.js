@@ -114,6 +114,39 @@ const facadeInd = () => texPair(512, 360, (g, w, h, R) => { // 1 текстур 
   }
   g.fillStyle = R ? '#cfcfcf' : 'rgba(80,75,65,.22)'; for (let f = 0; f < FT_F; f++) g.fillRect(0, h - f * fh - 3, w, 3);
 });
+const TW_B = 8, TW_F = 4;
+const facadeTower = (accent, edge, seed) => texPair(1024, 480, (g, w, h, R) => {
+  const r = rngOf(seed); const bw = w / TW_B, fh = h / TW_F;
+  g.fillStyle = R ? '#e8e8e8' : '#efede9'; g.fillRect(0, 0, w, h);
+  if (!R) { g.fillStyle = 'rgba(120,115,105,.10)'; for (let y = 0; y < h; y += fh / 2) g.fillRect(0, y, w, 1.5); for (let x = 0; x < w; x += bw / 2) g.fillRect(x, 0, 1.5, h); for (let k = 0; k < 60; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '130,120,105' : '255,255,255'},${0.02 + r() * 0.04})`; g.fillRect(r() * w, r() * h, 30 + r() * 80, 10 + r() * 40); } }
+  const band = (x0, x1, col) => { // өнгөт тоосго/хавтангийн зурвас
+    g.fillStyle = R ? '#f2f2f2' : col; g.fillRect(x0, 0, x1 - x0, h);
+    if (!R) { g.fillStyle = 'rgba(0,0,0,.07)'; for (let y = 0, row = 0; y < h; y += 6, row++) { g.fillRect(x0, y, x1 - x0, 1); for (let x = x0 + (row % 2) * 7; x < x1; x += 14) g.fillRect(x, y, 1, 6); } }
+  };
+  band(3 * bw, 5 * bw, accent); if (edge) { band(0, bw * 0.7, edge); band(w - bw * 0.7, w, edge); }
+  for (let f = 0; f < TW_F; f++) for (let b = 0; b < TW_B; b++) {
+    const inBand = b === 3 || b === 4; const ww = bw * (inBand ? 0.36 : 0.5), wh = fh * (inBand ? 0.5 : 0.56), wx = b * bw + (bw - ww) / 2, wy = f * fh + fh * 0.2;
+    g.fillStyle = R ? '#c4c4c4' : 'rgba(70,65,60,.45)'; g.fillRect(wx - 3, wy - 3, ww + 6, wh + 8);
+    const t = r(); const gl = g.createLinearGradient(wx, wy, wx + ww * 0.7, wy + wh);
+    if (R) { gl.addColorStop(0, '#222222'); gl.addColorStop(1, '#363636'); }
+    else if (t < 0.45) { gl.addColorStop(0, '#c9d8e3'); gl.addColorStop(1, '#5f7488'); } else if (t < 0.78) { gl.addColorStop(0, '#76818a'); gl.addColorStop(1, '#323a42'); } else { gl.addColorStop(0, '#ece4d3'); gl.addColorStop(1, '#bcae93'); }
+    g.fillStyle = gl; g.fillRect(wx, wy, ww, wh);
+    g.fillStyle = R ? '#8a8a8a' : '#fafaf8'; g.fillRect(wx + ww * 0.5 - 2, wy, 4, wh); g.fillRect(wx - 2, wy - 2, ww + 4, 3); g.fillRect(wx - 2, wy + wh - 1, ww + 4, 3);
+    if (!R) { g.fillStyle = 'rgba(90,85,75,.18)'; g.fillRect(wx - 5, wy + wh + 3, ww + 10, 4); }
+  }
+  if (!R) { g.fillStyle = 'rgba(90,85,75,.16)'; for (let f = 0; f <= TW_F; f++) g.fillRect(0, f * fh - 1.5, w, 3); }
+});
+const facadePodium = () => texPair(512, 240, (g, w, h, R) => { // цамхагийн доод 2 давхар: хүрэн тоосгон өнгөлгөө, 1-р давхарт үйлчилгээний том цонх
+  const r = rngOf(37); const bw = w / 4, fh = h / 2; g.fillStyle = R ? '#ededed' : '#8d5d45'; g.fillRect(0, 0, w, h);
+  if (!R) for (let y = 0, row = 0; y < h; y += 5, row++) { g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(0, y, w, 1); for (let x = (row % 2) * 6; x < w; x += 12) { g.fillRect(x, y, 1, 5); if (r() < 0.25) { g.fillStyle = `rgba(${r() < 0.5 ? '255,220,190' : '40,20,10'},.08)`; g.fillRect(x + 1, y + 1, 10, 4); g.fillStyle = 'rgba(0,0,0,.12)'; } } }
+  for (let b = 0; b < 4; b++) {
+    const gx = b * bw + 8, gy = h - fh + 14, gw = bw - 16, gh = fh - 16; const gl = g.createLinearGradient(0, gy, 0, gy + gh); gl.addColorStop(0, R ? '#202020' : '#8fa3b2'); gl.addColorStop(1, R ? '#303030' : '#3f4d58');
+    g.fillStyle = R ? '#9a9a9a' : '#d9d6d0'; g.fillRect(gx - 4, gy - 4, gw + 8, gh + 4); g.fillStyle = gl; g.fillRect(gx, gy, gw, gh); g.fillStyle = R ? '#9a9a9a' : '#d9d6d0'; g.fillRect(gx + gw / 2 - 2, gy, 4, gh);
+    const ww = bw * 0.5, wh = fh * 0.52, wx = b * bw + (bw - ww) / 2, wy = fh * 0.22; const g2 = g.createLinearGradient(wx, wy, wx + ww, wy + wh); g2.addColorStop(0, R ? '#262626' : '#b9c9d5'); g2.addColorStop(1, R ? '#383838' : '#56697a');
+    g.fillStyle = R ? '#c0c0c0' : 'rgba(40,30,25,.5)'; g.fillRect(wx - 3, wy - 3, ww + 6, wh + 7); g.fillStyle = g2; g.fillRect(wx, wy, ww, wh); g.fillStyle = R ? '#8a8a8a' : '#f5f3ef'; g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
+  }
+  if (!R) { g.fillStyle = '#d6d2ca'; g.fillRect(0, fh - 4, w, 6); }
+});
 const facadeHouse = () => texPair(256, 240, (g, w, h, R) => { // хувийн байшин: шавардлага/тоосго, жижиг цонх
   const r = rngOf(5); g.fillStyle = R ? '#efefef' : '#efe8dc'; g.fillRect(0, 0, w, h);
   if (!R) { for (let k = 0; k < 60; k++) { g.fillStyle = `rgba(110,90,70,${0.03 + r() * 0.05})`; g.fillRect(r() * w, r() * h, 8 + r() * 30, 4 + r() * 14); } g.fillStyle = 'rgba(0,0,0,.05)'; for (let y = 0; y < h; y += 14) g.fillRect(0, y, w, 1); }
@@ -273,7 +306,10 @@ export function createExterior(ext, opts = {}) {
   const FL = 3.0, BAY = 3.2;
   const PAL = { bld: ['#d3cbbb', '#c8c5bd', '#dcd2bf', '#c3c2bc', '#d1c6b1', '#c7cbca', '#d8ccb6', '#bfbfb8', '#c9cdc4', '#cfd0c7'], apt: ['#d3cbbb', '#c8c5bd', '#dad0bc', '#c3c2bc'], com: ['#b9c2ca', '#c3c9ce', '#adb7c0'], edu: ['#d6b98d', '#cfae85', '#dcc59c'], house: ['#d6cab2', '#cbb99b', '#c0ab8c', '#dad0be', '#b69b7d'], shed: ['#a6a298', '#99958d', '#afa99d'] };
   const ROOF_H = ['#7a4b43', '#4f6576', '#5a6a4b', '#7a7d81', '#6d5447', '#88837a'];
-  const B = { block: new GB(), com: new GB(), house: new GB(), home: new GB(), roof: new GB(), far: new GB(), ind: new GB() };
+  const B = { block: new GB(), com: new GB(), house: new GB(), home: new GB(), roof: new GB(), far: new GB(), ind: new GB(), homeTw: new GB(), pod: new GB(), tw: [new GB(), new GB(), new GB(), new GB()] };
+  const TWV = [['#a3513c', '#cf8f45'], ['#c98a42', null], ['#8c6955', '#d7cfc3'], ['#7d8a96', null]]; // зурвас, ирмэг: тоосгон улаан+улбар шар, улбар шар, хүрэн, саарал-цэнхэр
+  const TW_COL = ['#f6f4f0', '#f1eee8', '#f3f1ec'];
+  const podium = (pts, h0 = 2 * FL) => { let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length; let md = 0; for (const [x, z] of pts) md += Math.hypot(x - cx, z - cz); md /= pts.length; const k = 1 + 0.18 / Math.max(md, 3); walls(B.pod, pts.map(([x, z]) => [cx + (x - cx) * k, cz + (z - cz) * k]), h0, [1, 1, 1], 0.84, true, 4, 2); };
   const pArea = (P) => { let a = 0; for (let i = 0, j = P.length - 1; i < P.length; j = i++) a += (P[j][0] + P[i][0]) * (P[j][1] - P[i][1]); return Math.abs(a / 2); };
   const orient = (pts) => { let s = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j][0] - pts[i][0]) * (pts[j][1] + pts[i][1]); return s < 0 ? pts.slice().reverse() : pts; };
   function walls(G, pts, h, col, dark = 0.72, uvScale = true, tb = 1, tf = 1) {
@@ -309,6 +345,7 @@ export function createExterior(ext, opts = {}) {
   for (const b of ext.buildings || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; bi++;
     const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = hex(pal[Math.floor(hash(bi) * pal.length)]);
+    if (b.t && b.lv >= 12) { walls(B.homeTw, pts, h, hex(TW_COL[0]), 0.84, true, TW_B, TW_F); podium(pts); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#e2ded6')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
     if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
     if (b.lv <= 2 && b.k !== 'house' && b.k !== 'edu' && pArea(pts) >= 260) {
       walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7', '#c6c8c9'][Math.floor(hash(bi * 2.9) * 4)]), 0.82, true, FT_B, FT_F);
@@ -319,7 +356,8 @@ export function createExterior(ext, opts = {}) {
       if (pts.length === 4 && b.k !== 'shed' && b.lv <= 2) gable(B.house, B.roof, pts, h, col, roofC); else B.roof.poly(pts, h, b.k === 'shed' ? hex('#7d7f84') : roofC);
     } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 5.3) > 0.5 ? '#86888b' : '#949597')); parapet(B.roof, pts, h, hex('#aeb1b4'), 0.6); }
     else {
-      walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9));
+      if (b.lv >= 12) { const v = Math.floor(hash(bi * 6.1) * TWV.length); walls(B.tw[v], pts, h, hex(TW_COL[Math.floor(hash(bi * 2.3) * 3)]), 0.84, true, TW_B, TW_F); if (hash(bi * 8.7) < 0.6) podium(pts); B.roof.poly(pts, h, roofRC(b, '#9d9e9f')); parapet(B.roof, pts, h, hex('#e2ded6')); }
+      else { walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9)); }
       if (b.lv >= 5) { // хэсэг (орц) бүрд дээвэр дээр лифтний машин өрөө
         const [ux, uz] = longAxis(pts); let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length;
         let a0 = Infinity, a1 = -Infinity; for (const [x, z] of pts) { const a = (x - cx) * ux + (z - cz) * uz; a0 = Math.min(a0, a); a1 = Math.max(a1, a); }
@@ -331,7 +369,8 @@ export function createExterior(ext, opts = {}) {
   for (const b of ext.buildings || []) if (b.rp === 'playground') { const pts = pairs(b.p); if (pts.length >= 3) playRoof.poly(pts, Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)) + 0.08, [1, 1, 1], 14); }
   for (const b of ext.far || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; const h = Math.max(2.8, b.lv * FL); const k = hash(pts[0][0] * 1.3 + pts[0][1]);
-    if (b.lv >= 3) { walls(B.far, pts, h, hex(PAL.bld[Math.floor(k * PAL.bld.length)]), 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, k > 0.5 ? '#8f9193' : '#9d9e9f')); }
+    if (b.lv >= 12) { walls(B.tw[Math.floor(hash(k * 5.9) * TWV.length)], pts, h, hex(TW_COL[Math.floor(k * 3)]), 0.84, true, TW_B, TW_F); B.roof.poly(pts, h, roofRC(b, '#9d9e9f')); }
+    else if (b.lv >= 3) { walls(B.far, pts, h, hex(PAL.bld[Math.floor(k * PAL.bld.length)]), 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, k > 0.5 ? '#8f9193' : '#9d9e9f')); }
     else if (pArea(pts) >= 260) { walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7'][Math.floor(k * 3)]), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, ['#9a9c9e', '#a6a7a8', '#8d9092'][Math.floor(k * 3)])); }
     else { walls(B.house, pts, h, hex(PAL.house[Math.floor(k * PAL.house.length)]), 0.8); B.roof.poly(pts, h, roofRC(b, ROOF_H[Math.floor(hash(k * 7.7) * ROOF_H.length)])); }
   }
@@ -350,6 +389,9 @@ export function createExterior(ext, opts = {}) {
   }), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
   const homeTex = facadeBlock(); const homeMat = stdMat({ vertexColors: true, map: homeTex.map, roughnessMap: homeTex.rough, roughness: 1, emissive: new THREE.Color('#3a1a12'), emissiveIntensity: 0.08 });
   addM(B.home, homeMat);
+  const twTex = TWV.map(([a, e], i) => facadeTower(a, e, 51 + i * 7)); B.tw.forEach((G, i) => addM(G, stdMat({ vertexColors: true, map: twTex[i].map, roughnessMap: twTex[i].rough, roughness: 1 })));
+  addM(B.homeTw, stdMat({ vertexColors: true, map: twTex[0].map, roughnessMap: twTex[0].rough, roughness: 1, emissive: new THREE.Color('#3a1a12'), emissiveIntensity: 0.06 }));
+  const podTex = facadePodium(); addM(B.pod, stdMat({ vertexColors: true, map: podTex.map, roughnessMap: podTex.rough, roughness: 1 }));
 
   // Арк (угсармал байрны доорх явган гарц): маршрут байрыг нэвт гардаг газарт харанхуй нүх (хоёр фасадаас харагдана)
   { const archMat = new THREE.MeshLambertMaterial({ color: '#2b2d31' }); for (const [x, z, ang, len] of ext.arches || []) { const m = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.6, len + 1.2), archMat); m.position.set(x, 1.8, z); m.rotation.y = ang; scene.add(m); } }
