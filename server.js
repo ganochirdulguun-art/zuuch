@@ -16,12 +16,16 @@ app.use(express.json({ limit: '256kb' }));
 
 // ---- Аюулгүй байдлын толгойнууд ----
 app.use((req, res, next) => {
+  // Аяллын хуудас (/tour/…) — аппын «3D урьдчилан харах» болон брокерын өөрийн вэбсайтад шигтгэж болно (нууц үйлдэлгүй);
+  // бусад бүх хуудас зөвхөн өөрийн сайтын iframe-д (DENY нь аппын доторх урьдчилан харахыг ч хааж байсан)
+  const embeddable = req.path.startsWith('/tour/');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  if (!embeddable) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; connect-src 'self'");
+    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; connect-src 'self'; " +
+    `frame-ancestors ${embeddable ? '*' : "'self'"}`);
   next();
 });
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));

@@ -649,7 +649,12 @@ function renderTour() {
         ${(t.assets || []).some((a) => a.kind === 'frame') ? '<button class="small" onclick="tourFramesClear()">✕ кадрууд устгах</button>' : ''}
         <button class="small" onclick="tourAnalyze()" title="Студийн зураг + бичлэгийн кадруудаас AI таамаглаж 3D-д тусгана"><svg class=ic><use href=#i-scan-search></use></svg>AI зургаас шинжлэх</button>
       </div>`;
-  const shareBox = `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
+  const hasLoc = p.lat != null && p.lng != null && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
+  const extBox = `<div class="card" style="margin-top:16px"><h3><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг</h3>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Объектын газрын зураг дээр тэмдэглэсэн байршлаас ~1.5 км радиуст бодит барилга, зам, сургууль · цэцэрлэг · эмнэлэг · дэлгүүр, явган маршрут (минутаар), түгжрэлийн судалгааг автоматаар бүрдүүлж, аяллын эхэнд тэнгэрээс бууж ирэх нислэг нэмнэ. 1–3 минут үргэлжилнэ.</div>
+      ${hasLoc ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="primary" id="ext-btn" onclick="tourExterior(${p.id})"><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг бэлтгэх</button><span id="ext-st" style="font-size:12.5px">…</span></div>`
+        : `<span class="badge warn">Байршил тэмдэглээгүй</span> <span style="font-size:12.5px">Объект → засах → газрын зураг дээр байршлыг дарж тэмдэглээд хадгална уу.</span> <button class="small" onclick="propForm(TOUR.property)">Байршил тэмдэглэх</button>`}</div>`;
+  const shareBox = extBox + `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
       <div style="margin-top:10px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
@@ -711,7 +716,31 @@ function renderTour() {
   ${body}
   ${shareBox}`;
   drawTourPlan(); bindTourCanvas();
+  if (hasLoc) tourExtStatus(p.id);
 }
+// Гадаах орчны 3D нислэг: серверт арын горимд үүсгэнэ (1–3 мин) → төлөвийг асууж, бэлэн болмогц урьдчилан харахыг шинэчилнэ
+let TOUR_EXT_T = null;
+window.tourExtStatus = async (pid, watching) => {
+  clearTimeout(TOUR_EXT_T);
+  const s = await api('/tour/' + pid + '/exterior').catch(() => null); const el = $('#ext-st'), btn = $('#ext-btn');
+  if (!s || !el) return;
+  const j = s.job;
+  if (j && j.status === 'running') {
+    el.innerHTML = `<svg class="ic spin"><use href=#i-loader-circle></use></svg>${esc(j.msg || 'Бэлтгэж байна…')}`;
+    if (btn) btn.disabled = true;
+    TOUR_EXT_T = setTimeout(() => tourExtStatus(pid, true), 2500); return;
+  }
+  if (btn) { btn.disabled = false; btn.lastChild.textContent = s.has ? 'Дахин бэлтгэх' : 'Гадаах орчны 3D нислэг бэлтгэх'; }
+  if (j && j.status === 'error') el.innerHTML = `<span class="badge warn">Алдаа</span> ${esc(j.msg)}`;
+  else if (s.has) el.innerHTML = `<span class="badge ok"><svg class=ic><use href=#i-check></use></svg>Бэлэн</span> ${s.pois} байгууллага${s.generated_at ? ' · ' + new Date(s.generated_at).toLocaleString('mn-MN') : ''}`;
+  else el.innerHTML = '<span style="color:var(--muted)">Гадаах орчин одоогоор бэлтгээгүй — аялал зөвхөн байрны дотор хэсгээр явна</span>';
+  if (watching && j && j.status === 'done') { const f = $('#tour-frame'); if (f) f.src = f.src.replace(/v=\d+/, 'v=' + Date.now()); toast('Гадаах орчны 3D нислэг бэлэн боллоо'); }
+};
+window.tourExterior = async (pid) => {
+  const r = await api('/tour/' + pid + '/exterior', { method: 'POST' });
+  if (r && r.error) return alert(r.error);
+  tourExtStatus(pid, true);
+};
 // ---- Блок өрөх засварлагч: чирж зөөх, булан/ирмэгээс хэмжээ өөрчлөх, соронзон наалт, ханан дээр цонх/хаалга ----
 function tourXform() {
   const plan = TOUR.plan; const minX = Math.min(...plan.rooms.map((r) => r.x), 0), minY = Math.min(...plan.rooms.map((r) => r.y), 0);
