@@ -387,9 +387,13 @@ async function recheckDelisted(source, w) {
 }
 
 // Атомик нэхэмжлэл — зохиомжийн дагуу FOR UPDATE SKIP LOCKED (нэг ажил = нэг бот)
+// Эх бүрийн зэрэг ажиллах дээд хэмжээ (30 сек кэш) — дүүрсэн эхийн ажлыг сонгохгүй (бусад эхийн ажил өлсөхгүй)
+let maxConc = { at: 0, map: {} };
 async function claimJob(wid) {
+  if (Date.now() - maxConc.at > 30000) maxConc = { at: Date.now(), map: Object.fromEntries((await db.all('SELECT name, max_concurrency FROM sources')).map((r) => [r.name, r.max_concurrency])) };
+  const full = Object.keys(maxConc.map).filter((n) => (state.activePerSource[n] || 0) >= maxConc.map[n]);
   const r = await db.run(`UPDATE fetch_jobs SET status='running', claimed_by=? WHERE id = (
-    SELECT id FROM fetch_jobs WHERE status='queued' ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`, 'w' + wid);
+    SELECT id FROM fetch_jobs WHERE status='queued' AND NOT (source_name = ANY(?::text[])) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`, 'w' + wid, '{' + full.map((n) => '"' + n + '"').join(',') + '}');
   return r.rows[0] || null;
 }
 
@@ -439,9 +443,9 @@ async function worker(w) {
 let started = false;
 function boot() {
   if (started) return; started = true;
-  // Өмнөх процесс дундаас нь тасарсан «running» ажлууд эх сурвалжийг хаахгүйн тулд дахин дараалалд
-  db.run("UPDATE fetch_jobs SET status='queued', claimed_by=NULL WHERE status='running'").catch(() => {});
-  for (const w of state.workers) worker(w); setInterval(orchestrate, 2000);
+  // Өмнөх процессын үлдэгдэл ажлууд (тасарсан «running», хуучин «queued») — хаяна; orchestrate шинэ мөчлөгийг өөрөө үүсгэнэ
+  db.run("UPDATE fetch_jobs SET status='done', claimed_by=NULL WHERE status IN ('running','queued')").catch(() => {})
+    .finally(() => { for (const w of state.workers) worker(w); setInterval(orchestrate, 2000); });
 }
 function start() { boot(); state.running = true; state.note = ''; if (!state.stats.startedAt) state.stats.startedAt = Date.now(); }
 function stop() { state.running = false; }
