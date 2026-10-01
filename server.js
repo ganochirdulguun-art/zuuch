@@ -243,6 +243,7 @@ const exterior = require('./exterior');
 const geostore = require('./geostore'); // хотын 500×500 м хавтан сан (data/geo)
 const backup = require('./backup'); // өдөр тутмын нөөц (/data/backups)
 const priceIndex = require('./priceindex'); // дүүргийн үнийн индекс бодит зараас
+const dedupX = require('./dedup'); // эх сурвалж хоорондын давхардал
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -276,7 +277,8 @@ app.get('/api/market/:id', wrap(async (req, res) => {
   const poster = l.poster_key ? await db.one('SELECT * FROM posters WHERE key=?', l.poster_key) : null;
   const posterListings = l.poster_key ? await db.all('SELECT id, title, category, deal_type, district, rooms, area, price, active, listed_at FROM market_listings WHERE poster_key=? AND id<>? ORDER BY id DESC LIMIT 12', l.poster_key, l.id) : [];
   const lead = await db.one('SELECT * FROM leads WHERE company_id=? AND listing_id=?', req.user.company_id, l.id);
-  res.json({ listing: l, index: idx, valuation: val, similar, location: loc, buyers, days, m2, baseline, vsIndex: m2 && baseline ? Math.round((m2 / baseline - 1) * 100) : null, poster, posterListings, lead });
+  const dups = l.dedup_group ? await db.all('SELECT id, source, title, price, area, source_url, active, last_seen FROM market_listings WHERE dedup_group=? AND id<>? ORDER BY active DESC, id DESC LIMIT 10', l.dedup_group, l.id) : [];
+  res.json({ listing: l, dups, index: idx, valuation: val, similar, location: loc, buyers, days, m2, baseline, vsIndex: m2 && baseline ? Math.round((m2 / baseline - 1) * 100) : null, poster, posterListings, lead });
 }));
 // ---- Гэрээний боломж (lead): эзэн өөрөө нийтэлсэн шинэ зарууд → брокер оффист санал ----
 // Утас ХАДГАЛАХГҮЙ (сайт нуудаг + хувь хүний мэдээллийн хууль): агент эх зарын холбоосоор өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагч болгоно
@@ -298,12 +300,15 @@ app.get('/api/leads', wrap(async (req, res) => {
   // Байршлын мод (хот/аймаг → дүүрэг/сум → хороо/хороолол) — шүүлтүүрийн сонголтуудад
   const locations = await db.all(`SELECT COALESCE(l.city,'Улаанбаатар') city, l.district, COALESCE(l.khoroolol,'') khoroolol, COUNT(*)::int n FROM market_listings l JOIN posters p ON p.key=l.poster_key
     WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) GROUP BY 1,2,3 ORDER BY 1,2,3`, days);
-  const rows = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen, l.poster_key,
+  const rows0 = await db.all(`SELECT l.id, l.dedup_group, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.images, l.ad_type, l.last_seen, l.poster_key,
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
     FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
     WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) AND ld.id IS NULL${where}
     ORDER BY l.listed_at DESC, l.id DESC LIMIT 300`, ...params);
+  // Нэг объект олон сайтад (dedup_group) → нэг мөр, бусад эх сурвалжийг also-д
+  const seenG = new Map(); const rows = [];
+  for (const r of rows0) { const g = r.dedup_group; if (g && seenG.has(g)) { seenG.get(g).also.push({ source: r.source, url: r.source_url, price: r.price }); continue; } const o = { ...r, also: [] }; if (g) seenG.set(g, o); rows.push(o); }
   // Авч ажиллаж буй lead — огноо/шүүлтүүр/300-ийн хязгаараас үл хамааран үргэлж харагдана (өмнө нь жагсаалтын төгсгөлд таслагдаж алга болдог байв)
   const claimed = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.active,
       l.poster_key, p.name poster_name, p.kind poster_kind, ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note, ld.created_at lead_at, u.name agent_name
@@ -705,4 +710,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); });
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); });

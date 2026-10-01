@@ -7,6 +7,7 @@ const { db, ready } = require('./db');
 const unegui = require('./adapters/unegui');
 const omch = require('./adapters/omch');
 const myzar = require('./adapters/myzar');
+const dedupX = require('./dedup'); // эх сурвалж хоорондын давхардал
 // unegui-ээс гадна бодит адаптертай эх сурвалжууд: мөчлөгийн давтамж (сек) + нэг мөчлөгт татах дэлгэрэнгүйн дээд хэмжээ
 const EXTRA = {
   omch: { adapter: omch, intervalSec: Number(process.env.ZUUCH_OMCH_INTERVAL || 1800), detailPerCycle: 60 },
@@ -203,6 +204,7 @@ async function process1(raw, source) {
   }
   const r = await fitScore(l, source);
   if (r.collect) {
+    if (!l._group && l.source_id) l._group = await dedupX.findGroup(db, l).catch(() => null); // unegui ↔ omch ↔ my-zar ижил объект
     const group = l._group || 'g' + crypto.randomBytes(4).toString('hex');
     const ins = await db.one(`INSERT INTO market_listings (source,source_id,deal_type,district,rooms,area,price,prev_price,is_new,listed_at,active,fit_score,dedup_group,collected_at,contact_hash,title,images,
         last_seen,source_url,khoroolol,floor,total_floors,ad_type,is_business,category,poster_key,city)

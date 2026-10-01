@@ -6,9 +6,10 @@ const NEW_RE = "(шинэ\\s+(байр|орон\\s*сууц|барилга))|(а
 
 async function compute(db, log = () => {}) {
   const month = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7); // УБ сар
-  const base = `FROM market_listings WHERE collected_at IS NOT NULL AND source <> 'demo' AND deal_type='sale' AND COALESCE(category,'apartment')='apartment'
+  // Нэг объект олон сайтад нийтлэгдсэн бол (dedup_group) нэг л удаа — хамгийн сүүлийн зар
+  const base = `FROM (SELECT DISTINCT ON (COALESCE(dedup_group, id::text)) * FROM market_listings WHERE collected_at IS NOT NULL AND source <> 'demo' AND deal_type='sale' AND COALESCE(category,'apartment')='apartment'
     AND area BETWEEN 15 AND 400 AND price > 0 AND price/area BETWEEN 0.8 AND 25 AND COALESCE(city,'Улаанбаатар')='Улаанбаатар'
-    AND COALESCE(last_seen, NULLIF(collected_at,'')::timestamptz) >= NOW() - INTERVAL '${DAYS} days'`;
+    AND COALESCE(last_seen, NULLIF(collected_at,'')::timestamptz) >= NOW() - INTERVAL '${DAYS} days' ORDER BY COALESCE(dedup_group, id::text), id DESC) m`;
   const agg = `COUNT(*)::int AS n, percentile_cont(0.5) WITHIN GROUP (ORDER BY price/area) AS med, percentile_cont(0.25) WITHIN GROUP (ORDER BY price/area) AS p25, percentile_cont(0.75) WITHIN GROUP (ORDER BY price/area) AS p75`;
   const rows = await db.all(`SELECT district, (COALESCE(title,'') ~* '${NEW_RE}' OR is_new=1) AS nw, ${agg} ${base} GROUP BY 1, 2`);
   const all = await db.all(`SELECT district, ${agg} ${base} GROUP BY 1`);
