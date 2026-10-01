@@ -523,6 +523,15 @@ app.get('/api/tour/:pid', auth, wrap(async (req, res) => {
   if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
   res.json({ tour: t, property: prop, assets: await tourAssets(req.user.company_id, prop.id), types: tourLib.TYPES });
 }));
+// Хуваалцах холбоосын нууцлал: компанийн нэр нуух, хаягийг зөвхөн дүүргээр
+app.put('/api/tour/:pid/settings', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return; const b = req.body || {};
+  const st = { hideCompany: !!b.hideCompany, districtOnly: !!b.districtOnly };
+  let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+  await db.run('UPDATE tours SET settings=? WHERE id=?', JSON.stringify(st), t.id);
+  res.json({ ok: true, settings: st });
+}));
 app.post('/api/tour/:pid/auto', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   const t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
@@ -687,7 +696,8 @@ app.get('/tour-data/:token', wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
   const p = await db.one('SELECT district, khoroolol, rooms, area, floor, total_floors, is_new, deal_type, price FROM properties WHERE id=?', t.property_id);
   const c = await db.one('SELECT name FROM companies WHERE id=?', t.company_id);
-  res.json({ plan: t.plan, property: p, company: c ? c.name : '', assets: await tourAssets(t.company_id, t.property_id), exterior: t.exterior || null });
+  const st = t.settings || {}; if (p && st.districtOnly) p.khoroolol = null; // нууцлал: хуваалцах холбоост хаягийг зөвхөн дүүргээр
+  res.json({ plan: t.plan, property: p, company: c && !st.hideCompany ? c.name : '', assets: await tourAssets(t.company_id, t.property_id), exterior: t.exterior || null });
 }));
 app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   const t = await db.one('SELECT company_id, property_id FROM tours WHERE token=?', req.params.token);

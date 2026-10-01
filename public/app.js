@@ -623,7 +623,7 @@ window.tourView = async function (pid, mode) {
   document.querySelectorAll('#menu button').forEach((x) => x.classList.toggle('active', x.dataset.view === 'tours'));
   const d = await api('/tour/' + pid);
   if (d.error) { alert(d.error); return; }
-  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, property: d.property, assets: d.assets, sel: null, drag: null, tool: null, snap: 0.1, undo: [], mode: mode || (TOUR && TOUR.pid === pid ? TOUR.mode : null) || 'auto' };
+  TOUR = { pid, plan: d.tour.plan, types: d.types, token: d.tour.token, settings: d.tour.settings || {}, property: d.property, assets: d.assets, sel: null, drag: null, tool: null, snap: 0.1, undo: [], mode: mode || (TOUR && TOUR.pid === pid ? TOUR.mode : null) || 'auto' };
   renderTour();
 };
 window.tourMode = (m) => { TOUR.mode = m; TOUR.tool = null; renderTour(); };
@@ -683,6 +683,7 @@ function renderTour() {
         : `<span class="badge warn">Байршил тэмдэглээгүй</span> <span style="font-size:12.5px">Объект → засах → газрын зураг дээр байршлыг дарж тэмдэглээд хадгална уу.</span> <button class="small" onclick="propForm(TOUR.property)">Байршил тэмдэглэх</button>`}</div>`;
   const shareBox = extBox + `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
+      <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="ts-hc" ${t.settings && t.settings.hideCompany ? 'checked' : ''} onchange="tourSettings()" style="width:auto">Компанийн нэрийг нуух</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="ts-do" ${t.settings && t.settings.districtOnly ? 'checked' : ''} onchange="tourSettings()" style="width:auto">Хаягийг зөвхөн дүүргээр (хороолол, байрны дугааргүй)</label></div>
       <div style="margin-top:10px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):
         <input value="${shareUrl}" readonly style="width:100%;margin-top:4px" onclick="this.select()">
         <div style="display:flex;gap:8px;margin-top:6px"><a class="btn" href="${shareUrl}" target="_blank" rel="noopener"><button class="small">↗ Шинэ цонхонд нээх</button></a><button class="small" onclick="navigator.clipboard.writeText('${shareUrl}').then(()=>toast('Холбоос хуулагдлаа'))"><svg class=ic><use href=#i-copy></use></svg>Хуулах</button></div></div>
@@ -1032,6 +1033,11 @@ window.tourPlanApply = async () => {
   TOUR.plan = { ...TOUR.plan, rooms, ...(j.entry ? { entry: j.entry } : {}), ...(j.ceiling ? { ceiling: j.ceiling } : {}) };
   if (Array.isArray(j.local)) { const r = await api('/tour/' + TOUR.pid + '/local-pois', { method: 'PUT', body: { items: j.local } }); if (r.error) return alert(r.error); toast(`Ойрын газар: ${r.items.length}`); } // «local» = ойрын газрууд (агент/оршин суугч)
   closeModal(); await tourSave();
+};
+window.tourSettings = async () => {
+  const body = { hideCompany: $('#ts-hc').checked, districtOnly: $('#ts-do').checked };
+  const r = await api('/tour/' + TOUR.pid + '/settings', { method: 'PUT', body }); if (r.error) return alert(r.error);
+  TOUR.settings = r.settings; toast('Нууцлалын тохиргоо хадгалагдлаа'); const f = $('#tour-frame'); if (f) f.src = f.src.replace(/v=\d+/, 'v=' + Date.now());
 };
 window.tourSave = async () => {
   const d = await api('/tour/' + TOUR.pid, { method: 'PUT', body: { plan: TOUR.plan } });
