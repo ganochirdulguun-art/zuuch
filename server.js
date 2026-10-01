@@ -154,6 +154,14 @@ app.delete('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---- Нөөцлөлт (эзэн): өдөр бүр автоматаар, гараар ч; татаж аваад өөрийн компьютерт хадгална ----
+app.get('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ items: backup.list(), keep: backup.KEEP })));
+app.post('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ ok: true, ...(await backup.run(db, { reason: 'manual:' + (req.user.name || req.user.id) })) })));
+app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
+  const f = backup.filePath(req.params.name); if (!f || !fs.existsSync(f)) return res.status(404).json({ error: 'Нөөц олдсонгүй' });
+  res.download(f, req.params.name);
+});
+
 // ---- Баг ----
 app.get('/api/users', wrap(async (req, res) => res.json(await db.all('SELECT id, username, name, role, phone FROM users WHERE company_id=? ORDER BY role, name', req.user.company_id))));
 app.post('/api/users', zahiralOnly, wrap(async (req, res) => {
@@ -233,6 +241,7 @@ app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locati
 const commute = require('./commute');
 const exterior = require('./exterior');
 const geostore = require('./geostore'); // хотын 500×500 м хавтан сан (data/geo)
+const backup = require('./backup'); // өдөр тутмын нөөц (/data/backups)
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -646,4 +655,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)));
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); });

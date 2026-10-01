@@ -6,3 +6,4 @@ zuuch.db-shm
 .env
 .DS_Store
 uploads/
+backups/

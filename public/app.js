@@ -1126,9 +1126,29 @@ async function owner() {
         : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}
         ${c.id !== ME.company_id ? `<button class="small" onclick="delCompany(${c.id},'${esc(c.name).replace(/'/g, '')}')">Устгах</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Өгөгдлийн сангийн нөөц</h3>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Өдөр бүр автоматаар (Улаанбаатарын цагаар өдөрт 1 удаа) бүх хүснэгтийг нөөцөлж, Postgres-оос тусдаа дискэнд сүүлийн <span id="bk-keep">14</span> хувийг хадгална. Сар бүр нэг хувийг татаж аваад өөрийн компьютерт хадгалахыг зөвлөж байна.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="small primary" onclick="backupNow(this)"><svg class=ic><use href=#i-archive></use></svg>Одоо нөөцлөх</button><span id="bk-st" style="font-size:12.5px"></span></div>
+    <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
+  backupList();
 }
 
+async function backupList() {
+  const d = await api('/owner/backups').catch(() => null); const el = $('#bk-list'); if (!el || !d) return;
+  if ($('#bk-keep')) $('#bk-keep').textContent = d.keep;
+  el.innerHTML = d.items.length ? `<table><thead><tr><th>Нөөц</th><th class="num">Хэмжээ</th><th></th></tr></thead><tbody>${d.items.map((b) => `<tr><td>${esc(b.name.replace(/^zuuch-|\.jsonl\.gz$/g, ''))}</td><td class="num">${(b.size / 1048576).toFixed(1)} MB</td><td><button class="small" onclick="backupGet('${esc(b.name)}')">Татах</button></td></tr>`).join('')}</tbody></table>` : 'Одоогоор нөөц алга — «Одоо нөөцлөх» дарна уу (автомат нөөц сервер асаад 3 минутын дараа эхэлнэ).';
+}
+window.backupNow = async (btn) => {
+  btn.disabled = true; $('#bk-st').textContent = 'Нөөцөлж байна…';
+  const r = await api('/owner/backups', { method: 'POST' }).catch((e) => ({ error: e.message })); btn.disabled = false;
+  $('#bk-st').textContent = r.error ? 'Алдаа: ' + r.error : `Бэлэн: ${(r.size / 1048576).toFixed(1)} MB, ${Object.values(r.counts).reduce((a, b) => a + b, 0)} мөр`; backupList();
+};
+window.backupGet = async (name) => {
+  const res = await fetch('/api/owner/backups/' + encodeURIComponent(name), { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!res.ok) return alert('Татаж чадсангүй (' + res.status + ')');
+  const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
 window.setCompany = async function (id, body) {
   const r = await api('/owner/company/' + id, { method: 'POST', body });
   if (r.error) { alert(r.error); return; }
