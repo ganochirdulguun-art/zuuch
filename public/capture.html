@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Зууч — Алхалтын бичлэг</title>
+<link rel="icon" href="/brand/favicon.svg?v=2" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{--bg:#0B1220;--panel:rgba(18,26,44,.86);--ink:#F1F5FC;--muted:#AEBAD3;--accent:#5AB0FF;--accent-ink:#0B1626;--rec:#EF4444;--ok:#34D399;--warn:#F0A86B;--line:#334369}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;font-size:15px}
+#v{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+.top,.bot{position:fixed;left:0;right:0;padding:12px 16px;background:var(--panel);backdrop-filter:blur(8px);z-index:2}
+.top{top:0;padding-top:max(12px,env(safe-area-inset-top));display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bot{bottom:0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+.brand{font-weight:700}.sp{flex:1}
+select,button{font:inherit;color:inherit}
+select{background:#1A2440;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.big{flex:1;min-height:56px;border:0;border-radius:14px;font-weight:700;font-size:17px;background:var(--accent);color:var(--accent-ink)}
+.big.rec{background:var(--rec);color:#fff}.big:disabled{opacity:.5}
+.ghost{background:transparent;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.st{font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;background:#1A2440;font-size:12.5px;margin-right:6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:5px;vertical-align:middle}.dot.on{background:var(--ok)}.dot.rec{background:var(--rec);animation:b 1s infinite}
+@keyframes b{50%{opacity:.25}}
+.bar{height:8px;background:#1A2440;border-radius:4px;margin-top:8px;overflow:hidden}.bar>div{height:100%;width:0;background:var(--accent)}
+#msg{position:fixed;left:16px;right:16px;top:40%;text-align:center;font-size:16px;z-index:1;text-shadow:0 1px 4px #000}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted autoplay></video>
+<div class="top"><span class="brand">Зууч<span style="color:var(--accent)">.</span></span><span class="sp"></span>
+  <select id="kind"><option value="walk_ext">Гадна алхалт (замаас орц)</option><option value="walk_in">Орц, шат, коридор</option></select>
+</div>
+<div id="msg"></div>
+<div class="bot">
+  <div class="row"><button class="big" id="bRec" disabled>Бичиж эхлэх</button><button class="ghost" id="bFile" title="Утасны камерын апп-аар бичсэн бичлэгээ оруулах (GPS-гүй — замыг системийн маршрутаар тааруулна)">Файлаас</button></div>
+  <div class="st" id="st"><span class="pill"><span class="dot" id="gpsDot"></span><span id="gps">GPS хүлээж байна</span></span><span class="pill" id="tm">0:00</span><span class="pill" id="sz">0 MB</span></div>
+  <div class="st" id="hint">Утсаа хэвтээ барьж, цээжний өндөрт тогтвортой тайван алхана уу. Төв замын эхлэлээс эхлээд орцны хаалга хүртэл (эсвэл орцоос байрны хаалга хүртэл) нэг бичлэгээр.</div>
+  <div class="bar" id="barW" style="display:none"><div id="bar"></div></div>
+</div>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const TOKEN = localStorage.getItem('zuuch_token') || '';
+const Q = new URLSearchParams(location.search); const PID = Number(Q.get('pid'));
+if (Q.get('kind')) $('#kind').value = Q.get('kind');
+const say = (t) => { $('#msg').textContent = t || ''; };
+if (!TOKEN) { say(''); $('#msg').innerHTML = 'Эхлээд энэ утасны хөтчөөр <a href="/app">Зууч системд нэвтэрнэ үү</a>, дараа нь энэ хуудсыг дахин нээнэ.'; }
+if (!PID) say('Объект тодорхойгүй — засварлагчийн «Утсаар бичих» товчоор нээнэ үү');
+
+let stream = null, rec = null, chunks = [], track = [], t0 = 0, timer = null, wake = null, watch = null, mime = '';
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const MB = (b) => (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + ' MB';
+async function startCam() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, audio: false });
+    $('#v').srcObject = stream; $('#bRec').disabled = !TOKEN || !PID;
+    const tr = stream.getVideoTracks()[0]; const cap = tr.getCapabilities ? tr.getCapabilities() : {}; // боломжтой бол өргөн өнцөг (0.5×)
+    if (cap.zoom && cap.zoom.min < 1) { try { await tr.applyConstraints({ advanced: [{ zoom: cap.zoom.min }] }); } catch { /* */ } }
+  } catch (e) { say('Камер нээгдсэнгүй: ' + e.message + ' — «Файлаас» товчоор утасны бичлэгээ оруулж болно'); }
+  if ('geolocation' in navigator) watch = navigator.geolocation.watchPosition((p) => {
+    $('#gpsDot').classList.add('on'); $('#gps').textContent = `GPS ±${Math.round(p.coords.accuracy)} м${track.length ? ' · ' + track.length + ' цэг' : ''}`;
+    if (rec && rec.state === 'recording') track.push([+((performance.now() - t0) / 1000).toFixed(1), +p.coords.latitude.toFixed(6), +p.coords.longitude.toFixed(6), Math.round(p.coords.accuracy)]);
+  }, (e) => { $('#gps').textContent = 'GPS: ' + (e.code === 1 ? 'зөвшөөрөөгүй' : 'олдсонгүй'); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+}
+function pickMime() { for (const m of ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ''; }
+$('#bRec').onclick = async () => {
+  if (rec && rec.state === 'recording') { rec.stop(); return; }
+  chunks = []; track = []; mime = pickMime();
+  try { rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: 6e6 }); } catch (e) { return say('Бичигч ажиллахгүй байна: ' + e.message); }
+  let bytes = 0; rec.ondataavailable = (e) => { if (e.data && e.data.size) { chunks.push(e.data); bytes += e.data.size; $('#sz').textContent = MB(bytes); } };
+  rec.onstop = () => { clearInterval(timer); $('#bRec').classList.remove('rec'); $('#bRec').textContent = 'Бичиж эхлэх'; $('#gpsDot').classList.remove('rec'); if (wake) { wake.release().catch(() => {}); wake = null; } upload(new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] }), track.slice()); };
+  t0 = performance.now(); rec.start(1000); $('#bRec').classList.add('rec'); $('#bRec').textContent = 'Зогсоох'; $('#gpsDot').classList.add('rec'); say('');
+  timer = setInterval(() => { const s = (performance.now() - t0) / 1000; $('#tm').textContent = fmt(s); if (s > 900) rec.stop(); }, 500); // 15 мин хүртэл (санах ой)
+  try { wake = await navigator.wakeLock.request('screen'); } catch { /* дэлгэц унтрахгүй байх — дэмжихгүй хөтөч */ }
+};
+$('#bFile').onclick = () => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'video/*,.mov,.mp4,.insv'; i.onchange = () => { if (i.files[0]) upload(i.files[0], null); }; i.click(); };
+
+async function api(p, opts = {}) { const r = await fetch('/api' + p, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return r.json(); }
+async function upload(blob, trk) {
+  if (!TOKEN || !PID) return say('Нэвтрээгүй эсвэл объект тодорхойгүй');
+  const kind = $('#kind').value; const ext = /mp4/.test(blob.type) ? 'mp4' : /quicktime/.test(blob.type) ? 'mov' : /webm/.test(blob.type) ? 'webm' : 'mp4';
+  const name = blob.name || `${kind}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
+  say('Илгээж байна…'); $('#barW').style.display = ''; $('#bRec').disabled = true;
+  const ini = await api(`/tour/${PID}/media/init`, { method: 'POST', body: { kind, filename: name, size: blob.size, mime: blob.type, label: kind === 'walk_ext' ? 'Төв замаас орц хүртэл' : 'Орц, шат', track: trk && trk.length >= 2 ? trk : undefined, source: trk ? 'capture' : 'file' } }).catch((e) => ({ error: e.message }));
+  if (ini.error) { say('Алдаа: ' + ini.error); $('#bRec').disabled = false; return; }
+  const { upload_id: uid, chunk, chunks: n } = ini; const todo = [...Array(n).keys()]; let done = 0;
+  const one = async (i) => { for (let a = 0; ; a++) { try { const r = await fetch(`/api/media/upload/${uid}/${i}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: blob.slice(i * chunk, Math.min(blob.size, (i + 1) * chunk)) }); const j = await r.json(); if (!j.ok) throw new Error(j.error); done++; $('#bar').style.width = Math.round((done / n) * 100) + '%'; say(`Илгээж байна… ${Math.round((done / n) * 100)}% (${MB(blob.size)})`); return; } catch (e) { if (a >= 8) throw e; say('Сүлжээ тасарсан — дахин оролдож байна…'); await new Promise((r) => setTimeout(r, Math.min(20000, 1000 * 2 ** a))); } } };
+  try {
+    await Promise.all([0, 1, 2].map(async () => { while (todo.length) await one(todo.shift()); }));
+    const c = await api(`/media/upload/${uid}/complete`, { method: 'POST' }); if (c.error) throw new Error(c.error);
+    say(`Илгээгдлээ ✓ ${trk && trk.length ? `(GPS ${trk.length} цэг)` : ''} — сервер хөрвүүлж байна. Дараагийн хэсгийг бичих эсвэл компьютерээсээ шалгана уу.`);
+  } catch (e) { say('Илгээж чадсангүй: ' + e.message + ' — сүлжээгээ шалгаад дахин бичнэ үү'); }
+  $('#bRec').disabled = false;
+}
+if (TOKEN && PID) startCam();
+</script>
+</body>
+</html>

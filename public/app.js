@@ -13,7 +13,7 @@ async function api(path, opts = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opts.headers || {}) },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (res.status === 401 && path !== '/login') { logout(); throw new Error('unauthorized'); }
+  if (res.status === 401 && path !== '/login' && path !== '/logout') { logout(); throw new Error('unauthorized'); } // /logout өөрөө 401 бол дахин logout дуудахгүй (өмнө нь хязгааргүй давталт үүсдэг байв)
   return res.json();
 }
 
@@ -659,14 +659,10 @@ function renderTour() {
         <b><svg class=ic><use href=#i-scan-search></use></svg>AI шинжилгээ</b> (${plan.style.photos} зураг · ${esc(plan.style.condition || '')}): тааз <b>${plan.style.ceiling_m} м</b> · хаалга ${plan.style.door_h} м · цонх ${plan.style.window_sill}–${plan.style.window_top} м · довжоо ${plan.style.threshold_cm} см · шал ${esc(plan.style.floor)} · хана <span style="display:inline-block;width:12px;height:12px;background:${esc(plan.style.wall_color)};border:1px solid var(--line);vertical-align:middle"></span> ${esc(plan.style.wall_color)} · тааз хонхорхой ${plan.style.ceiling_cove ? 'тийм' : 'үгүй'}${plan.style.beams && plan.style.beams.length ? ' · дам нуруу: ' + plan.style.beams.map((b) => esc(b.room + (b.note ? ' — ' + b.note : ''))).join('; ') : ''}
         ${(plan.style.rooms || []).length ? '<div style="margin-top:4px">' + plan.style.rooms.map((h) => `<div>• <b>${esc(h.room)}</b>: цонх ${h.windows ?? '?'} (${h.window_w ?? '?'} м), хаалга ${h.doors ?? '?'}, хана ${esc(h.wall_color || '?')}, шал ${esc(h.floor || '?')}${h.notes ? ' — ' + esc(h.notes) : ''}</div>`).join('') + '</div>' : ''}
         ${(plan.style.notes || []).length ? '<div style="color:var(--muted);margin-top:4px">' + plan.style.notes.map(esc).join(' · ') + '</div>' : ''}</div>` : '';
-  const panoBox = `<h3 style="margin-top:16px"><svg class=ic><use href=#i-camera></use></svg>360° панорам (бодит орчин)</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">360° камер (Insta360, Ricoh Theta) эсвэл утасны панорам горимоор өрөө бүрийн төвөөс, мөн гадаах цэгүүдээс (орц, хашаа, талбай) авсан <b>equirectangular 2:1</b> JPEG. Панорамтай өрөөнд аялал автоматаар бүтэн эргэж үзүүлнэ; бүх өрөө панорамтай бол 3D загвар хэрэггүй болно.</div>
-      <div class="tablebox"><table><thead><tr><th>Цэг</th><th>Панорам</th><th></th></tr></thead><tbody>
-      ${plan.rooms.map((r) => { const pn = (t.assets || []).find((a) => a.kind === 'pano' && a.room_id === r.id); return `<tr><td>${esc(r.name)}</td>
-        <td>${pn ? `<span class="badge ok"><svg class=ic><use href=#i-check></use></svg>оруулсан</span> <button class="small" onclick="tourPanoDel(${pn.id})">✕</button>` : `<input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('${r.id}',this)">`}</td><td></td></tr>`; }).join('')}
-      ${(t.assets || []).filter((a) => a.kind === 'pano' && String(a.room_id || '').startsWith('ext:')).map((a) => `<tr><td><svg class=ic><use href=#i-trees></use></svg>${esc(a.room_id.slice(4))}</td><td><span class="badge ok"><svg class=ic><use href=#i-check></use></svg>оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td><td></td></tr>`).join('')}
-      <tr><td><input id="tour-ext-name" placeholder="Гадаах цэг (ж: Орц, Хашаа)" style="width:150px"></td><td><input type="file" accept="image/jpeg,image/png,image/webp" style="width:auto;font-size:12px" onchange="tourPanoUpload('ext:'+($('#tour-ext-name').value.trim()||'Гадаах орчин'),this)"></td><td></td></tr>
-      </tbody></table></div>`;
+  const legacyPano = (t.assets || []).filter((a) => a.kind === 'pano'); // хуучин (≤25MB) замаар оруулсан — шинэ нь «Бодит медиа» картад
+  const panoBox = legacyPano.length ? `<h3 style="margin-top:16px"><svg class=ic><use href=#i-camera></use></svg>360° панорам (өмнө оруулсан)</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шинэ 360 зураг, бичлэг, бодит 3D-г доорх <b>«Бодит медиа»</b> хэсгээс оруулна (том файл, тасарвал үргэлжилнэ).</div>
+      <div class="tablebox"><table><tbody>${legacyPano.map((a) => `<tr><td>${esc(String(a.room_id || '').startsWith('ext:') ? a.room_id.slice(4) : ((plan.rooms.find((r) => r.id === a.room_id) || {}).name || a.room_id || ''))}</td><td><span class="badge ok">оруулсан</span> <button class="small" onclick="tourPanoDel(${a.id})">✕</button></td></tr>`).join('')}</tbody></table></div>` : '';
   const videoBox = `<h3 style="margin-top:16px"><svg class=ic><use href=#i-clapperboard></use></svg>Бичлэг → AI шинжилгээ</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Утсаараа өрөө бүрийг аажуу эргэлдүүлж авсан бичлэг (mp4/mov). Браузер дээр 12 кадр гаргаж, өрөөний шошготой илгээнэ; дараа нь «<svg class=ic><use href=#i-scan-search></use></svg>AI зургаас шинжлэх» — тааз/цонх/хаалга/шал/ханын өнгийг өрөө тус бүрээр таамаглаж маягтыг урьдчилан бөглөнө.</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -681,7 +677,8 @@ function renderTour() {
       <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Объектын газрын зураг дээр тэмдэглэсэн байршлаас ~1.5 км радиуст бодит барилга, зам, сургууль · цэцэрлэг · эмнэлэг · дэлгүүр, явган маршрут (минутаар), түгжрэлийн судалгааг автоматаар бүрдүүлж, аяллын эхэнд тэнгэрээс бууж ирэх нислэг нэмнэ. 1–3 минут үргэлжилнэ.</div>
       ${hasLoc ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="primary" id="ext-btn" onclick="tourExterior(${p.id})"><svg class=ic><use href=#i-plane-landing></use></svg>Гадаах орчны 3D нислэг бэлтгэх</button><button onclick="localPoisView(${p.id})" title="Нээлттэй газрын зурагт дутуу ойрын дэлгүүр, эмийн сан, тоглоомын талбайг тэмдэглэх"><svg class=ic><use href=#i-map-pin></use></svg>Ойрын газар нэмэх</button><span id="ext-st" style="font-size:12.5px">…</span></div>`
         : `<span class="badge warn">Байршил тэмдэглээгүй</span> <span style="font-size:12.5px">Объект → засах → газрын зураг дээр байршлыг дарж тэмдэглээд хадгална уу.</span> <button class="small" onclick="propForm(TOUR.property)">Байршил тэмдэглэх</button>`}</div>`;
-  const shareBox = extBox + `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
+  const mediaBox = `<div class="card" style="margin-top:16px" id="tm-card"><h3><svg class=ic><use href=#i-camera></use></svg>Бодит медиа — утас эсвэл 360 камер</h3><div id="tm-box" style="font-size:12.5px">Ачаалж байна…</div><div id="tm-up"></div></div>`;
+  const shareBox = extBox + mediaBox + `<div class="card" style="margin-top:16px"><h3>3D урьдчилан харах · хуваалцах</h3>
       <iframe id="tour-frame" src="/tour/${t.token}?v=${Date.now()}" style="width:100%;aspect-ratio:16/9;border:1px solid var(--line);border-radius:6px;background:#0b1220" allowfullscreen></iframe>
       <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="ts-hc" ${t.settings && t.settings.hideCompany ? 'checked' : ''} onchange="tourSettings()" style="width:auto">Компанийн нэрийг нуух</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="ts-do" ${t.settings && t.settings.districtOnly ? 'checked' : ''} onchange="tourSettings()" style="width:auto">Хаягийг зөвхөн дүүргээр (хороолол, байрны дугааргүй)</label></div>
       <div style="margin-top:10px"><b>Хуваалцах холбоос</b> (худалдан авагчид, нэвтрэлт шаардахгүй):
@@ -745,6 +742,7 @@ function renderTour() {
   ${shareBox}`;
   drawTourPlan(); bindTourCanvas();
   if (hasLoc) tourExtStatus(p.id);
+  tourMediaLoad();
 }
 // Ойрын газар (агент/оршин суугчийн баталсан): газрын зураг дээр дарж ангилал + нэр → дараагийн «бэлтгэх»-д нислэг/маршрутад тэргүүн ээлжинд
 let LPOI = null;
@@ -1004,6 +1002,110 @@ window.tourAnalyze = async () => {
   const d = await api('/tour/' + TOUR.pid + '/analyze', { method: 'POST' });
   if (d.error) return alert(d.error);
   TOUR.plan = d.tour.plan; toast('Шинжилгээ дууслаа — 3D шинэчлэгдэв'); renderTour();
+};
+// ---------- Бодит медиа: хэсэгчилсэн upload (8 MB, 3 зэрэг, давтан оролдлого, тасарвал үргэлжлэх) ----------
+const MKIND = { walk_ext: 'Гадна алхалт', walk_in: 'Орц, шат', pano: '360 зураг', splat: 'Бодит 3D' };
+const fmtMB = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + ' MB');
+const fmtDur = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '');
+let TM = null, TM_T = null; const UPJ = [];
+const upKey = (pid, f, kind, room) => `zuuch_up_${pid}_${kind}_${room || ''}_${f.name}_${f.size}_${f.lastModified}`;
+async function mediaUpload(file, opt) { // opt: { kind, room_id, label, projection, track, source }
+  const pid = TOUR.pid; const key = upKey(pid, file, opt.kind, opt.room_id);
+  let st = null; try { st = JSON.parse(localStorage.getItem(key) || 'null'); } catch { st = null; }
+  let uid, chunk, chunks, received = new Set();
+  if (st && st.uid) { const r = await api('/media/upload/' + st.uid).catch(() => null); if (r && !r.error && r.chunks) { uid = st.uid; chunk = r.chunk; chunks = r.chunks; received = new Set(r.received); } }
+  if (!uid) {
+    const ini = await api('/tour/' + pid + '/media/init', { method: 'POST', body: { ...opt, filename: file.name, size: file.size, mime: file.type } });
+    if (ini.error) { alert(ini.error); return null; }
+    uid = ini.upload_id; chunk = ini.chunk; chunks = ini.chunks; try { localStorage.setItem(key, JSON.stringify({ uid })); } catch { /* */ }
+  }
+  const job = { name: file.name, kind: opt.kind, size: file.size, done: received.size, chunks, status: received.size ? 'үргэлжлүүлж байна' : 'илгээж байна', err: '' }; UPJ.push(job); upRender();
+  const todo = [...Array(chunks).keys()].filter((i) => !received.has(i));
+  const sendOne = async (i) => {
+    for (let a = 0; ; a++) {
+      try {
+        const r = await fetch(`/api/media/upload/${uid}/${i}`, { method: 'PUT', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: file.slice(i * chunk, Math.min(file.size, (i + 1) * chunk)) });
+        if (r.status === 401) { logout(); throw new Error('нэвтрэлт дууссан'); }
+        const j = await r.json(); if (!j.ok) throw new Error(j.error || 'алдаа'); job.done++; upRender(); return;
+      } catch (e) { if (a >= 6) throw e; job.status = `сүлжээ тасарсан — дахин оролдож байна (${a + 1})`; upRender(); await new Promise((r) => setTimeout(r, Math.min(20000, 1000 * 2 ** a))); job.status = 'илгээж байна'; }
+    }
+  };
+  try {
+    await Promise.all([0, 1, 2].map(async () => { while (todo.length) await sendOne(todo.shift()); }));
+    const c = await api('/media/upload/' + uid + '/complete', { method: 'POST' }); if (c.error) throw new Error(c.error);
+    job.status = 'серверт боловсруулж байна'; job.ok = true; try { localStorage.removeItem(key); } catch { /* */ }
+    toast(`${file.name} — илгээгдлээ, боловсруулж байна`); tourMediaLoad();
+  } catch (e) { job.status = 'алдаа: ' + e.message + ' — файлаа дахин сонговол үргэлжилнэ'; job.err = e.message; }
+  upRender(); setTimeout(() => { const k = UPJ.indexOf(job); if (k >= 0 && job.ok) { UPJ.splice(k, 1); upRender(); } }, 6000);
+  return job;
+}
+function upRender() {
+  const el = $('#tm-up'); if (!el) return;
+  el.innerHTML = UPJ.map((j) => `<div style="margin-top:6px;font-size:12px"><b>${esc(MKIND[j.kind] || '')}</b> · ${esc(j.name)} (${fmtMB(j.size)}) — ${esc(j.status)}<div style="height:6px;background:var(--surface-2);border-radius:3px;margin-top:3px"><div style="height:100%;width:${Math.round((j.done / j.chunks) * 100)}%;background:${j.err ? 'var(--accent-2)' : 'var(--accent)'};border-radius:3px"></div></div></div>`).join('');
+}
+window.addEventListener('beforeunload', (e) => { if (UPJ.some((j) => !j.ok && !j.err)) { e.preventDefault(); e.returnValue = ''; } });
+window.tmPick = (kind, room) => {
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.accept = kind === 'pano' ? 'image/jpeg,image/png,image/webp' : kind === 'splat' ? '.spz,.ply,.splat,.ksplat' : 'video/*,.insv,.mov,.mp4,.webm';
+  if (kind === 'walk_ext' || kind === 'walk_in') inp.multiple = true;
+  inp.onchange = async () => { for (const f of inp.files) await mediaUpload(f, { kind, room_id: room || null, label: kind === 'walk_ext' ? 'Төв замаас орц хүртэл' : kind === 'walk_in' ? 'Орц, шат' : '' }); };
+  inp.click();
+};
+window.tmExtPano = () => { const nm = ($('#tm-extname') || {}).value; if (!nm || !nm.trim()) return alert('Гадаах цэгийн нэр (ж: Орц, Хашаа)'); tmPick('pano', 'ext:' + nm.trim().slice(0, 40)); };
+async function tourMediaLoad() {
+  clearTimeout(TM_T); if (!TOUR || !$('#tm-box')) return;
+  const d = await api('/tour/' + TOUR.pid + '/media').catch(() => null); if (!d || d.error) { if ($('#tm-box')) $('#tm-box').textContent = d && d.error ? d.error : 'Ачаалж чадсангүй'; return; }
+  TM = d; const it = d.items; const L = d.limits || {};
+  const st = (m) => (m.status === 'ready' ? '<span class="badge ok">бэлэн</span>' : m.status === 'error' ? `<span class="badge warn" title="${esc(m.msg || '')}">алдаа</span> <small>${esc((m.msg || '').slice(0, 90))}</small>` : `<span class="badge">${esc(m.msg || m.status)}</span>`);
+  const btns = (m) => `${m.status === 'ready' && d.token ? `<a href="/tour-media/${esc(d.token)}/${m.id}" target="_blank" rel="noopener"><button class="small" title="Харах">▶</button></a>` : ''} <button class="small" onclick="tmDel(${m.id})" title="Устгах">✕</button>`;
+  const walkList = (kind) => { const a = it.filter((m) => m.kind === kind); return a.length ? `<table><tbody>${a.map((m, i) => `<tr><td>${i + 1}. <a href="#" onclick="tmLabel(${m.id});return false">${esc(m.label || MKIND[kind])}</a><br><small style="color:var(--muted)">${esc(m.orig_name || '')} · ${m.projection === 'equirect' ? '360°' : m.projection === 'flat' ? 'энгийн' : ''} ${fmtDur(m.duration)} · ${fmtMB(m.size || m.orig_size || 0)}</small></td><td>${st(m)}</td><td>${m.has_track ? '<span class="badge ok" title="GPS зам">GPS</span>' : `<button class="small" onclick="tmTrack(${m.id})" title="GPX файл (заавал биш — байхгүй бол замыг системийн маршрутаар тааруулна)">GPX</button>`}</td><td style="white-space:nowrap">${i > 0 ? `<button class="small" onclick="tmMove(${m.id},-1)">↑</button>` : ''}${i < a.length - 1 ? `<button class="small" onclick="tmMove(${m.id},1)">↓</button>` : ''} ${btns(m)}</td></tr>`).join('')}</tbody></table>` : '<div style="color:var(--muted)">Одоогоор алга</div>'; };
+  const roomRow = (r) => { const pn = it.filter((m) => m.kind === 'pano' && m.room_id === r.id).pop(), sp = it.filter((m) => m.kind === 'splat' && m.room_id === r.id).pop();
+    return `<tr><td><b>${esc(r.name)}</b></td><td>${pn ? `${st(pn)} ${pn.meta && pn.meta.partial ? '<small title="Бүтэн 360 биш — дутуу хэсгийг саарлаар нөхсөн">хагас</small>' : ''} ${btns(pn)}` : ''} <button class="small" onclick="tmPick('pano','${esc(r.id)}')">${pn ? 'Солих' : '+ 360 зураг'}</button></td>
+      <td>${sp ? `${st(sp)} <small>${sp.meta && sp.meta.count ? Math.round(sp.meta.count / 1000) + 'k цэг' : ''}</small> <button class="small" title="Доош/дээш эргүүлэх (X 180°)" onclick="tmRot(${sp.id},0)">⇅</button><button class="small" title="Хэвтээ 90° эргүүлэх" onclick="tmRot(${sp.id},1)">⟳</button> ${btns(sp)}` : ''} <button class="small" onclick="tmPick('splat','${esc(r.id)}')">${sp ? 'Солих' : '+ бодит 3D'}</button></td></tr>`; };
+  const ext = it.filter((m) => m.kind === 'pano' && String(m.room_id || '').startsWith('ext:'));
+  const disk = d.disk ? ` · сервер чөлөөтэй ${fmtMB(d.disk.free)}` : '';
+  $('#tm-box').innerHTML = `
+    <div style="color:var(--muted);margin-bottom:8px">Аялалд дараалал: 3D нислэг → <b>гадна алхалт</b> → <b>орц, шат</b> → өрөө бүр (<b>бодит 3D</b> &gt; <b>360 зураг</b> &gt; загвар). Утсаар ч болно — 360 камер заавал биш.<br>
+      Дээд хэмжээ: бичлэг ${fmtMB(L.video || 0)}, 360 зураг ${fmtMB(L.pano || 0)}, бодит 3D .spz ${fmtMB(L.splat || 0)} / .ply ${fmtMB(L.ply || 0)}. Энэ объект: ${fmtMB(d.used || 0)}${disk}${d.ffmpeg ? '' : ' · <span class="badge warn">сервер дээр ffmpeg алга — бичлэг/зураг хөрвүүлэгдэхгүй</span>'}</div>
+    <h4 style="margin:10px 0 4px">1. Гадна алхалт — төв замаас орц хүртэл</h4>${walkList('walk_ext')}
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="small primary" onclick="tmPick('walk_ext')">+ Бичлэг оруулах</button><a href="/capture?pid=${TOUR.pid}&kind=walk_ext" target="_blank" rel="noopener"><button class="small" title="Утасны хөтчөөр нээгээд бичнэ — GPS замтай">Утсаар бичих (GPS)</button></a></div>
+    <h4 style="margin:12px 0 4px">2. Орц, шат, коридор</h4>${walkList('walk_in')}
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="small primary" onclick="tmPick('walk_in')">+ Бичлэг оруулах</button><a href="/capture?pid=${TOUR.pid}&kind=walk_in" target="_blank" rel="noopener"><button class="small">Утсаар бичих</button></a></div>
+    <h4 style="margin:12px 0 4px">3. Өрөө бүр</h4>
+    <div class="tablebox"><table><thead><tr><th>Өрөө</th><th>360 зураг (өрөөний төвөөс, 1.5 м)</th><th>Бодит 3D (Scaniverse / Polycam .spz)</th></tr></thead><tbody>${TOUR.plan.rooms.map(roomRow).join('')}</tbody></table></div>
+    <div style="margin-top:8px"><b>Гадаах 360 цэгүүд</b> ${ext.map((m) => `<span class="badge">${esc(m.room_id.slice(4))}</span> ${st(m)} ${btns(m)}`).join(' ')} <input id="tm-extname" placeholder="Цэгийн нэр (ж: Орц, Хашаа)" style="width:170px"> <button class="small" onclick="tmExtPano()">+ 360 зураг</button></div>
+    <h4 style="margin:12px 0 4px">4. План — iPhone Pro LiDAR (RoomPlan)</h4>
+    <div style="color:var(--muted)">LiDAR-тай iPhone (12 Pro–17 Pro) дээр RoomPlan-д суурилсан апп-аар (жишээ нь Apple-ийн RoomPlan жишээ апп) скан хийж JSON экспортлоод оруулна — хана, хаалга, цонх хэмжээтэйгээ (±5 см) план болно.</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap"><button class="small" onclick="tmRoomPlan()">RoomPlan JSON сонгох</button><span id="tm-rp" style="font-size:12px"></span></div>`;
+  upRender();
+  if (it.some((m) => m.status === 'processing' || m.status === 'uploading')) TM_T = setTimeout(tourMediaLoad, 3000);
+}
+window.tourMediaLoad = tourMediaLoad;
+window.tmDel = async (id) => { if (!confirm('Энэ медиаг устгах уу?')) return; const r = await api('/tour/' + TOUR.pid + '/media/' + id, { method: 'DELETE' }); if (r.error) return alert(r.error); tourMediaLoad(); };
+window.tmLabel = async (id) => { const m = TM.items.find((x) => x.id === id); const v = prompt('Нэр (аялалд гарна)', m.label || ''); if (v == null) return; await api('/tour/' + TOUR.pid + '/media/' + id, { method: 'PUT', body: { label: v } }); tourMediaLoad(); };
+window.tmMove = async (id, dir) => {
+  const m = TM.items.find((x) => x.id === id); const a = TM.items.filter((x) => x.kind === m.kind); const i = a.indexOf(m), j = i + dir; if (j < 0 || j >= a.length) return;
+  await api('/tour/' + TOUR.pid + '/media/' + a[i].id, { method: 'PUT', body: { seq: j + 1 } }); await api('/tour/' + TOUR.pid + '/media/' + a[j].id, { method: 'PUT', body: { seq: i + 1 } });
+  for (const [k, x] of a.entries()) if (k !== i && k !== j && x.seq !== k + 1) await api('/tour/' + TOUR.pid + '/media/' + x.id, { method: 'PUT', body: { seq: k + 1 } });
+  tourMediaLoad();
+};
+window.tmRot = async (id, axis) => { const m = TM.items.find((x) => x.id === id); const rot = (m.meta && m.meta.rot) || [0, 0, 0]; rot[axis] = (rot[axis] + (axis === 0 ? 180 : 90)) % 360; await api('/tour/' + TOUR.pid + '/media/' + id, { method: 'PUT', body: { rot } }); toast('Эргүүллээ — урьдчилан харахаар шалгана уу'); tourMediaLoad(); const f = $('#tour-frame'); if (f) f.src = f.src.replace(/v=\d+/, 'v=' + Date.now()); };
+window.tmTrack = (id) => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.gpx,.json,application/gpx+xml';
+  inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const r = await fetch(`/api/tour/${TOUR.pid}/media/${id}/track`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: f }); const j = await r.json(); if (j.error) return alert(j.error); toast(`GPS зам: ${j.points} цэг`); tourMediaLoad(); };
+  inp.click();
+};
+window.tmRoomPlan = () => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return; const txt = await f.text();
+    const post = async (apply) => { const r = await fetch(`/api/tour/${TOUR.pid}/roomplan${apply ? '?apply=1' : ''}`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' }, body: txt }); return r.json(); };
+    const d = await post(false); if (d.error) { $('#tm-rp').textContent = d.error; return; }
+    const sm = d.summary; const rooms = d.plan.rooms.map((r) => `${r.name} ${r.w}×${r.h}`).join(', ');
+    if (!confirm(`RoomPlan: ${sm.rooms} өрөө (${rooms}), ${sm.doors} хаалга, ${sm.windows} цонх, тааз ${d.plan.ceiling} м.${d.warnings.length ? '\n⚠ ' + d.warnings.join('; ') : ''}\n\nОдоогийн планыг үүгээр солих уу?`)) { $('#tm-rp').textContent = `Урьдчилан: ${sm.rooms} өрөө, ${sm.doors} хаалга, ${sm.windows} цонх`; return; }
+    const a = await post(true); if (a.error) return alert(a.error); TOUR.plan = a.tour.plan; toast('План RoomPlan-аас шинэчлэгдлээ'); renderTour();
+  };
+  inp.click();
 };
 window.tourPanoUpload = async (roomId, input) => {
   const f = input.files && input.files[0]; if (!f) return;

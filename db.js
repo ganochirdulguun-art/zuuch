@@ -400,6 +400,25 @@ CREATE TABLE IF NOT EXISTS tours (
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS exterior JSONB;
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS local_pois JSONB;
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS settings JSONB;
+-- POV аяллын бодит медиа: алхалтын бичлэг (гадна/дотор), өрөөний 360 зураг, бодит 3D (splat)
+CREATE TABLE IF NOT EXISTS tour_media (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  property_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  room_id TEXT,
+  label TEXT DEFAULT '',
+  seq INTEGER DEFAULT 0,
+  projection TEXT,
+  status TEXT DEFAULT 'uploading',
+  msg TEXT DEFAULT '',
+  orig_name TEXT, orig_size BIGINT, mime TEXT,
+  file TEXT, poster TEXT, size BIGINT,
+  duration DOUBLE PRECISION, width INTEGER, height INTEGER,
+  track JSONB, meta JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS tour_media_prop ON tour_media(company_id, property_id);
 ALTER TABLE price_index ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'demo';
 ALTER TABLE price_index ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 `;

@@ -24,7 +24,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; connect-src 'self'; " +
+    `font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; connect-src 'self' blob:; media-src 'self' blob:; worker-src 'self' blob:; ` +
     `frame-ancestors ${embeddable ? '*' : "'self'"}`);
   next();
 });
@@ -155,6 +155,10 @@ app.delete('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
 }));
 
 // ---- Нөөцлөлт (эзэн): өдөр бүр автоматаар, гараар ч; татаж аваад өөрийн компьютерт хадгална ----
+app.get('/api/owner/storage', ownerOnly, wrap(async (req, res) => {
+  const byCo = await db.all("SELECT m.company_id, c.name, m.kind, COUNT(*)::int n, COALESCE(SUM(m.size),0)::bigint bytes FROM tour_media m LEFT JOIN companies c ON c.id=m.company_id WHERE m.status='ready' GROUP BY 1,2,3 ORDER BY bytes DESC");
+  res.json({ disk: media.diskInfo(), media: byCo, mediaDir: media.MEDIA_DIR, uploads: await media.dirSize(path.join(media.MEDIA_DIR, '_uploads')), backups: await media.dirSize(backup.DIR), assets: await media.dirSize(UPLOAD_DIR), ffmpeg: !!media.tools().ffmpeg, queue: media.queueLength() });
+}));
 app.get('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ items: backup.list(), keep: backup.KEEP })));
 app.post('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ ok: true, ...(await backup.run(db, { reason: 'manual:' + (req.user.name || req.user.id) })) })));
 app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
@@ -244,6 +248,8 @@ const geostore = require('./geostore'); // хотын 500×500 м хавтан �
 const backup = require('./backup'); // өдөр тутмын нөөц (/data/backups)
 const priceIndex = require('./priceindex'); // дүүргийн үнийн индекс бодит зараас
 const dedupX = require('./dedup'); // эх сурвалж хоорондын давхардал
+const media = require('./media'); // POV аяллын бодит медиа (бичлэг, 360, splat)
+const roomplan = require('./roomplan'); // iPhone LiDAR RoomPlan → план
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -523,6 +529,76 @@ app.get('/api/tour/:pid', auth, wrap(async (req, res) => {
   if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
   res.json({ tour: t, property: prop, assets: await tourAssets(req.user.company_id, prop.id), types: tourLib.TYPES });
 }));
+// ---- Бодит медиа: хэсэгчилсэн upload (8 MB), боловсруулалт, жагсаалт, засвар ----
+app.get('/api/tour/:pid/media', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const items = await db.all('SELECT id, kind, room_id, label, seq, projection, status, msg, orig_name, orig_size, size, duration, width, height, (track IS NOT NULL) AS has_track, meta, created_at FROM tour_media WHERE company_id=? AND property_id=? ORDER BY kind, seq, id', req.user.company_id, prop.id);
+  const t = await db.one('SELECT token FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  const used = items.reduce((s, m) => s + Number(m.size || 0), 0); const disk = media.diskInfo();
+  res.json({ items, token: t && t.token, used, disk, limits: media.LIMITS, chunk: media.CHUNK, ffmpeg: !!media.tools().ffmpeg, queue: media.queueLength() });
+}));
+app.post('/api/tour/:pid/media/init', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return; const b = req.body || {};
+  const kind = String(b.kind || ''), size = Number(b.size), filename = String(b.filename || '').slice(0, 160);
+  const chk = media.canAccept(kind, filename, size); if (chk.error) return res.status(chk.code === 'disk' ? 507 : 400).json({ error: chk.error });
+  let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+  if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
+  const roomId = b.room_id ? String(b.room_id).slice(0, 60) : null;
+  const seq = Number.isFinite(Number(b.seq)) ? Number(b.seq) : ((await db.one('SELECT COALESCE(MAX(seq),0)+1 AS n FROM tour_media WHERE company_id=? AND property_id=? AND kind=?', req.user.company_id, prop.id, kind)).n);
+  const track = Array.isArray(b.track) && b.track.length >= 2 ? JSON.stringify(b.track.slice(0, 20000).map((p) => [+Number(p[0]).toFixed(2), +Number(p[1]).toFixed(6), +Number(p[2]).toFixed(6), p[3] != null ? Math.round(Number(p[3])) : null])) : null;
+  const m = await db.one('INSERT INTO tour_media (company_id, property_id, kind, room_id, label, seq, projection, orig_name, orig_size, mime, track, meta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *',
+    req.user.company_id, prop.id, kind, roomId, String(b.label || '').slice(0, 80), seq, ['flat', 'equirect'].includes(b.projection) ? b.projection : null, filename, size, String(b.mime || '').slice(0, 80), track, JSON.stringify({ source: b.source === 'capture' ? 'capture' : 'file' }));
+  const s = await media.initUpload({ mediaId: m.id, size, filename });
+  res.json({ media_id: m.id, upload_id: s.id, chunk: media.CHUNK, chunks: s.chunks, received: [] });
+}));
+const ownUpload = async (req, res) => {
+  const s = await media.getSession(req.params.uid); if (!s) { res.status(404).json({ error: 'Upload олдсонгүй (хугацаа дууссан?)' }); return null; }
+  const m = await db.one('SELECT id, company_id FROM tour_media WHERE id=?', s.mediaId); if (!m || m.company_id !== req.user.company_id) { res.status(403).json({ error: 'Хандах эрхгүй' }); return null; }
+  return s;
+};
+app.get('/api/media/upload/:uid', auth, wrap(async (req, res) => { const s = await ownUpload(req, res); if (!s) return; res.json({ received: [...s.received], chunks: s.chunks, chunk: media.CHUNK }); }));
+app.put('/api/media/upload/:uid/:index', auth, express.raw({ type: () => true, limit: media.CHUNK + 1024 * 1024 }), wrap(async (req, res) => {
+  const s = await ownUpload(req, res); if (!s) return;
+  const n = await media.writeChunk(s, req.params.index, req.body); res.json({ ok: true, received: n, chunks: s.chunks });
+}));
+app.post('/api/media/upload/:uid/complete', auth, wrap(async (req, res) => {
+  const s = await ownUpload(req, res); if (!s) return;
+  const file = await media.finishUpload(s);
+  await db.run("UPDATE tour_media SET status='processing', msg='Дараалалд…' WHERE id=?", s.mediaId); media.enqueue(s.mediaId, file);
+  res.json({ ok: true, media_id: s.mediaId, queue: media.queueLength() });
+}));
+app.delete('/api/media/upload/:uid', auth, wrap(async (req, res) => { const s = await ownUpload(req, res); if (!s) return; await media.abortUpload(s); await db.run('DELETE FROM tour_media WHERE id=? AND status=\'uploading\'', s.mediaId); res.json({ ok: true }); }));
+app.put('/api/tour/:pid/media/:id', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return; const b = req.body || {};
+  const m = await db.one('SELECT * FROM tour_media WHERE id=? AND company_id=? AND property_id=?', Number(req.params.id), req.user.company_id, prop.id); if (!m) return res.status(404).json({ error: 'Олдсонгүй' });
+  const meta = { ...(m.meta || {}) }; if (Array.isArray(b.rot) && b.rot.length === 3) meta.rot = b.rot.map((v) => ((Math.round(Number(v) / 90) * 90) % 360 + 360) % 360); // splat эргүүлэлт (X,Y,Z градус, 90-ээр)
+  await db.run('UPDATE tour_media SET label=?, seq=?, room_id=?, meta=? WHERE id=?', b.label != null ? String(b.label).slice(0, 80) : m.label, Number.isFinite(Number(b.seq)) ? Number(b.seq) : m.seq, b.room_id !== undefined ? (b.room_id ? String(b.room_id).slice(0, 60) : null) : m.room_id, JSON.stringify(meta), m.id);
+  res.json({ ok: true });
+}));
+// GPS зам: GPX эсвэл [[t, lat, lng], …] — бичлэгийн хугацаатай тааруулна (GPX-ийн цагийг эхлэлээс секунд болгоно)
+app.post('/api/tour/:pid/media/:id/track', auth, express.raw({ type: () => true, limit: '20mb' }), wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const m = await db.one('SELECT id FROM tour_media WHERE id=? AND company_id=? AND property_id=?', Number(req.params.id), req.user.company_id, prop.id); if (!m) return res.status(404).json({ error: 'Олдсонгүй' });
+  const txt = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body || ''); let pts = [];
+  if (/<gpx|<trkpt/i.test(txt)) { let t0 = null; for (const mm of txt.matchAll(/<trkpt[^>]*lat="([-\d.]+)"[^>]*lon="([-\d.]+)"[^>]*>([\s\S]*?)<\/trkpt>/g)) { const tm = /<time>([^<]+)<\/time>/.exec(mm[3]); const ts = tm ? Date.parse(tm[1]) / 1000 : null; if (t0 == null && ts != null) t0 = ts; pts.push([ts != null ? +(ts - t0).toFixed(1) : pts.length, +Number(mm[1]).toFixed(6), +Number(mm[2]).toFixed(6), null]); } }
+  else { try { const j = JSON.parse(txt); pts = (Array.isArray(j) ? j : j.track || []).map((p) => [Number(p[0]), Number(p[1]), Number(p[2]), p[3] != null ? Number(p[3]) : null]); } catch { /* */ } }
+  pts = pts.filter((p) => Number.isFinite(p[1]) && Number.isFinite(p[2]) && Math.abs(p[1]) <= 90).slice(0, 20000);
+  if (pts.length < 2) return res.status(400).json({ error: 'GPS зам уншигдсангүй (GPX эсвэл JSON)' });
+  await db.run('UPDATE tour_media SET track=? WHERE id=?', JSON.stringify(pts), m.id); res.json({ ok: true, points: pts.length });
+}));
+app.delete('/api/tour/:pid/media/:id', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  const m = await db.one('SELECT * FROM tour_media WHERE id=? AND company_id=? AND property_id=?', Number(req.params.id), req.user.company_id, prop.id); if (!m) return res.status(404).json({ error: 'Олдсонгүй' });
+  if (m.status === 'processing') return res.status(409).json({ error: 'Боловсруулж байна — дууссаны дараа устгана уу' });
+  await media.removeFiles(m); await db.run('DELETE FROM tour_media WHERE id=?', m.id); res.json({ ok: true });
+}));
+// RoomPlan (iPhone Pro LiDAR) JSON → план: ?apply=1 бол аяллын планыг солино, үгүй бол урьдчилан харна
+app.post('/api/tour/:pid/roomplan', auth, express.raw({ type: () => true, limit: '50mb' }), wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  let r; try { r = roomplan.convert(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body); } catch (e) { return res.status(400).json({ error: 'RoomPlan JSON уншигдсангүй: ' + e.message }); }
+  if (req.query.apply === '1') { const t = await saveTour(req.user.company_id, prop.id, tourLib.finalize(r.plan)); return res.json({ ok: true, applied: true, ...r, tour: t }); }
+  res.json({ ok: true, ...r, preview: tourLib.finalize(r.plan) });
+}));
 // Хуваалцах холбоосын нууцлал: компанийн нэр нуух, хаягийг зөвхөн дүүргээр
 app.put('/api/tour/:pid/settings', auth, wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return; const b = req.body || {};
@@ -697,7 +773,21 @@ app.get('/tour-data/:token', wrap(async (req, res) => {
   const p = await db.one('SELECT district, khoroolol, rooms, area, floor, total_floors, is_new, deal_type, price FROM properties WHERE id=?', t.property_id);
   const c = await db.one('SELECT name FROM companies WHERE id=?', t.company_id);
   const st = t.settings || {}; if (p && st.districtOnly) p.khoroolol = null; // нууцлал: хуваалцах холбоост хаягийг зөвхөн дүүргээр
-  res.json({ plan: t.plan, property: p, company: c && !st.hideCompany ? c.name : '', assets: await tourAssets(t.company_id, t.property_id), exterior: t.exterior || null });
+  res.json({ plan: t.plan, property: p, company: c && !st.hideCompany ? c.name : '', assets: await tourAssets(t.company_id, t.property_id), exterior: t.exterior || null, media: await publicMedia(t) });
+}));
+// ---- Бодит медиа (бичлэг/360/splat): нийтийн хандалт (аяллын токеноор), Range дэмжинэ ----
+async function publicMedia(t) {
+  const rows = await db.all("SELECT id, kind, room_id, label, seq, projection, duration, width, height, track, meta, poster FROM tour_media WHERE company_id=? AND property_id=? AND status='ready' ORDER BY kind, seq, id", t.company_id, t.property_id);
+  return rows.map((m) => ({ id: m.id, kind: m.kind, room_id: m.room_id, label: m.label || '', seq: m.seq, projection: m.projection, duration: m.duration, width: m.width, height: m.height, track: m.track || null,
+    meta: m.meta ? { center: m.meta.center, min: m.meta.min, max: m.meta.max, count: m.meta.count, format: m.meta.format, partial: m.meta.partial, rot: m.meta.rot || null } : {},
+    url: `/tour-media/${t.token}/${m.id}`, poster: m.poster ? `/tour-media/${t.token}/${m.id}/poster` : null }));
+}
+app.get('/tour-media/:token/:id{/:variant}', wrap(async (req, res) => {
+  const t = await db.one('SELECT company_id, property_id FROM tours WHERE token=?', req.params.token); if (!t) return res.status(404).end();
+  const m = await db.one("SELECT * FROM tour_media WHERE id=? AND company_id=? AND property_id=? AND status='ready'", Number(req.params.id), t.company_id, t.property_id); if (!m) return res.status(404).end();
+  const f = media.filePath(m, req.params.variant === 'poster' ? m.poster : m.file); if (!f || !fs.existsSync(f)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(f, { acceptRanges: true });
 }));
 app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   const t = await db.one('SELECT company_id, property_id FROM tours WHERE token=?', req.params.token);
@@ -710,6 +800,7 @@ app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/capture', (req, res) => res.sendFile(path.join(__dirname, 'public', 'capture.html'))); // утсаар алхалтын бичлэг (GPS-тэй)
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 // ---- Алдааны нэгдсэн боловсруулагч ----
@@ -720,4 +811,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); });
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); media.boot(db); });

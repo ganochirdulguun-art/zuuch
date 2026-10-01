@@ -100,6 +100,8 @@
   <button id="bFree"><svg class="ic" aria-hidden="true"><use href="#i-compass"/></svg>Өөрөө явах</button>
   <button id="bPhotos" disabled><svg class="ic" aria-hidden="true"><use href="#i-images"/></svg>Зураг</button>
   <button id="bPano" style="display:none">360° панорам</button>
+  <button id="b3D" style="display:none" title="Энэ өрөөний бодит 3D (утас/камерын скан)"><svg class="ic" aria-hidden="true"><use href="#i-rotate-3d"/></svg>Бодит 3D</button>
+  <button id="bWalk" style="display:none" title="Төв замаас орц, шат хүртэлх бодит бичлэг"><svg class="ic" aria-hidden="true"><use href="#i-footprints"/></svg>Алхалт</button>
   <button id="bFurn" title="Тавилгын санал (жишиг) асаах/унтраах"><svg class="ic" aria-hidden="true"><use href="#i-armchair"/></svg>Тавилга</button>
   <button id="bOut" style="display:none" title="Гадаах орчны 3D нислэг"><svg class="ic" aria-hidden="true"><use href="#i-plane-landing"/></svg>Гадаа</button>
   <button id="bIn" style="display:none" title="Байрны дотор"><svg class="ic" aria-hidden="true"><use href="#i-house"/></svg>Дотор</button>
@@ -119,7 +121,7 @@
 <div class="fade" id="fade"></div>
 <div id="load"><div class="spin"></div><div>Аялал бэлдэж байна…</div></div>
 <script src="/icons.js?v=1"></script>
-<script type="importmap">{"imports":{"three":"/vendor/three.module.min.js"}}</script>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.min.js","gaussian-splats-3d":"/vendor/gaussian-splats-3d.module.js"}}</script>
 <script type="module" src="/tour.js"></script>
 </body>
 </html>

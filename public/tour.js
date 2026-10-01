@@ -9,6 +9,7 @@ import { RenderPass } from '/vendor/RenderPass.js';
 import { UnrealBloomPass } from '/vendor/UnrealBloomPass.js';
 import { OutputPass } from '/vendor/OutputPass.js';
 import { createExterior } from '/tour-ext.js';
+import { createMedia } from '/tour-media.js';
 
 const $ = (s) => document.querySelector(s);
 const token = location.pathname.split('/').filter(Boolean).pop();
@@ -33,7 +34,8 @@ function canvasTex(draw, size = 512, repeat = [1, 1]) {
 
 
 let data, plan, scene, camera, renderer, rooms = [], byId = {}, doorGraph = {};
-let EXT = null, SCENE_MODE = 'interior'; // гадаах орчны 3D нислэг (Ш3д-3) эсвэл байрны дотор
+let EXT = null, SCENE_MODE = 'interior'; // гадаах орчны 3D нислэг (Ш3д-3), байрны дотор, 'walk' (бодит алхалтын бичлэг), 'splat' (бодит 3D өрөө)
+let MEDIA = null; // бодит медиа (tour-media.js)
 const mats = {};
 const furnGroup = new THREE.Group();
 // Плита: хэмжээ sx × sy м, заадас (grout) нарийн; world-UV-д 1 давталт = 1 плита
@@ -1092,6 +1094,7 @@ function stepAuto(dt) {
   if (!tourPts.length) return;
   const p = tourPts[tourI];
   // 2) өрөөний панорам: бүтэн эргэлт
+  if (phase === 'splat') return; // бодит 3D өрөө (tour-media) — гарахад phase='walk'
   if (phase === 'pano') { if (!panoActive) return; panoT += dt; cam.yaw += AUTO.spinRate * dt; cam.pitch += (-0.02 - cam.pitch) * 0.03; if (panoT >= AUTO.panoSpin) { phase = 'walk'; fadeTo(() => { hidePano(); cam.yaw = p.yaw0; pauseT = 0.8; }); } return; }
   // 3) өрөөний төвд зогсоод зөөлөн эргэж харах
   // Зогсоол: эхний 3 с ракурсаа барина (тэнхлэгийн дагуу, тэнгэрийн хаяа түвшин), дараа нь ±0.75 рад зөөлөн эргэж буцна; pitch = 0 (босоо шугам босоо)
@@ -1104,7 +1107,9 @@ function stepAuto(dt) {
   const sp = AUTO.walk * dt;
   if (dist <= sp) {
     cam.x = p.x; cam.z = p.z;
-    if (p.pause) { p.yaw0 = p.yawC ?? cam.yaw; sweep = 0; const pn = panoByRoom[p.room]; if (pn) { phase = 'pano'; panoT = 0; pauseT = 0; fadeTo(() => showPano(pn, false)); } else { pauseT = AUTO.pausePlain; stageRoom(p.room); } }
+    if (p.pause) { p.yaw0 = p.yawC ?? cam.yaw; sweep = 0; const pn = panoByRoom[p.room];
+      if (MEDIA && MEDIA.splatByRoom[p.room]) { phase = 'splat'; pauseT = 0; enterSplatMode(p.room, true, () => { phase = 'walk'; cam.yaw = p.yaw0; pauseT = 0.8; }); return; }
+      if (pn) { phase = 'pano'; panoT = 0; pauseT = 0; fadeTo(() => showPano(pn, false)); } else { pauseT = AUTO.pausePlain; stageRoom(p.room); } }
     else tourI = (tourI + 1) % tourPts.length;
   } else { cam.x += dx / dist * sp; cam.z += dz / dist * sp; }
 }
@@ -1118,7 +1123,7 @@ function stepFree(dt) {
 function bindControls() {
   const c = renderer.domElement; let drag = null;
   c.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); });
-  c.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; if (SCENE_MODE === 'exterior' && EXT) { if (Math.abs(dx) + Math.abs(dy) > 1) { EXT.drag(dx, dy); markModeButtons(); } return; } if (mode === 'auto' && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) setMode('free'); cam.yaw -= dx * 0.004; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch - dy * 0.003)); });
+  c.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; if ((SCENE_MODE === 'walk' || SCENE_MODE === 'splat') && MEDIA) { MEDIA.drag(dx, dy); return; } if (SCENE_MODE === 'exterior' && EXT) { if (Math.abs(dx) + Math.abs(dy) > 1) { EXT.drag(dx, dy); markModeButtons(); } return; } if (mode === 'auto' && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) setMode('free'); cam.yaw -= dx * 0.004; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch - dy * 0.003)); });
   c.addEventListener('pointerup', () => { drag = null; }); c.addEventListener('pointercancel', () => { drag = null; });
   const keyOf = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
   window.addEventListener('keydown', (e) => { const k = keyOf(e); keys[k] = true; if (['w', 'a', 's', 'd', 'q', 'e', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(k)) { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(true); markModeButtons(); } else setMode('free'); e.preventDefault(); } });
@@ -1126,6 +1131,7 @@ function bindControls() {
   document.querySelectorAll('.pad button').forEach((b) => { const k = b.dataset.k; const on = (e) => { e.preventDefault(); keys[k] = true; setMode('free'); }; const off = () => { keys[k] = false; }; b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off); });
   $('#bAuto').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(false); markModeButtons(); return; } if (panoActive) togglePano(); setMode('auto'); };
   $('#bOut').onclick = () => goExterior(0); $('#bIn').onclick = () => goInterior();
+  $('#bWalk').onclick = () => startWalkMode(); $('#b3D').onclick = () => { if (curRoomId && MEDIA && MEDIA.splatByRoom[curRoomId]) { setMode('free'); enterSplatMode(curRoomId, false, null); } };
   $('#bFree').onclick = () => { if (SCENE_MODE === 'exterior' && EXT) { EXT.setFree(true); markModeButtons(); return; } if (panoActive && panoMesh.userData.exterior) hidePano(false); setMode('free'); };
   $('#bFurn').onclick = () => setFurn(!furnWant);
   $('#bFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };
@@ -1180,14 +1186,17 @@ const extNodes = []; const panoTexCache = {};
 function showPano(a, exterior) {
   const apply = (t) => {
     hidePano(true);
-    panoMesh = new THREE.Mesh(new THREE.SphereGeometry(8, 64, 40), new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide }));
+    const sg = new THREE.SphereGeometry(8, 64, 40); sg.scale(-1, 1, 1); // дотроос толин тусгалгүй (BackSide нь зургийг урвуулдаг байв)
+    panoMesh = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: t }));
     panoMesh.position.set(cam.x, EYE, cam.z); scene.add(panoMesh); panoActive = true; panoMesh.userData.exterior = exterior;
     $('#bPano').classList.add('on'); $('#bPano').textContent = '✕ 360° хаах'; $('#bPano').style.display = '';
     if (exterior) { $('#rName').textContent = a.label || 'Гадаах орчин'; $('#rArea').textContent = '360° панорам'; }
   };
   if (panoTexCache[a.id]) return apply(panoTexCache[a.id]);
   $('#bPano').textContent = '360° ачаалж…';
-  texLoader.load(assetUrl(a.id), (t) => { t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearFilter; panoTexCache[a.id] = t; apply(t); }, undefined, () => { $('#bPano').textContent = '360° панорам'; });
+  const load = (url, cb) => texLoader.load(url, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; cb(t); }, undefined, () => { $('#bPano').textContent = '360° панорам'; });
+  if (a.preview) load(a.preview, (t) => { if (!panoTexCache[a.id]) apply(t); load(a.url, (tf) => { panoTexCache[a.id] = tf; if (panoActive && panoMesh) { panoMesh.material.map = tf; panoMesh.material.needsUpdate = true; } }); }); // эхлээд 2048, дараа нь бүтэн
+  else load(a.url || assetUrl(a.id), (t) => { panoTexCache[a.id] = t; apply(t); });
 }
 function hidePano(keepCam) {
   if (!panoActive) return;
@@ -1206,12 +1215,22 @@ function markModeButtons() {
   const auto = SCENE_MODE === 'exterior' ? !!(EXT && !EXT.free) : mode === 'auto';
   $('#bAuto').classList.toggle('on', auto); $('#bFree').classList.toggle('on', !auto);
   document.body.classList.toggle('touring', auto && SCENE_MODE === 'exterior');
-  $('#bOut').classList.toggle('on', SCENE_MODE === 'exterior'); $('#bIn').classList.toggle('on', SCENE_MODE === 'interior');
+  $('#bOut').classList.toggle('on', SCENE_MODE === 'exterior'); $('#bIn').classList.toggle('on', SCENE_MODE === 'interior'); $('#bWalk').classList.toggle('on', SCENE_MODE === 'walk');
 }
 function showInteriorHud(on) { for (const q of ['.room', '.help']) { const el = $(q); if (el) el.style.display = on ? '' : 'none'; } $('#bFurn').style.display = on ? '' : 'none'; }
 function goExterior(at = 0) {
   if (!EXT) return;
-  fadeTo(() => { SCENE_MODE = 'exterior'; if (panoActive) hidePano(true); EXT.setVisible(true); showInteriorHud(false); EXT.start(at); markModeButtons(); });
+  fadeTo(() => { if (MEDIA) MEDIA.stopAll(); SCENE_MODE = 'exterior'; if (panoActive) hidePano(true); EXT.setVisible(true); showInteriorHud(false); EXT.start(at); markModeButtons(); });
+}
+// Бодит алхалтын бичлэг (гадна → орц, шат) — дуусмагц байрны дотор
+function startWalkMode() {
+  if (!MEDIA || !MEDIA.hasWalk) return goInterior();
+  fadeTo(() => { if (panoActive) hidePano(true); SCENE_MODE = 'walk'; if (EXT) EXT.setVisible(false); showInteriorHud(false); MEDIA.startWalk(() => goInterior()); markModeButtons(); });
+}
+// Бодит 3D өрөө (splat): auto бол 20 с эргээд буцна
+function enterSplatMode(roomId, auto, after) {
+  fadeTo(() => { if (panoActive) hidePano(true); SCENE_MODE = 'splat'; showInteriorHud(false); markModeButtons();
+    MEDIA.enterSplat(roomId, { auto, name: (byId[roomId] || {}).name || 'Бодит 3D', onExit: () => fadeTo(() => { SCENE_MODE = 'interior'; showInteriorHud(true); markModeButtons(); if (after) after(); }) }); });
 }
 // Орцны хаалганаас 0.7 м дотор, өрөөний хамгийн урт чөлөөтэй чиглэл рүү харна (ханыг ширтэхгүй)
 function entryPose() {
@@ -1232,7 +1251,7 @@ function entryPose() {
 }
 function goInterior() {
   fadeTo(() => {
-    SCENE_MODE = 'interior'; if (EXT) EXT.setVisible(false); showInteriorHud(true);
+    if (MEDIA) MEDIA.stopAll(); SCENE_MODE = 'interior'; if (EXT) EXT.setVisible(false); showInteriorHud(true);
     entryPose();
     tourI = 0; pauseT = AUTO.pausePlain; sweep = 0; phase = 'walk'; if (tourPts[0]) tourPts[0].yaw0 = tourPts[0].yawC ?? cam.yaw; setMode('auto'); markModeButtons(); stepLights(0, true); Q.hold = performance.now() + 2500;
   });
@@ -1311,6 +1330,7 @@ async function main() {
     if (a.kind === 'pano') { if (String(a.room_id || '').startsWith('ext:')) extNodes.push({ ...a, label: a.room_id.slice(4) }); else if (a.room_id) panoByRoom[a.room_id] = a; }
     else if (a.kind !== 'frame') (assetsByType[a.type] ||= []).push(a); // бичлэгийн кадрууд зөвхөн AI шинжилгээнд
   }
+  for (const m of data.media || []) if (m.kind === 'pano') { const a = { id: 'm' + m.id, url: m.url, preview: m.poster, kind: 'pano', room_id: m.room_id }; if (String(m.room_id || '').startsWith('ext:')) extNodes.push({ ...a, label: m.room_id.slice(4) }); else if (m.room_id) panoByRoom[m.room_id] = a; } // шинэ (том файл) нь хуучныг дарна
   const p = data.property || {};
   $('#title').textContent = `${p.district || ''}${p.khoroolol ? ', ' + p.khoroolol : ''} · ${p.rooms || rooms.length} өрөө · ${p.area || plan.totalArea} м²${p.floor ? ` · ${p.floor}/${p.total_floors || '—'} давхар` : ''}${data.company ? ' · ' + data.company : ''}`;
   document.title = `POV Tour — ${p.district || 'Зууч'}`;
@@ -1332,14 +1352,16 @@ async function main() {
   $('#bPhotos').onclick = showPhotos; $('#bClosePhotos').onclick = () => { $('#photos').style.display = 'none'; }; $('#bPano').onclick = togglePano;
   entryPose();
   tourPts = buildTour(); tourI = 0; pauseT = AUTO.pausePlain; sweep = 0; if (tourPts[0]) tourPts[0].yaw0 = tourPts[0].yawC ?? cam.yaw;
+  try { MEDIA = createMedia({ data, renderer, onWalkEnd: () => goInterior() }); window.zuuch.media = MEDIA; if (MEDIA.hasWalk) $('#bWalk').style.display = ''; } catch (err) { console.error('media', err); MEDIA = null; }
   if (data.exterior && Array.isArray(data.exterior.buildings)) {
     $('#load').lastElementChild.textContent = 'Гадаах орчныг бүтээж байна…'; await new Promise((r) => setTimeout(r, 30));
-    try { EXT = createExterior(data.exterior, { title: $('#title').textContent, keys, renderer, onDone: () => goInterior() }); window.zuuch.ext = EXT; $('#bOut').style.display = ''; $('#bIn').style.display = ''; }
+    try { EXT = createExterior(data.exterior, { title: $('#title').textContent, keys, renderer, onDone: () => (MEDIA && MEDIA.hasWalk ? startWalkMode() : goInterior()) }); window.zuuch.ext = EXT; $('#bOut').style.display = ''; $('#bIn').style.display = ''; }
     catch (err) { console.error('exterior', err); EXT = null; }
   }
   const q = new URLSearchParams(location.search); const sr = byId[q.get('start')];
   if (EXT && !sr && q.get('in') !== '1') { SCENE_MODE = 'exterior'; EXT.setVisible(true); showInteriorHud(false); EXT.start(Number(q.get('at')) || 0); } else if (EXT) EXT.setVisible(false);
   if (sr) { enterRoom(sr); if (q.get('yaw')) cam.yaw = Number(q.get('yaw')); setMode('free'); }
+  const walkFirst = MEDIA && MEDIA.hasWalk && !sr && q.get('in') !== '1' && (!EXT || q.get('walk') === '1'); // гадаах нислэггүй бол бичлэгээр эхэлнэ (?walk=1 — шууд)
   if (q.get('debug') === 'top') { window.zuuch.topView = async (id) => { await ensureFurn(); return topView(id); }; window.zuuch.layout = async () => { await ensureFurn(); return Object.fromEntries(Object.entries(roomLay).map(([k, c]) => [k, [...c.log, { ms: c.ms, mx: c.mx }]])); }; window.zuuch.dbg = { roomLay, wallDeco, proto, P }; }
   bindControls();
   const resize = () => { renderer.setSize(innerWidth, innerHeight, false); const asp = innerWidth / innerHeight; camera.aspect = asp; stepFov(0, true); camera.updateProjectionMatrix(); sizePost(); if (EXT) { EXT.camera.aspect = asp; EXT.camera.fov = Math.min(78, Math.max(55, (2 * Math.atan(Math.tan((22 * Math.PI) / 180) / asp) * 180) / Math.PI)); EXT.camera.updateProjectionMatrix(); /* босоо утсанд хэвтээ өнцөг ≥44° байхаар босоо FOV-ийг өргөсгөнө (хэвтээ дэлгэцэд 55° хэвээр) */ } }; addEventListener('resize', resize); resize();
@@ -1352,6 +1374,7 @@ async function main() {
   stepLights(0, true); stepFov(0, true); compileAll(); try { if (EXT) renderer.compile(EXT.scene, EXT.camera); } catch { /* зарим GPU-д алгасна */ }
   markModeButtons();
   $('#load').style.display = 'none';
+  if (walkFirst) { if (EXT) EXT.setVisible(false); SCENE_MODE = 'walk'; showInteriorHud(false); MEDIA.startWalk(() => goInterior()); markModeButtons(); }
   let last = performance.now(), mapT = 1, frameN = 0, shadowLoaded = -1, fpsAcc = 0, fpsN = 0; // эхний frame-д минимап зурагдана
   // Гадаах/дотоод рендер төлөв солих (зөвхөн шилжих үед; материалууд дахин компиляц)
   const INT_RS = { sh: renderer.shadowMap.enabled, tm: renderer.toneMapping, type: renderer.shadowMap.type }; let extRS = null;
@@ -1363,6 +1386,10 @@ async function main() {
   };
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if ((SCENE_MODE === 'walk' || SCENE_MODE === 'splat') && MEDIA) { // бодит медиа: өөрийн сцен/камер
+      MEDIA.render(dt); mapT += dt; if (mapT > 0.12) { mapT = 0; MEDIA.drawMap($('#map').getContext('2d'), 440, 340); }
+      requestAnimationFrame(frame); return;
+    }
     if (SCENE_MODE === 'exterior' && EXT) {
       EXT.update(dt); mapT += dt; if (mapT > 0.1) { mapT = 0; EXT.drawMap($('#map').getContext('2d'), 440, 340); }
       fpsAcc += dt; fpsN++;
@@ -1374,7 +1401,7 @@ async function main() {
     camera.position.set(cam.x, EYE, cam.z); camera.rotation.set(0, 0, 0, 'YXZ'); camera.rotation.y = cam.yaw; camera.rotation.x = cam.pitch;
     const r = roomAt(cam.x, cam.z); const id = r ? r.id : null;
     const extShown = panoActive && panoMesh && panoMesh.userData.exterior;
-    if (id !== curRoomId && !extShown) { curRoomId = id; $('#rName').textContent = r ? r.name : '—'; $('#rArea').textContent = r ? `${(r.w * r.h).toFixed(1)} м² · ${r.w} × ${r.h} м` : ''; $('#bPano').style.display = (r && panoByRoom[r.id]) || panoActive ? '' : 'none'; }
+    if (id !== curRoomId && !extShown) { curRoomId = id; $('#rName').textContent = r ? r.name : '—'; $('#rArea').textContent = r ? `${(r.w * r.h).toFixed(1)} м² · ${r.w} × ${r.h} м` : ''; $('#bPano').style.display = (r && panoByRoom[r.id]) || panoActive ? '' : 'none'; $('#b3D').style.display = r && MEDIA && MEDIA.splatByRoom[r.id] ? '' : 'none'; }
     mapT += dt; if (mapT > 0.08) { mapT = 0; drawMap(); }
     // Сүүдэр: сцен статик — зөвхөн тавилга гарч ирэх/байрлуулах/загвар ачаалагдах үед л шинэчилнэ; шэйдер компиляц зөвхөн тавилга харагдаж байхад (furnDirty)
     if (staging || furnDirty || loadedN !== shadowLoaded || frameN < 30) { renderer.shadowMap.needsUpdate = true; if (furnDirty && furnGroup.visible) compileAll(); shadowLoaded = loadedN; furnDirty = false; } frameN++;
