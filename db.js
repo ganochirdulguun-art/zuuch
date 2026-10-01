@@ -399,6 +399,8 @@ CREATE TABLE IF NOT EXISTS tours (
 );
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS exterior JSONB;
 ALTER TABLE tours ADD COLUMN IF NOT EXISTS local_pois JSONB;
+ALTER TABLE price_index ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'demo';
+ALTER TABLE price_index ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 `;
 
 async function init() {

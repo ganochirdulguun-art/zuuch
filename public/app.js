@@ -580,11 +580,14 @@ async function market() {
   const [idx, opp] = await Promise.all([api('/market/index'), api('/market/opportunities')]);
   const newIdx = idx.filter((i) => i.is_new), oldIdx = idx.filter((i) => !i.is_new);
   const maxM2 = Math.max(...idx.map((i) => i.median_m2));
-  const row = (i) => `<tr><td>${esc(i.district)}</td>
+  const tag = (i) => (i.source === 'market-all' ? ' <span class="badge" title="Шинэ байрны тусгай түүвэр хүрэлцээгүй — бүх зарын медиан">ялгаагүй</span>' : !i.source || i.source === 'demo' ? ' <span class="badge warn" title="Бодит зарын түүвэр хүрэлцээгүй — жишиг тоо">жишиг</span>' : '');
+  const real = idx.filter((i) => i.source && i.source !== 'demo'); const lastM = real.map((i) => i.month).sort().pop();
+  const note = real.length ? `А2 индекс — бодит зараас (unegui · omch · my-zar), сүүлийн 120 хоног, ${esc(lastM || '')}; 6 цаг тутам шинэчлэгдэнэ` : 'А2 индекс — жишиг өгөгдөл (бодит зарын түүвэр хүрэлцээгүй)';
+  const row = (i) => `<tr><td>${esc(i.district)}${tag(i)}</td>
     <td style="min-width:160px"><div style="background:var(--surface-2);border-radius:3px;height:16px"><div style="height:100%;border-radius:3px;background:var(--accent);width:${(i.median_m2 / maxM2) * 100}%"></div></div></td>
     <td class="num"><b>${fmt(i.median_m2)}</b></td><td class="num">${fmt(i.p25_m2)}–${fmt(i.p75_m2)}</td><td class="num">${i.sample}</td></tr>`;
   $('#main').innerHTML = `
-  <div class="page-head"><h2><svg class=ic><use href=#i-trending-up></use></svg>Зах зээл</h2><span class="demo-note">А2 индекс — жишиг өгөгдөл (2026-02); Шат 2-т цуглуулагчаас сар бүр шинэчлэгдэнэ</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-trending-up></use></svg>Зах зээл</h2><span class="demo-note">${note}</span></div>
   <div class="card"><h3><svg class=ic><use href=#i-hard-hat></use></svg>Шинэ орон сууц — дүүргийн индекс (сая ₮/м², медиан)</h3>
     <div class="tablebox"><table><thead><tr><th>Дүүрэг</th><th></th><th class="num">Медиан</th><th class="num">P25–P75</th><th class="num">Түүвэр</th></tr></thead>
     <tbody>${newIdx.map(row).join('')}</tbody></table></div></div>

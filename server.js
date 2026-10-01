@@ -242,6 +242,7 @@ const commute = require('./commute');
 const exterior = require('./exterior');
 const geostore = require('./geostore'); // хотын 500×500 м хавтан сан (data/geo)
 const backup = require('./backup'); // өдөр тутмын нөөц (/data/backups)
+const priceIndex = require('./priceindex'); // дүүргийн үнийн индекс бодит зараас
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng, district, khoroolol FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -699,4 +700,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); });
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); });
