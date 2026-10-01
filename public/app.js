@@ -1126,14 +1126,41 @@ async function owner() {
         : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}
         ${c.id !== ME.company_id ? `<button class="small" onclick="delCompany(${c.id},'${esc(c.name).replace(/'/g, '')}')">Устгах</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-rotate-3d></use></svg>POV аяллууд (бүх компани)</h3>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">«Дахин бэлтгэх» — гадаах орчныг хотын өгөгдлийн сангийн хамгийн сүүлийн хувилбараар (дээврийн өнгө, мод, ойрын газар) шинэчилнэ; замын хугацааг дахин тооцохгүй (зардалгүй). «Импорт» — нэг JSON-оор объект + план + ойрын газрыг үүсгэж, гадаах орчныг бэлтгэнэ.</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px"><button class="small primary" onclick="ownerImport()"><svg class=ic><use href=#i-upload></use></svg>Импорт (JSON)</button><button class="small" onclick="ownerTours()">↻ Шинэчлэх</button></div>
+    <div id="ot-list" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Өгөгдлийн сангийн нөөц</h3>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Өдөр бүр автоматаар (Улаанбаатарын цагаар өдөрт 1 удаа) бүх хүснэгтийг нөөцөлж, Postgres-оос тусдаа дискэнд сүүлийн <span id="bk-keep">14</span> хувийг хадгална. Сар бүр нэг хувийг татаж аваад өөрийн компьютерт хадгалахыг зөвлөж байна.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="small primary" onclick="backupNow(this)"><svg class=ic><use href=#i-archive></use></svg>Одоо нөөцлөх</button><span id="bk-st" style="font-size:12.5px"></span></div>
     <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
-  backupList();
+  backupList(); ownerTours();
 }
 
+let OT_T = null;
+async function ownerTours() {
+  clearTimeout(OT_T); const d = await api('/owner/tours').catch(() => null); const el = $('#ot-list'); if (!el || !d || !d.items) return;
+  el.innerHTML = d.items.length ? `<div class="tablebox"><table><thead><tr><th>Компани</th><th>Объект</th><th>Гадаах</th><th class="num">Ойрын газар</th><th></th></tr></thead><tbody>${d.items.map((t) => {
+    const j = t.job; const st = j && j.status === 'running' ? `<span class="badge">${esc(j.msg || 'бэлтгэж байна…')}</span>` : j && j.status === 'error' ? `<span class="badge warn">${esc(j.msg)}</span>` : j && j.status === 'done' ? `<span class="badge ok">${esc(j.msg)}</span>` : t.ext_at ? `${esc(t.ext_at.slice(0, 10))} · ${esc(t.ext_src || '')}${t.study ? ' · замын хугацаа' : ''}` : '<span class="badge warn">бэлтгээгүй</span>';
+    return `<tr><td>${esc(t.company)}</td><td><a href="/tour/${esc(t.token)}" target="_blank" rel="noopener">${esc(t.district || '')} ${esc(t.khoroolol || '')}</a> · ${t.rooms}ө ${t.area}м²</td><td>${st}</td><td class="num">${t.local}</td><td style="white-space:nowrap">${t.lat != null ? `<button class="small" onclick="ownerRegen(${t.id})">Дахин бэлтгэх</button>` : ''} <button class="small" onclick="navigator.clipboard.writeText(location.origin+'/tour/${esc(t.token)}').then(()=>toast('Холбоос хуулагдлаа'))">Холбоос</button></td></tr>`;
+  }).join('')}</tbody></table></div>` : 'Аялал алга';
+  if (d.items.some((t) => t.job && t.job.status === 'running')) OT_T = setTimeout(ownerTours, 3000);
+}
+window.ownerTours = ownerTours;
+window.ownerRegen = async (id) => { const r = await api('/owner/tours/' + id + '/exterior', { method: 'POST', body: {} }); if (r.error) return alert(r.error); toast('Гадаах орчин бэлтгэж байна…'); ownerTours(); };
+window.ownerImport = () => {
+  modal(`<h3><svg class=ic><use href=#i-upload></use></svg>Объект + аялал импорт</h3>
+  <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px"><code>{ "company": "Компанийн нэр", "property": { district, khoroolol, rooms, area, floor, total_floors, lat, lng, notes }, "plan": { rooms, entry, ceiling }, "local": [{ cat, name, lat, lng }] }</code> — ижил компани, ижил байршилтай объект байвал шинэчилнэ.</div>
+  <textarea id="oi-json" spellcheck="false" style="width:100%;height:300px;font:12px/1.4 ui-monospace,Consolas,monospace" placeholder="JSON-оо энд буулгана"></textarea>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" class="primary" onclick="ownerImportGo(this)">Импортлох + гадаах орчин бэлтгэх</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
+};
+window.ownerImportGo = async (btn) => {
+  let j; try { j = JSON.parse($('#oi-json').value); } catch (e) { return alert('JSON алдаатай: ' + e.message); }
+  btn.disabled = true; const r = await api('/owner/import', { method: 'POST', body: j }).catch((e) => ({ error: e.message })); btn.disabled = false;
+  if (r.error) return alert(r.error);
+  closeModal(); toast(`Үүслээ: ${r.rooms} өрөө — гадаах орчин бэлтгэж байна`); ownerTours();
+};
 async function backupList() {
   const d = await api('/owner/backups').catch(() => null); const el = $('#bk-list'); if (!el || !d) return;
   if ($('#bk-keep')) $('#bk-keep').textContent = d.keep;

@@ -526,28 +526,72 @@ app.put('/api/tour/:pid', auth, wrap(async (req, res) => {
 }));
 // Ш3д-3 Гадаах орчны 3D нислэг: OSM (+ Google Routes цаг тус бүр) → tours.exterior. Удаан (1–3 мин) тул арын горимд, төлөвийг асууна.
 const extJobs = new Map(); // "company:pid" → { status, msg, started, error }
-app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
-  const prop = await tourProp(req, res); if (!prop) return;
-  if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return res.status(400).json({ error: 'Объектын байршлыг газрын зураг дээр заана уу (lat/lng)' });
-  const key = `${req.user.company_id}:${prop.id}`; const cur = extJobs.get(key);
-  if (cur && cur.status === 'running') return res.status(202).json(cur);
+// Гадаах орчин бэлтгэх (арын горим): хотын хавтан сан (эсвэл OSM) + агент/оршин суугчийн ойрын газар; keepStudy — замын хугацааг дахин тооцохгүй (Google Routes зардалгүй), хуучнаа хадгална
+function startExterior(companyId, prop, { keepStudy = false } = {}) {
+  const key = `${companyId}:${prop.id}`; const cur = extJobs.get(key);
+  if (cur && cur.status === 'running') return cur;
   const job = { status: 'running', msg: 'Эхэлж байна…', started: new Date().toISOString() }; extJobs.set(key, job);
   (async () => {
     try {
       // Хотын хавтан сангийн хүрээнд: Overpass-гүй, Overture контур + GHSL өндөр + нэгтгэсэн орчны цэг (өндөр чанар, хурдан); гадуур — шууд OSM
       const geo = geostore.covers(prop.lat, prop.lng) ? geostore.options(prop.lat, prop.lng) : null;
       if (geo) job.msg = 'Хотын хавтан сангаас бэлтгэж байна…';
-      const lr = await db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
+      const lr = await db.one('SELECT local_pois, exterior->\'study\' AS study FROM tours WHERE company_id=? AND property_id=?', companyId, prop.id);
       const local = ((lr && lr.local_pois) || []).map((q) => ({ ...q, src: 'agent', verified: true }));
-      const data = await exterior.generate(prop.lat, prop.lng, { ...(geo || {}), extraPois: [...local, ...((geo && geo.extraPois) || [])], log: (m) => { job.msg = m; } });
+      const reuse = keepStudy && lr && lr.study;
+      const data = await exterior.generate(prop.lat, prop.lng, { ...(geo || {}), extraPois: [...local, ...((geo && geo.extraPois) || [])], commuteHours: !reuse, log: (m) => { job.msg = m; } });
+      if (reuse && !data.study) data.study = lr.study;
       data.data_source = geo ? { kind: 'geostore', ...(geostore.info() || {}) } : { kind: 'overpass' };
-      let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
-      if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
-      await db.run('UPDATE tours SET exterior=?, updated_at=NOW() WHERE company_id=? AND property_id=?', JSON.stringify(data), req.user.company_id, prop.id);
+      let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', companyId, prop.id);
+      if (!t) t = await saveTour(companyId, prop.id, tourLib.autoPlan(prop));
+      await db.run('UPDATE tours SET exterior=?, updated_at=NOW() WHERE company_id=? AND property_id=?', JSON.stringify(data), companyId, prop.id);
       Object.assign(job, { status: 'done', msg: `Бэлэн: ${data.buildings.length} барилга, ${data.pois.length} цэг` });
     } catch (e) { Object.assign(job, { status: 'error', msg: String(e.message || e).slice(0, 200) }); }
   })();
-  res.status(202).json(job);
+  return job;
+}
+app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
+  const prop = await tourProp(req, res); if (!prop) return;
+  if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return res.status(400).json({ error: 'Объектын байршлыг газрын зураг дээр заана уу (lat/lng)' });
+  res.status(202).json(startExterior(req.user.company_id, prop));
+}));
+// ---- Эзний аяллын хэрэгсэл: бүх компанийн аялал, дахин бэлтгэх, нэг файлаар объект + план + ойрын газар оруулах ----
+app.get('/api/owner/tours', ownerOnly, wrap(async (req, res) => {
+  const rows = await db.all(`SELECT t.id, t.token, t.company_id, c.name AS company, p.id AS property_id, p.district, p.khoroolol, p.rooms, p.area, p.lat, p.lng,
+      t.exterior->>'generated_at' AS ext_at, t.exterior->'data_source'->>'kind' AS ext_src, jsonb_typeof(t.exterior->'study') = 'object' AS study,
+      jsonb_array_length(COALESCE(t.local_pois, '[]'::jsonb)) AS local, jsonb_array_length(COALESCE(t.plan->'rooms', '[]'::jsonb)) AS rooms_n, t.updated_at
+    FROM tours t JOIN properties p ON p.id=t.property_id JOIN companies c ON c.id=t.company_id ORDER BY t.updated_at DESC NULLS LAST LIMIT 200`);
+  res.json({ items: rows.map((r) => ({ ...r, job: extJobs.get(`${r.company_id}:${r.property_id}`) || null })) });
+}));
+app.post('/api/owner/tours/:id/exterior', ownerOnly, wrap(async (req, res) => {
+  const t = await db.one('SELECT company_id, property_id FROM tours WHERE id=?', Number(req.params.id)); if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
+  const prop = await db.one('SELECT * FROM properties WHERE id=?', t.property_id);
+  if (!prop || !Number.isFinite(prop.lat)) return res.status(400).json({ error: 'Объектын байршил алга' });
+  res.status(202).json(startExterior(t.company_id, prop, { keepStudy: !(req.body && req.body.commute) }));
+}));
+// Импорт: { company | company_id, property:{district,khoroolol,rooms,area,floor,total_floors,lat,lng,notes,deal_type,price}, plan:{rooms,entry,ceiling}, local:[{cat,name,lat,lng}] }
+app.post('/api/owner/import', ownerOnly, wrap(async (req, res) => {
+  const b = req.body || {}; const pr = b.property || {};
+  const lat = Number(pr.lat), lng = Number(pr.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'property.lat / property.lng шаардлагатай' });
+  let c = b.company_id ? await db.one('SELECT id FROM companies WHERE id=?', Number(b.company_id)) : b.company ? await db.one('SELECT id FROM companies WHERE name=?', String(b.company)) : null;
+  if (!c && b.company) c = await db.one("INSERT INTO companies (name, plan, status) VALUES (?, 'demo', 'active') RETURNING id", String(b.company).slice(0, 80));
+  if (!c) return res.status(400).json({ error: 'company эсвэл company_id шаардлагатай' });
+  const f = { district: String(pr.district || '').slice(0, 40), khoroolol: String(pr.khoroolol || '').slice(0, 80), rooms: Number(pr.rooms) || 1, area: Number(pr.area) || 0, floor: Number(pr.floor) || 0, total_floors: Number(pr.total_floors) || 0, price: Number(pr.price) || 0, deal_type: pr.deal_type === 'rent' ? 'rent' : 'sale', notes: String(pr.notes || '').slice(0, 500) };
+  let p = await db.one('SELECT id FROM properties WHERE company_id=? AND ABS(lat-?)<0.0001 AND ABS(lng-?)<0.0001 ORDER BY id LIMIT 1', c.id, lat, lng);
+  if (p) await db.run('UPDATE properties SET district=?, khoroolol=?, rooms=?, area=?, floor=?, total_floors=?, price=?, deal_type=?, notes=?, lat=?, lng=? WHERE id=?', f.district, f.khoroolol, f.rooms, f.area, f.floor, f.total_floors, f.price, f.deal_type, f.notes, lat, lng, p.id);
+  else p = await db.one("INSERT INTO properties (company_id, deal_type, district, khoroolol, rooms, area, floor, total_floors, price, status, notes, lat, lng) VALUES (?,?,?,?,?,?,?,?,?,'active',?,?,?) RETURNING id", c.id, f.deal_type, f.district, f.khoroolol, f.rooms, f.area, f.floor, f.total_floors, f.price, f.notes, lat, lng);
+  const prop = await db.one('SELECT * FROM properties WHERE id=?', p.id);
+  const plan = b.plan && Array.isArray(b.plan.rooms) && b.plan.rooms.length ? tourLib.finalize(b.plan) : tourLib.autoPlan(prop);
+  const t = await saveTour(c.id, p.id, plan);
+  if (Array.isArray(b.local)) {
+    const kx = Math.cos((lat * Math.PI) / 180) * 111320;
+    const items = b.local.slice(0, 60).map((q) => ({ cat: String(q.cat || ''), name: String(q.name || '').slice(0, 60), lat: +Number(q.lat).toFixed(6), lng: +Number(q.lng).toFixed(6) }))
+      .filter((q) => exterior.CAT[q.cat] && Number.isFinite(q.lat) && Number.isFinite(q.lng) && Math.hypot((q.lng - lng) * kx, (q.lat - lat) * 110540) <= 2500);
+    await db.run('UPDATE tours SET local_pois=? WHERE id=?', JSON.stringify(items), t.id);
+  }
+  const job = startExterior(c.id, prop, { keepStudy: b.commute === false });
+  res.json({ ok: true, company_id: c.id, property_id: p.id, tour_id: t.id, token: t.token, url: '/tour/' + t.token, rooms: plan.rooms.length, job });
 }));
 // Ойрын газар (агент/оршин суугчийн баталсан): нээлттэй газрын зурагт байхгүй дэлгүүр, эмийн сан, тоглоомын талбай г.м. — дараагийн «бэлтгэх»-д нэгтгэгдэнэ
 app.get('/api/tour/:pid/local-pois', auth, wrap(async (req, res) => {
