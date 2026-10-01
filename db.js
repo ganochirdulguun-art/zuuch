@@ -421,6 +421,16 @@ CREATE TABLE IF NOT EXISTS tour_media (
 CREATE INDEX IF NOT EXISTS tour_media_prop ON tour_media(company_id, property_id);
 ALTER TABLE price_index ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'demo';
 ALTER TABLE price_index ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+-- Хаагдсан (зарагдсан/түрээслэгдсэн) огноо: бодит медиаг хаагдсанаас 30 хоногийн дараа устгана (retention.js). Аль ч кодоос төлөв солиход trigger тэмдэглэнэ.
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+CREATE OR REPLACE FUNCTION zuuch_closed_at() RETURNS trigger AS $fn$
+BEGIN
+  IF NEW.status = 'closed' THEN NEW.closed_at := COALESCE(NEW.closed_at, NOW()); ELSE NEW.closed_at := NULL; END IF;
+  RETURN NEW;
+END $fn$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS properties_closed_at ON properties;
+CREATE TRIGGER properties_closed_at BEFORE INSERT OR UPDATE OF status ON properties FOR EACH ROW EXECUTE FUNCTION zuuch_closed_at();
+UPDATE properties SET closed_at = NOW() WHERE status = 'closed' AND closed_at IS NULL;
 `;
 
 async function init() {

@@ -153,8 +153,9 @@ window.propForm = function (p = {}) {
     <div class="field"><label>Шинэ барилга уу?</label><select name="is_new">
       <option value="0" ${!p.is_new ? 'selected' : ''}>Хуучин</option><option value="1" ${p.is_new ? 'selected' : ''}>Шинэ</option></select></div>
     <div class="field"><label>Үнэ (сая ₮)</label><input name="price" type="number" step="0.1" value="${p.price || ''}" required></div>
-    <div class="field"><label>Төлөв</label><select name="status">
-      ${['active', 'contracted', 'closed'].map((s) => `<option value="${s}" ${p.status === s ? 'selected' : ''}>${STATUS_T[s][0]}</option>`).join('')}</select></div>
+    <div class="field"><label>Төлөв</label><select name="status" onchange="this.nextElementSibling.style.display=this.value==='closed'?'':'none'">
+      ${['active', 'contracted', 'closed'].map((s) => `<option value="${s}" ${p.status === s ? 'selected' : ''}>${STATUS_T[s][0]}</option>`).join('')}</select>
+      <small style="color:var(--muted);display:${p.status === 'closed' ? '' : 'none'}">Хаагдсанаас 30 хоногийн дараа POV аяллын бичлэг, 360 зураг, бодит 3D автоматаар устна (дахин идэвхжүүлбэл хугацаа тэглэгдэнэ).</small></div>
     <div class="field"><label>Хариуцах агент</label><select name="agent_id">${AGENT_OPTS(p.agent_id)}</select></div>
     <div class="field"><label>Эзэмшигчийн нэр</label><input name="owner_name" value="${esc(p.owner_name || '')}"></div>
     <div class="field"><label>Эзэмшигчийн утас</label><input name="owner_phone" value="${esc(p.owner_phone || '')}"></div>
@@ -1057,14 +1058,20 @@ async function tourMediaLoad() {
   const d = await api('/tour/' + TOUR.pid + '/media').catch(() => null); if (!d || d.error) { if ($('#tm-box')) $('#tm-box').textContent = d && d.error ? d.error : 'Ачаалж чадсангүй'; return; }
   TM = d; const it = d.items; const L = d.limits || {};
   const st = (m) => (m.status === 'ready' ? '<span class="badge ok">бэлэн</span>' : m.status === 'error' ? `<span class="badge warn" title="${esc(m.msg || '')}">алдаа</span> <small>${esc((m.msg || '').slice(0, 90))}</small>` : `<span class="badge">${esc(m.msg || m.status)}</span>`);
-  const btns = (m) => `${m.status === 'ready' && d.token ? `<a href="/tour-media/${esc(d.token)}/${m.id}" target="_blank" rel="noopener"><button class="small" title="Харах">▶</button></a>` : ''} <button class="small" onclick="tmDel(${m.id})" title="Устгах">✕</button>`;
-  const walkList = (kind) => { const a = it.filter((m) => m.kind === kind); return a.length ? `<table><tbody>${a.map((m, i) => `<tr><td>${i + 1}. <a href="#" onclick="tmLabel(${m.id});return false">${esc(m.label || MKIND[kind])}</a><br><small style="color:var(--muted)">${esc(m.orig_name || '')} · ${m.projection === 'equirect' ? '360°' : m.projection === 'flat' ? 'энгийн' : ''} ${fmtDur(m.duration)} · ${fmtMB(m.size || m.orig_size || 0)}</small></td><td>${st(m)}</td><td>${m.has_track ? '<span class="badge ok" title="GPS зам">GPS</span>' : `<button class="small" onclick="tmTrack(${m.id})" title="GPX файл (заавал биш — байхгүй бол замыг системийн маршрутаар тааруулна)">GPX</button>`}</td><td style="white-space:nowrap">${i > 0 ? `<button class="small" onclick="tmMove(${m.id},-1)">↑</button>` : ''}${i < a.length - 1 ? `<button class="small" onclick="tmMove(${m.id},1)">↓</button>` : ''} ${btns(m)}</td></tr>`).join('')}</tbody></table>` : '<div style="color:var(--muted)">Одоогоор алга</div>'; };
+  const anonTxt = (m) => { const a = m.meta && m.meta.anon; if (!a || m.status !== 'ready') return ''; if (a.off) return '<small class="badge warn" title="Бүдгэрүүлэлт идэвхгүй үед боловсруулсан">бүдгэрүүлээгүй</small>';
+    const p = [a.face ? a.face + ' нүүр' : '', a.plate ? a.plate + ' дугаар' : '', a.intercom ? a.intercom + ' домофон' : ''].filter(Boolean); const man = m.meta.manual ? m.meta.manual.length : 0;
+    return `<small style="color:var(--muted)" title="Автоматаар бүдгэрүүлсэн (хүний нүүр, машины улсын дугаар, орцны домофон/айлын жагсаалт)">🔒 ${p.length ? p.join(' · ') : 'илрээгүй'}${man ? ` · гараар ${man}` : ''}</small>`; };
+  const btns = (m) => `${m.status === 'ready' && d.token ? `<a href="/tour-media/${esc(d.token)}/${m.id}?v=${m.size || 0}" target="_blank" rel="noopener"><button class="small" title="Харах">▶</button></a>` : ''}${m.status === 'ready' && m.kind !== 'splat' ? ` <button class="small" onclick="tmBlur(${m.id})" title="Автомат илрүүлэгч алдсан нүүр, дугаар, домофоныг гараар бүдгэрүүлэх">Бүдгэрүүлэх</button>` : ''} <button class="small" onclick="tmDel(${m.id})" title="Устгах">✕</button>`;
+  const walkList = (kind) => { const a = it.filter((m) => m.kind === kind); return a.length ? `<table><tbody>${a.map((m, i) => `<tr><td>${i + 1}. <a href="#" onclick="tmLabel(${m.id});return false">${esc(m.label || MKIND[kind])}</a><br><small style="color:var(--muted)">${esc(m.orig_name || '')} · ${m.projection === 'equirect' ? '360°' : m.projection === 'flat' ? 'энгийн' : ''} ${fmtDur(m.duration)} · ${fmtMB(m.size || m.orig_size || 0)}</small> ${anonTxt(m)}</td><td>${st(m)}</td><td>${m.has_track ? '<span class="badge ok" title="GPS зам">GPS</span>' : `<button class="small" onclick="tmTrack(${m.id})" title="GPX файл (заавал биш — байхгүй бол замыг системийн маршрутаар тааруулна)">GPX</button>`}</td><td style="white-space:nowrap">${i > 0 ? `<button class="small" onclick="tmMove(${m.id},-1)">↑</button>` : ''}${i < a.length - 1 ? `<button class="small" onclick="tmMove(${m.id},1)">↓</button>` : ''} ${btns(m)}</td></tr>`).join('')}</tbody></table>` : '<div style="color:var(--muted)">Одоогоор алга</div>'; };
   const roomRow = (r) => { const pn = it.filter((m) => m.kind === 'pano' && m.room_id === r.id).pop(), sp = it.filter((m) => m.kind === 'splat' && m.room_id === r.id).pop();
-    return `<tr><td><b>${esc(r.name)}</b></td><td>${pn ? `${st(pn)} ${pn.meta && pn.meta.partial ? '<small title="Бүтэн 360 биш — дутуу хэсгийг саарлаар нөхсөн">хагас</small>' : ''} ${btns(pn)}` : ''} <button class="small" onclick="tmPick('pano','${esc(r.id)}')">${pn ? 'Солих' : '+ 360 зураг'}</button></td>
+    return `<tr><td><b>${esc(r.name)}</b></td><td>${pn ? `${st(pn)} ${pn.meta && pn.meta.partial ? '<small title="Бүтэн 360 биш — дутуу хэсгийг саарлаар нөхсөн">хагас</small>' : ''} ${anonTxt(pn)} ${btns(pn)}` : ''} <button class="small" onclick="tmPick('pano','${esc(r.id)}')">${pn ? 'Солих' : '+ 360 зураг'}</button></td>
       <td>${sp ? `${st(sp)} <small>${sp.meta && sp.meta.count ? Math.round(sp.meta.count / 1000) + 'k цэг' : ''}</small> <button class="small" title="Доош/дээш эргүүлэх (X 180°)" onclick="tmRot(${sp.id},0)">⇅</button><button class="small" title="Хэвтээ 90° эргүүлэх" onclick="tmRot(${sp.id},1)">⟳</button> ${btns(sp)}` : ''} <button class="small" onclick="tmPick('splat','${esc(r.id)}')">${sp ? 'Солих' : '+ бодит 3D'}</button></td></tr>`; };
   const ext = it.filter((m) => m.kind === 'pano' && String(m.room_id || '').startsWith('ext:'));
   const disk = d.disk ? ` · сервер чөлөөтэй ${fmtMB(d.disk.free)}` : '';
-  $('#tm-box').innerHTML = `
+  const an = d.anon || {}; const anReady = an.enabled && an.models && Object.values(an.models).every(Boolean);
+  const privacy = an.enabled ? `<div style="margin-bottom:8px;font-size:12.5px">🔒 <b>Хувийн мэдээлэл:</b> хүний нүүр, машины улсын дугаар, орцны домофон/айлын жагсаалтыг сервер автоматаар бүдгэрүүлнэ (бичлэг, 360 зураг)${anReady ? '' : ' — <span class="badge warn">илрүүлэгч загвар татагдаж байна</span>'}. Алдсан хэсэг байвал «Бүдгэрүүлэх» товчоор гараар нэмнэ.</div>` : '<div style="margin-bottom:8px"><span class="badge warn">Автомат бүдгэрүүлэлт идэвхгүй</span> — нүүр/дугаарыг гараар бүдгэрүүлнэ үү.</div>';
+  const purge = d.purge_at ? `<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:var(--surface-2)">⏳ Объект хаагдсан — бодит медиа (бичлэг, 360 зураг, 3D) <b>${new Date(d.purge_at).toLocaleDateString('mn-MN')}</b>-нд автоматаар устна (хаагдсанаас ${d.retention_days} хоног). Объектыг дахин идэвхжүүлбэл хадгалагдана.</div>` : '';
+  $('#tm-box').innerHTML = `${purge}${privacy}
     <div style="color:var(--muted);margin-bottom:8px">Аялалд дараалал: 3D нислэг → <b>гадна алхалт</b> → <b>орц, шат</b> → өрөө бүр (<b>бодит 3D</b> &gt; <b>360 зураг</b> &gt; загвар). Утсаар ч болно — 360 камер заавал биш.<br>
       Дээд хэмжээ: бичлэг ${fmtMB(L.video || 0)}, 360 зураг ${fmtMB(L.pano || 0)}, бодит 3D .spz ${fmtMB(L.splat || 0)} / .ply ${fmtMB(L.ply || 0)}. Энэ объект: ${fmtMB(d.used || 0)}${disk}${d.ffmpeg ? '' : ' · <span class="badge warn">сервер дээр ffmpeg алга — бичлэг/зураг хөрвүүлэгдэхгүй</span>'}</div>
     <h4 style="margin:10px 0 4px">1. Гадна алхалт — төв замаас орц хүртэл</h4>${walkList('walk_ext')}
@@ -1073,7 +1080,7 @@ async function tourMediaLoad() {
     <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="small primary" onclick="tmPick('walk_in')">+ Бичлэг оруулах</button><a href="/capture?pid=${TOUR.pid}&kind=walk_in" target="_blank" rel="noopener"><button class="small">Утсаар бичих</button></a></div>
     <h4 style="margin:12px 0 4px">3. Өрөө бүр</h4>
     <div class="tablebox"><table><thead><tr><th>Өрөө</th><th>360 зураг (өрөөний төвөөс, 1.5 м)</th><th>Бодит 3D (Scaniverse / Polycam .spz)</th></tr></thead><tbody>${TOUR.plan.rooms.map(roomRow).join('')}</tbody></table></div>
-    <div style="margin-top:8px"><b>Гадаах 360 цэгүүд</b> ${ext.map((m) => `<span class="badge">${esc(m.room_id.slice(4))}</span> ${st(m)} ${btns(m)}`).join(' ')} <input id="tm-extname" placeholder="Цэгийн нэр (ж: Орц, Хашаа)" style="width:170px"> <button class="small" onclick="tmExtPano()">+ 360 зураг</button></div>
+    <div style="margin-top:8px"><b>Гадаах 360 цэгүүд</b> ${ext.map((m) => `<span class="badge">${esc(m.room_id.slice(4))}</span> ${st(m)} ${anonTxt(m)} ${btns(m)}`).join(' ')} <input id="tm-extname" placeholder="Цэгийн нэр (ж: Орц, Хашаа)" style="width:170px"> <button class="small" onclick="tmExtPano()">+ 360 зураг</button></div>
     <h4 style="margin:12px 0 4px">4. План — iPhone Pro LiDAR (RoomPlan)</h4>
     <div style="color:var(--muted)">LiDAR-тай iPhone (12 Pro–17 Pro) дээр RoomPlan-д суурилсан апп-аар (жишээ нь Apple-ийн RoomPlan жишээ апп) скан хийж JSON экспортлоод оруулна — хана, хаалга, цонх хэмжээтэйгээ (±5 см) план болно.</div>
     <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap"><button class="small" onclick="tmRoomPlan()">RoomPlan JSON сонгох</button><span id="tm-rp" style="font-size:12px"></span></div>`;
@@ -1082,6 +1089,59 @@ async function tourMediaLoad() {
 }
 window.tourMediaLoad = tourMediaLoad;
 window.tmDel = async (id) => { if (!confirm('Энэ медиаг устгах уу?')) return; const r = await api('/tour/' + TOUR.pid + '/media/' + id, { method: 'DELETE' }); if (r.error) return alert(r.error); tourMediaLoad(); };
+// ---- Гараар бүдгэрүүлэх: бичлэгийг зогсоогоод (эсвэл 360 зураг дээр) хулганаар хүрээлнэ; хөдөлж буй бол өөр агшинд «Байрлал шинэчлэх» → хооронд нь дагана ----
+let BL = null;
+window.tmBlur = (id) => {
+  const m = TM.items.find((x) => x.id === id); if (!m) return; const isV = m.kind !== 'pano'; const src = `/tour-media/${encodeURIComponent(TM.token)}/${id}?v=${m.size || 0}`;
+  const a = (m.meta && m.meta.anon) || {}; BL = { id, isV, regions: [], sel: -1, drag: null };
+  modal(`<h3>Гараар бүдгэрүүлэх — ${esc(m.label || MKIND[m.kind] || '')}</h3>
+  <div style="font-size:12.5px;color:var(--muted)">Автомат: ${a.face || 0} нүүр, ${a.plate || 0} дугаар, ${a.intercom || 0} домофон бүдгэрүүлсэн. Алдсан нүүр, улсын дугаар, домофон, хаягийн самбар байвал ${isV ? 'бичлэгийг тухайн агшинд зогсоож' : ''} хулганаар хүрээлж зурна.${isV ? ' Хөдөлж буй бол жагсаалтаас «Байрлал шинэчлэх» дараад өөр агшинд дахин зурна — хооронд нь дагаж бүдгэрүүлнэ.' : ''}</div>
+  <div id="bl-wrap" style="position:relative;margin-top:8px;background:#000;line-height:0">
+    ${isV ? `<video id="bl-media" src="${src}" muted playsinline preload="auto" style="width:100%;max-height:58vh;display:block"></video>` : `<img id="bl-media" src="${src}" alt="" style="width:100%;display:block">`}
+    <canvas id="bl-cv" style="position:absolute;left:0;top:0;cursor:crosshair;touch-action:none"></canvas>
+  </div>
+  ${isV ? `<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="small" id="bl-play">⏯</button><input id="bl-t" type="range" min="0" max="${m.duration || 0}" step="0.04" value="0" style="flex:1"><span id="bl-tl" style="font:12px ui-monospace,monospace;min-width:84px;text-align:right">0.0 с</span></div>` : ''}
+  <div id="bl-list" style="font-size:12.5px;margin-top:6px"></div>
+  <div class="modal-actions" style="margin-top:10px"><button type="button" class="primary" onclick="tmBlurGo(this)">Хадгалаад бүдгэрүүлэх</button><button type="button" onclick="closeModal()">Хаах</button></div>`);
+  const md = $('#bl-media'), cv = $('#bl-cv');
+  const fit = () => { const r = md.getBoundingClientRect(); cv.width = Math.round(r.width); cv.height = Math.round(r.height); cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px'; blDraw(); };
+  if (isV) { md.addEventListener('loadedmetadata', fit); md.addEventListener('timeupdate', () => { $('#bl-t').value = md.currentTime; $('#bl-tl').textContent = md.currentTime.toFixed(1) + ' с'; blDraw(); });
+    $('#bl-t').oninput = (e) => { md.pause(); md.currentTime = Number(e.target.value); }; $('#bl-play').onclick = () => (md.paused ? md.play() : md.pause()); md.addEventListener('seeked', blDraw); }
+  else md.addEventListener('load', fit);
+  window.addEventListener('resize', fit); setTimeout(fit, 300);
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))]; };
+  cv.onpointerdown = (e) => { if (isV) md.pause(); cv.setPointerCapture(e.pointerId); BL.drag = { a: pos(e), b: pos(e) }; };
+  cv.onpointermove = (e) => { if (!BL.drag) return; BL.drag.b = pos(e); blDraw(); };
+  cv.onpointerup = () => {
+    const d = BL.drag; BL.drag = null; if (!d) return; const b = [Math.min(d.a[0], d.b[0]), Math.min(d.a[1], d.b[1]), Math.max(d.a[0], d.b[0]), Math.max(d.a[1], d.b[1])];
+    if (b[2] - b[0] < 0.004 || b[3] - b[1] < 0.004) return blDraw();
+    const t = isV ? +md.currentTime.toFixed(2) : 0; const R = BL.regions[BL.sel];
+    if (isV && R) { R.k = R.k.filter((k) => Math.abs(k.t - t) > 0.05).concat({ t, b }).sort((p, q) => p.t - q.t); }
+    else { BL.regions.push({ k: [{ t, b }], hold: isV ? 2 : 0 }); BL.sel = -1; }
+    blList(); blDraw();
+  };
+  blList();
+};
+const blAt = (r, t) => { const k = r.k; if (!BL.isV) return k[0].b; const end = k[k.length - 1].t + (r.hold || 0); if (t < k[0].t - 0.02 || t > end + 0.02) return null; if (t <= k[0].t) return k[0].b; if (t >= k[k.length - 1].t) return k[k.length - 1].b; let i = 0; while (k[i + 1].t < t) i++; const p = k[i], q = k[i + 1], u = (t - p.t) / (q.t - p.t || 1); return p.b.map((v, j) => v + (q.b[j] - v) * u); };
+function blDraw() {
+  const cv = $('#bl-cv'); if (!cv || !BL) return; const g = cv.getContext('2d'); const W = cv.width, H = cv.height; g.clearRect(0, 0, W, H);
+  const t = BL.isV ? $('#bl-media').currentTime : 0;
+  BL.regions.forEach((r, i) => { const b = blAt(r, t); if (!b) return; g.fillStyle = 'rgba(239,68,68,.28)'; g.strokeStyle = i === BL.sel ? '#FBBF24' : '#EF4444'; g.lineWidth = 2; g.fillRect(b[0] * W, b[1] * H, (b[2] - b[0]) * W, (b[3] - b[1]) * H); g.strokeRect(b[0] * W, b[1] * H, (b[2] - b[0]) * W, (b[3] - b[1]) * H); g.fillStyle = '#fff'; g.font = '12px Inter,sans-serif'; g.fillText('№' + (i + 1), b[0] * W + 3, b[1] * H + 13); });
+  if (BL.drag) { const [a, b] = [BL.drag.a, BL.drag.b]; g.setLineDash([5, 4]); g.strokeStyle = '#FBBF24'; g.lineWidth = 2; g.strokeRect(Math.min(a[0], b[0]) * W, Math.min(a[1], b[1]) * H, Math.abs(b[0] - a[0]) * W, Math.abs(b[1] - a[1]) * H); g.setLineDash([]); }
+}
+function blList() {
+  const el = $('#bl-list'); if (!el) return;
+  el.innerHTML = BL.regions.length ? BL.regions.map((r, i) => `<div style="display:flex;gap:6px;align-items:center;margin-top:4px;${i === BL.sel ? 'font-weight:600' : ''}">№${i + 1}${BL.isV ? ` · ${r.k[0].t.toFixed(1)}–${(r.k[r.k.length - 1].t + (r.hold || 0)).toFixed(1)} с (${r.k.length} байрлал) · төгсгөлийн дараа <input type="number" min="0" max="60" step="0.5" value="${r.hold}" style="width:56px" onchange="BL.regions[${i}].hold=Math.max(0,Number(this.value)||0);blList();blDraw()"> с
+    <button type="button" class="small" onclick="BL.sel=BL.sel===${i}?-1:${i};blList();blDraw()">${i === BL.sel ? 'Шинэчилж байна — бичлэгийг гүйлгээд дахин зур' : 'Байрлал шинэчлэх'}</button>` : ''} <button type="button" class="small" onclick="BL.regions.splice(${i},1);BL.sel=-1;blList();blDraw()">✕</button></div>`).join('')
+    : '<span style="color:var(--muted)">Одоогоор хүрээ зураагүй</span>';
+}
+window.blList = blList; window.blDraw = blDraw;
+window.tmBlurGo = async (btn) => {
+  if (!BL || !BL.regions.length) return alert('Бүдгэрүүлэх хэсгийг хулганаар хүрээлж зурна уу');
+  btn.disabled = true; const r = await api('/tour/' + TOUR.pid + '/media/' + BL.id + '/blur', { method: 'POST', body: { regions: BL.regions } }).catch((e) => ({ error: e.message })); btn.disabled = false;
+  if (r.error) return alert(r.error);
+  closeModal(); toast(`${r.regions} хэсгийг бүдгэрүүлж байна — хэдэн минут`); tourMediaLoad();
+};
 window.tmLabel = async (id) => { const m = TM.items.find((x) => x.id === id); const v = prompt('Нэр (аялалд гарна)', m.label || ''); if (v == null) return; await api('/tour/' + TOUR.pid + '/media/' + id, { method: 'PUT', body: { label: v } }); tourMediaLoad(); };
 window.tmMove = async (id, dir) => {
   const m = TM.items.find((x) => x.id === id); const a = TM.items.filter((x) => x.kind === m.kind); const i = a.indexOf(m), j = i + dir; if (j < 0 || j >= a.length) return;
@@ -1249,12 +1309,24 @@ async function owner() {
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">«Дахин бэлтгэх» — гадаах орчныг хотын өгөгдлийн сангийн хамгийн сүүлийн хувилбараар (дээврийн өнгө, мод, ойрын газар) шинэчилнэ; замын хугацааг дахин тооцохгүй (зардалгүй). «Импорт» — нэг JSON-оор объект + план + ойрын газрыг үүсгэж, гадаах орчныг бэлтгэнэ.</div>
     <div style="display:flex;gap:8px;margin-bottom:8px"><button class="small primary" onclick="ownerImport()"><svg class=ic><use href=#i-upload></use></svg>Импорт (JSON)</button><button class="small" onclick="ownerTours()">↻ Шинэчлэх</button></div>
     <div id="ot-list" style="font-size:12.5px">…</div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Медиа хадгалалт ба хувийн мэдээлэл</h3><div id="st-box" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Өгөгдлийн сангийн нөөц</h3>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Өдөр бүр автоматаар (Улаанбаатарын цагаар өдөрт 1 удаа) бүх хүснэгтийг нөөцөлж, Postgres-оос тусдаа дискэнд сүүлийн <span id="bk-keep">14</span> хувийг хадгална. Сар бүр нэг хувийг татаж аваад өөрийн компьютерт хадгалахыг зөвлөж байна.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="small primary" onclick="backupNow(this)"><svg class=ic><use href=#i-archive></use></svg>Одоо нөөцлөх</button><span id="bk-st" style="font-size:12.5px"></span></div>
     <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
-  backupList(); ownerTours();
+  backupList(); ownerTours(); storageBox();
+}
+async function storageBox() {
+  const d = await api('/owner/storage').catch(() => null); const el = $('#st-box'); if (!el || !d || d.error) return;
+  const dk = d.disk || {}; const used = dk.total ? dk.total - dk.free : 0; const pct = dk.total ? Math.round((used / dk.total) * 100) : 0;
+  const byCo = {}; for (const r of d.media || []) { const k = r.name || ('#' + r.company_id); byCo[k] = (byCo[k] || 0) + Number(r.bytes || 0); }
+  const an = d.anon || {}; const models = Object.entries(an.models || {}).map(([k, v]) => `${{ face: 'нүүр', plate: 'дугаар', owl: 'домофон' }[k] || k} ${v ? '✓' : '…'}`).join(', ');
+  const R = d.retention || {}; const n7 = R.next7 || {};
+  el.innerHTML = `<div>Диск: <b>${fmtMB(used)}</b> / ${fmtMB(dk.total || 0)} (${pct}%) · чөлөөтэй ${fmtMB(dk.free || 0)}<div style="height:8px;background:var(--surface-2);border-radius:4px;margin:4px 0 8px"><div style="height:100%;width:${pct}%;background:${pct > 85 ? 'var(--accent-2)' : 'var(--accent)'};border-radius:4px"></div></div></div>
+    <div>Медиа компани тус бүр: ${Object.entries(byCo).map(([k, v]) => `${esc(k)} <b>${fmtMB(v)}</b>`).join(' · ') || 'алга'} · upload түр ${fmtMB(d.uploads || 0)} · нөөц ${fmtMB(d.backups || 0)} · зураг ${fmtMB(d.assets || 0)}</div>
+    <div style="margin-top:6px">⏳ Хадгалах бодлого: хаагдсан объектын бодит медиа хаагдсанаас <b>${R.days || 30} хоногийн</b> дараа автоматаар устна. Ойрын 7 хоногт устах: ${n7.n || 0} файл (${fmtMB(Number(n7.bytes || 0))}).${R.last ? ` Сүүлд: ${new Date(R.last.at).toLocaleString('mn-MN')} — ${R.last.removed} файл (${fmtMB(R.last.bytes)}).` : ''}</div>
+    <div style="margin-top:6px">🔒 Автомат бүдгэрүүлэлт: ${an.enabled ? `идэвхтэй (${models})` : '<span class="badge warn">идэвхгүй</span>'} · ffmpeg ${d.ffmpeg ? '✓' : '<span class="badge warn">алга</span>'} · боловсруулалтын дараалал ${d.queue || 0}</div>`;
 }
 
 let OT_T = null;

@@ -5,6 +5,7 @@
 // • Хадгалах: MEDIA_DIR (Railway: /data/media). Хадгалах сангийн шийдлийг (R2/S3) дараа нь энэ модулийн put/path/remove-ийг солиход хангалттай.
 const fs = require('fs'); const fsp = fs.promises; const path = require('path'); const crypto = require('crypto'); const zlib = require('zlib');
 const { spawn, spawnSync } = require('child_process');
+const anon = require('./anonymize');
 
 const MEDIA_DIR = process.env.ZUUCH_MEDIA || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'media') : path.join(__dirname, 'media'));
 const TMP_DIR = path.join(MEDIA_DIR, '_uploads');
@@ -105,35 +106,91 @@ async function probe(file) {
   return { w, h, codec: v.codec_name, duration: Number(v.duration || (j.format && j.format.duration) || 0), transfer: v.color_transfer || '', fps: v.avg_frame_rate, spherical, pixfmt: v.pix_fmt, still: (Number(v.nb_frames) || 0) <= 1 && !Number(v.duration) };
 }
 
+// Гаралтын хэмжээ (тэгш тоо): 360 → ≤3840×1920 (2:1), энгийн → урт тал ≤1920
+function outDims(pr, eq) {
+  const ev = (v) => Math.max(2, Math.round(v / 2) * 2);
+  if (eq) { const W = ev(Math.min(3840, pr.w)); return { W, H: ev(W / 2) }; }
+  if (pr.w >= pr.h) { const W = ev(Math.min(1920, pr.w)); return { W, H: ev((W * pr.h) / pr.w) }; }
+  const H = ev(Math.min(1920, pr.h)); return { W: ev((H * pr.w) / pr.h), H };
+}
+// Кадрын давтамж (≤30): 29.97/23.976-г хадгална
+function outFps(rate) {
+  const [a, b] = String(rate || '').split('/').map(Number); const n = b ? a / b : a;
+  if (!(n > 0) || n > 30.5) return '30';
+  for (const [v, s] of [[30000 / 1001, '30000/1001'], [24000 / 1001, '24000/1001'], [25, '25'], [24, '24'], [30, '30']]) if (Math.abs(n - v) < 0.006) return s;
+  return String(Math.max(10, Math.min(30, Math.round(n))));
+}
+const X264 = (eq, out, crfAdj = 0) => ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', String((eq ? 23 : 24) + crfAdj), '-maxrate', eq ? '16M' : '8M', '-bufsize', eq ? '32M' : '16M', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-threads', '4', '-movflags', '+faststart', out];
+const blurOn = (m) => anon.ENABLED && !(m.meta && m.meta.blur === false);
+// Бүдгэрүүлэлтийг тусдаа Node процесст (nice 15): илрүүлэгч + кадр бүрийн мозайк вэб серверийн event loop-ыг ачаалахгүй
+function anonChild(job, onMsg, timeoutMs = 6 * 3600e3) {
+  return new Promise((res, rej) => {
+    const T = tools(); const node = process.execPath, script = path.join(__dirname, 'anonymize.js');
+    const p = spawn(T.nice || node, T.nice ? ['-n', '15', node, script] : [script], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let buf = '', err = '', result = null, fail = null;
+    const to = setTimeout(() => { p.kill('SIGKILL'); fail = 'хугацаа хэтэрсэн'; }, timeoutMs);
+    p.stdout.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); try { const o = JSON.parse(line); if (o.msg && onMsg) onMsg(o.msg); if (o.result) result = o.result; if (o.error) fail = o.error; } catch { /* лог мөр */ } } });
+    p.stderr.on('data', (d) => { err += d; if (err.length > 2e4) err = err.slice(-1e4); });
+    p.on('error', (e) => { clearTimeout(to); rej(e); });
+    p.on('close', (c) => { clearTimeout(to); if (result && c === 0) res(result); else rej(new Error((fail || err.trim().split('\n').slice(-2).join(' ') || 'бүдгэрүүлэгч код ' + c).slice(0, 300))); });
+    p.stdin.on('error', () => {}); p.stdin.end(JSON.stringify({ ...job, ff: { ffmpeg: T.ffmpeg, nice: T.nice } }));
+  });
+}
+async function makePoster(T, out, poster, dur, eq) { await run(T.ffmpeg, ['-y', '-hide_banner', '-ss', String(Math.min(1, dur / 3)), '-i', out, '-frames:v', '1', '-vf', eq ? 'scale=1024:512' : "scale='min(960,iw)':-2", '-q:v', '4', poster], { timeoutMs: 120000 }).catch(() => {}); }
+
 async function processVideo(m, src, outDir, onMsg) {
   const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй — бичлэг хөрвүүлэх боломжгүй');
   const pr = await probe(src); if (!pr || !pr.w) throw new Error('Бичлэг уншигдсангүй (кодек дэмжигдэхгүй?)');
   const eq = m.projection === 'equirect' || (m.projection !== 'flat' && (pr.spherical || Math.abs(pr.w / pr.h - 2) < 0.06));
-  const out = path.join(outDir, `${m.id}.mp4`), poster = path.join(outDir, `${m.id}-poster.jpg`);
-  const scale = eq ? "scale='min(3840,iw)':-2:flags=lanczos" : "scale='if(gte(iw,ih),min(1920,iw),-2)':'if(gte(iw,ih),-2,min(1920,ih))':flags=lanczos";
+  const out = path.join(outDir, `${m.id}.mp4`), poster = path.join(outDir, `${m.id}-poster.jpg`), tmp = path.join(outDir, `${m.id}.part.mp4`);
   const hdr = /arib-std-b67|smpte2084/.test(pr.transfer) && T.zscale ? 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,' : ''; // iPhone HDR → SDR
-  const vf = `${hdr}${scale},fps='min(30,source_fps)',format=yuv420p`;
-  const dur = pr.duration || 1;
-  await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1', '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', eq ? '23' : '24',
-    '-maxrate', eq ? '16M' : '8M', '-bufsize', eq ? '32M' : '16M', '-profile:v', 'high', '-threads', '4', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', out],
-  { onLine: (l) => { const mm = /^out_time_ms=(\d+)/.exec(l); if (mm) onMsg(`Хөрвүүлж байна… ${Math.min(99, Math.round(Number(mm[1]) / 1e6 / dur * 100))}%`); } })
-    .catch(async (e) => { if (!/fps|source_fps/.test(e.message)) throw e; // хуучин ffmpeg: fps илэрхийлэл дэмжихгүй бол энгийн
-      await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map', '0:v:0', '-an', '-map_metadata', '-1', '-vf', `${hdr}${scale},format=yuv420p`, '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-maxrate', eq ? '16M' : '8M', '-bufsize', '32M', '-threads', '4', '-movflags', '+faststart', out]); });
-  await run(T.ffmpeg, ['-y', '-hide_banner', '-ss', String(Math.min(1, dur / 3)), '-i', out, '-frames:v', '1', '-vf', eq ? 'scale=1024:512' : "scale='min(960,iw)':-2", '-q:v', '4', poster], { timeoutMs: 120000 }).catch(() => {});
+  const { W, H } = outDims(pr, eq); const fps = outFps(pr.fps); const dur = pr.duration || 1;
+  const meta = { src_codec: pr.codec, src_w: pr.w, src_h: pr.h, hdr: !!hdr };
+  if (blurOn(m)) {
+    // 1) илрүүлэх (4 кадр/с) → 2) нэг удаа кодлох: кадр бүрт мозайк (нүүр, улсын дугаар, домофон)
+    const det = await anonChild({ op: 'video', src, pre: hdr, W, H, eq, fps, duration: dur, kind: m.kind, vf: `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`, enc: X264(eq, tmp) }, onMsg);
+    await fsp.rename(tmp, out);
+    await fsp.writeFile(path.join(outDir, `${m.id}-blur.json`), JSON.stringify({ W, H, fps, tracks: det.tracks })).catch(() => {}); // гараар засах үед харуулах (нийтэд үйлчлэхгүй)
+    meta.anon = det.stats;
+  } else {
+    await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1', '-vf', `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`, '-progress', 'pipe:1', '-nostats', ...X264(eq, out)],
+      { onLine: (l) => { const mm = /^out_time_ms=(\d+)/.exec(l); if (mm) onMsg(`Хөрвүүлж байна… ${Math.min(99, Math.round(Number(mm[1]) / 1e6 / dur * 100))}%`); } });
+    meta.anon = { off: true };
+  }
+  await makePoster(T, out, poster, dur, eq);
   const po = await probe(out);
-  return { file: path.basename(out), poster: fs.existsSync(poster) ? path.basename(poster) : null, size: (await fsp.stat(out)).size, duration: po ? po.duration : pr.duration, width: po ? po.w : pr.w, height: po ? po.h : pr.h, projection: eq ? 'equirect' : 'flat', meta: { src_codec: pr.codec, src_w: pr.w, src_h: pr.h, hdr: !!hdr } };
+  return { file: path.basename(out), poster: fs.existsSync(poster) ? path.basename(poster) : null, size: (await fsp.stat(out)).size, duration: po ? po.duration : pr.duration, width: po ? po.w : W, height: po ? po.h : H, projection: eq ? 'equirect' : 'flat', meta };
 }
 
-async function processPano(m, src, outDir) {
+async function processPano(m, src, outDir, onMsg) {
   const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй');
   const pr = await probe(src); if (!pr || !pr.w) throw new Error('Зураг уншигдсангүй');
   const ar = pr.w / pr.h; const out = path.join(outDir, `${m.id}.jpg`), prev = path.join(outDir, `${m.id}-preview.jpg`);
   // 2:1 биш (утасны хэвтээ панорам ~4:1, эсвэл бүтэн биш) → 360 хүрээнд саарал хүрээгээр нөхнө
   const pad = ar > 2.04 ? 'pad=iw:ceil(iw/4)*2:0:(oh-ih)/2:color=0x6b6f75,' : ar < 1.96 ? 'pad=ceil(ih*2/2)*2:ih:(ow-iw)/2:0:color=0x6b6f75,' : '';
-  await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map_metadata', '-1', '-vf', `${pad}scale='min(8192,iw)':-2:flags=lanczos`, '-q:v', '3', out], { timeoutMs: 300000 });
+  await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map_metadata', '-1', '-vf', `${pad}scale='min(8192,iw)':-2:flags=lanczos`, '-q:v', blurOn(m) ? '2' : '3', out], { timeoutMs: 300000 });
+  let po = await probe(out); const meta = { partial: !!pad, src_w: pr.w, src_h: pr.h };
+  if (blurOn(m)) { if (onMsg) onMsg('Нүүр, дугаар, домофон хайж байна…'); const r = await anonChild({ op: 'image', file: out, width: po.w, height: po.h, eq: true, intercom: true }, onMsg); meta.anon = r.stats; po = await probe(out); }
   await run(T.ffmpeg, ['-y', '-hide_banner', '-i', out, '-vf', 'scale=2048:1024', '-q:v', '5', prev], { timeoutMs: 120000 });
-  const po = await probe(out);
-  return { file: path.basename(out), poster: path.basename(prev), size: (await fsp.stat(out)).size + (await fsp.stat(prev)).size, width: po.w, height: po.h, projection: 'equirect', meta: { partial: !!pad, src_w: pr.w, src_h: pr.h } };
+  return { file: path.basename(out), poster: path.basename(prev), size: (await fsp.stat(out)).size + (await fsp.stat(prev)).size, width: po.w, height: po.h, projection: 'equirect', meta };
+}
+
+// Гараар нэмсэн бүдгэрүүлэлт (автомат илрүүлэгч алдсан хэсэг): одоогийн файл дээр мозайк нэмж дахин кодлоно.
+// regions: [{ k: [{ t, b: [x1,y1,x2,y2] (0..1) }], hold (с) }] — бичлэгт түлхүүр кадр хооронд шугаман шилжинэ; зурагт t хамаарахгүй
+async function reblur(m, regions, onMsg) {
+  const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй');
+  const file = filePath(m, m.file); if (!file || !fs.existsSync(file)) throw new Error('Медиа файл олдсонгүй');
+  const dir = path.dirname(file);
+  if (KINDS[m.kind] === 'pano') {
+    await anonChild({ op: 'image', file, width: m.width, height: m.height, eq: true, skipDetect: true, manual: regions.map((r) => ({ b: r.k[0].b })) }, onMsg);
+    const prev = path.join(dir, `${m.id}-preview.jpg`); await run(T.ffmpeg, ['-y', '-hide_banner', '-i', file, '-vf', 'scale=2048:1024', '-q:v', '5', prev], { timeoutMs: 120000 });
+    return { size: (await fsp.stat(file)).size + (await fsp.stat(prev)).size };
+  }
+  const pr = await probe(file); const eq = m.projection === 'equirect'; const W = pr.w, H = pr.h; const fps = outFps(pr.fps); const tmp = path.join(dir, `${m.id}.part.mp4`);
+  const tracks = regions.map((r) => ({ c: 'manual', hold: Number(r.hold) || 0, k: r.k.map((k) => ({ t: Number(k.t) || 0, b: [k.b[0] * W, k.b[1] * H, k.b[2] * W, k.b[3] * H] })).sort((a, b) => a.t - b.t) }));
+  await anonChild({ op: 'render', src: file, vf: 'format=yuv420p', W, H, fps, tracks, eq, duration: pr.duration, enc: X264(eq, tmp, -2) }, onMsg); // CRF −2: дахин кодлолтын алдагдлыг багасгана
+  await fsp.rename(tmp, file); await makePoster(T, file, path.join(dir, `${m.id}-poster.jpg`), pr.duration || 1, eq);
+  return { size: (await fsp.stat(file)).size };
 }
 
 // ---- Splat ----
@@ -212,7 +269,7 @@ const queue = []; let busy = false; let DB = null;
 function setDb(db) { DB = db; }
 const mediaDirOf = (m) => path.join(MEDIA_DIR, String(m.company_id), String(m.property_id));
 function filePath(m, name) { if (!name || !/^[\w.-]+$/.test(name)) return null; return path.join(mediaDirOf(m), name); }
-function enqueue(mediaId, src) { queue.push({ mediaId, src }); pump(); }
+function enqueue(mediaId, src, extra = {}) { queue.push({ mediaId, src, ...extra }); pump(); }
 async function pump() {
   if (busy || !queue.length || !DB) return; busy = true; const job = queue.shift();
   const m = await DB.one('SELECT * FROM tour_media WHERE id=?', job.mediaId).catch(() => null);
@@ -221,23 +278,32 @@ async function pump() {
     const outDir = mediaDirOf(m); await fsp.mkdir(outDir, { recursive: true });
     let last = 0; const msg = (t) => { if (Date.now() - last > 1500) { last = Date.now(); DB.run('UPDATE tour_media SET msg=? WHERE id=?', t, m.id).catch(() => {}); } };
     await DB.run("UPDATE tour_media SET status='processing', msg='Боловсруулж байна…' WHERE id=?", m.id);
+    if (job.op === 'reblur') { // гараар нэмсэн бүдгэрүүлэлт — файл хэвээр, мозайк нэмнэ
+      const r = await reblur(m, job.regions, msg);
+      await DB.run(`UPDATE tour_media SET status='ready', msg='', size=?, meta=jsonb_set(COALESCE(meta,'{}'::jsonb), '{manual}', ?::jsonb) WHERE id=?`, r.size, JSON.stringify(job.regions), m.id);
+      return;
+    }
     const cls = KINDS[m.kind];
-    const r = cls === 'video' ? await processVideo(m, job.src, outDir, msg) : cls === 'pano' ? await processPano(m, job.src, outDir) : await processSplat(m, job.src, outDir, msg);
+    const r = cls === 'video' ? await processVideo(m, job.src, outDir, msg) : cls === 'pano' ? await processPano(m, job.src, outDir, msg) : await processSplat(m, job.src, outDir, msg);
     if (!r.moved && process.env.ZUUCH_KEEP_ORIGINALS !== '1') await fsp.unlink(job.src).catch(() => {});
     await DB.run(`UPDATE tour_media SET status='ready', msg='', file=?, poster=?, size=?, duration=?, width=?, height=?, projection=COALESCE(?, projection), meta=COALESCE(meta,'{}'::jsonb) || ?::jsonb WHERE id=?`,
       r.file, r.poster || null, r.size || 0, r.duration || null, r.width || null, r.height || null, r.projection || null, JSON.stringify(r.meta || {}), m.id);
   } catch (e) {
-    await fsp.unlink(job.src).catch(() => {});
-    if (m) await DB.run("UPDATE tour_media SET status='error', msg=? WHERE id=?", String(e.message || e).slice(0, 300), m.id).catch(() => {});
+    if (job.src) await fsp.unlink(job.src).catch(() => {});
+    if (m && job.op === 'reblur') await DB.run("UPDATE tour_media SET status='ready', msg=? WHERE id=?", ('Гараар бүдгэрүүлэлт амжилтгүй: ' + String(e.message || e)).slice(0, 300), m.id).catch(() => {}); // файл хэвээр — бэлэн хэвээр үлдээнэ
+    else if (m) await DB.run("UPDATE tour_media SET status='error', msg=? WHERE id=?", String(e.message || e).slice(0, 300), m.id).catch(() => {});
     console.error('[медиа]', job.mediaId, e.message);
   } finally { busy = false; setImmediate(pump); }
 }
-async function removeFiles(m) { for (const n of [m.file, m.poster]) { const p = filePath(m, n); if (p) await fsp.unlink(p).catch(() => {}); } }
+async function removeFiles(m) { for (const n of [m.file, m.poster, `${m.id}-blur.json`, `${m.id}.part.mp4`]) { const p = filePath(m, n); if (p) await fsp.unlink(p).catch(() => {}); } }
+async function removeDirIfEmpty(companyId, propertyId) { const d = path.join(MEDIA_DIR, String(Number(companyId)), String(Number(propertyId))); await fsp.rmdir(d).catch(() => {}); } // хоосон биш бол үлдэнэ
 // Сервер дахин асахад: «processing» үлдсэн медиаг алдаа гэж тэмдэглэнэ (эх файл устсан байж болно)
 async function boot(db) {
   setDb(db); await fsp.mkdir(TMP_DIR, { recursive: true }).catch(() => {});
-  await db.run("UPDATE tour_media SET status='error', msg='Сервер дахин эхэлсэн — дахин оруулна уу' WHERE status='processing'").catch(() => {});
+  await db.run("UPDATE tour_media SET status='error', msg='Сервер дахин эхэлсэн — дахин оруулна уу' WHERE status='processing' AND file IS NULL").catch(() => {});
+  await db.run("UPDATE tour_media SET status='ready', msg='Гараар бүдгэрүүлэлт тасалдсан — дахин хадгална уу' WHERE status='processing' AND file IS NOT NULL").catch(() => {}); // reblur тасарсан: хуучин файл хэвээр
+  anon.prepare(); // бүдгэрүүлэх загваруудыг урьдчилан татна
   sweep(); setInterval(sweep, 3600e3).unref();
 }
 
-module.exports = { MEDIA_DIR, CHUNK, LIMITS, KINDS, canAccept, initUpload, getSession, writeChunk, finishUpload, abortUpload, enqueue, filePath, removeFiles, boot, tools, diskInfo, dirSize, plyToSplat, splatBounds, spzBounds, probe, queueLength: () => queue.length + (busy ? 1 : 0) };
+module.exports = { _t: { processVideo, processPano, reblur }, MEDIA_DIR, CHUNK, LIMITS, KINDS, anon, outDims, outFps, removeDirIfEmpty, canAccept, initUpload, getSession, writeChunk, finishUpload, abortUpload, enqueue, filePath, removeFiles, boot, tools, diskInfo, dirSize, plyToSplat, splatBounds, spzBounds, probe, queueLength: () => queue.length + (busy ? 1 : 0) };
