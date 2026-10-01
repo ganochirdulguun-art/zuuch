@@ -302,8 +302,13 @@ app.get('/api/leads', wrap(async (req, res) => {
       p.name poster_name, p.kind poster_kind, p.listings poster_listings, p.active_listings poster_active, p.verified poster_verified, p.company_guess,
       ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note
     FROM market_listings l JOIN posters p ON p.key=l.poster_key LEFT JOIN leads ld ON ld.listing_id=l.id AND ld.company_id=?
-    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int)${where}
-    ORDER BY (ld.status IS NULL) DESC, l.listed_at DESC, l.id DESC LIMIT 300`, ...params);
+    WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) AND ld.id IS NULL${where}
+    ORDER BY l.listed_at DESC, l.id DESC LIMIT 300`, ...params);
+  // Авч ажиллаж буй lead — огноо/шүүлтүүр/300-ийн хязгаараас үл хамааран үргэлж харагдана (өмнө нь жагсаалтын төгсгөлд таслагдаж алга болдог байв)
+  const claimed = await db.all(`SELECT l.id, l.title, l.category, l.deal_type, l.district, l.khoroolol, l.rooms, l.area, l.price, l.prev_price, l.listed_at, l.source, l.source_url, l.active,
+      l.poster_key, p.name poster_name, p.kind poster_kind, ld.status lead_status, ld.agent_id lead_agent, ld.client_id lead_client, ld.note lead_note, ld.created_at lead_at, u.name agent_name
+    FROM leads ld JOIN market_listings l ON l.id=ld.listing_id LEFT JOIN posters p ON p.key=l.poster_key LEFT JOIN users u ON u.id=ld.agent_id
+    WHERE ld.company_id=? ORDER BY (ld.status IN ('signed','rejected')), ld.created_at DESC LIMIT 200`, req.user.company_id);
   const counts = await db.all(`SELECT l.category, l.deal_type, COUNT(*)::int n FROM market_listings l JOIN posters p ON p.key=l.poster_key
     WHERE l.active=1 AND l.collected_at IS NOT NULL AND p.kind='owner' AND l.listed_at::date >= (CURRENT_DATE - ?::int) GROUP BY l.category, l.deal_type`, days);
   const idxRows = await db.all('SELECT DISTINCT ON (district, is_new) * FROM price_index ORDER BY district, is_new, month DESC');
@@ -316,7 +321,7 @@ app.get('/api/leads', wrap(async (req, res) => {
     let score = 50 + (r.deal_type === 'sale' ? 15 : 5) + Math.max(0, 15 - age) + (r.images <= 3 ? 10 : 0) + (vs != null && vs >= 5 ? 8 : 0) + (r.prev_price && r.prev_price > r.price ? 6 : 0) + (r.poster_listings === 1 ? 5 : 0);
     return { ...r, m2, vsIndex: vs, age, score: Math.min(99, score) };
   }).sort((a, b) => (a.lead_status ? 1 : 0) - (b.lead_status ? 1 : 0) || b.score - a.score);
-  res.json({ leads: out, days, counts, locations, filters: { category: cat, deal, city, district, khoroolol } });
+  res.json({ leads: out, claimed, days, counts, locations, filters: { category: cat, deal, city, district, khoroolol } });
 }));
 app.post('/api/leads/:lid/claim', wrap(async (req, res) => {
   const l = await db.one('SELECT * FROM market_listings WHERE id=?', req.params.lid);

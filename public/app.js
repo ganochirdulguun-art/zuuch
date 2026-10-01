@@ -549,6 +549,13 @@ async function leads() {
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(CAT_MN).map(([k, l]) => `<button class="small ${LEAD_F.category === k ? 'primary' : ''}" onclick="leadF('category','${LEAD_F.category === k ? '' : k}')">${ic(CAT_IC[k])}${l} <b>${cnt[k] || 0}</b></button>`).join('')}</div></div>
   <div class="demo-note" style="margin-bottom:12px">Ботууд нийтлэгч бүрийг бүртгэж (нэр, бизнес эсэх, зарын тоо/ангилал/дүүрэг) <b>эзэн / агент / агентлаг / хөгжүүлэгч</b> гэж ангилна. Эзэн (1–2 зартай, бизнес биш) өөрөө нийтэлсэн шинэ зар = зуучлалын гэрээний боломж. Оноо: зарах + шинэ + зураг цөөн + үнэ индексээс дээгүүр + үнэ буулгасан. <b>Утас хадгалахгүй</b> — «<svg class=ic><use href=#i-phone></use></svg>Дугаар харах ↗»-аар агент өөрөө холбогдож, зөвшөөрөлтэйгээр харилцагчийн бүртгэлд нөхнө.</div>
+  ${(d.claimed || []).length ? `<div class="card" style="margin-bottom:12px"><h3><svg class=ic><use href=#i-handshake></use></svg>Авч ажиллаж буй (${d.claimed.length})</h3><div class="tablebox"><table>
+    <thead><tr><th>Зар</th><th>Нийтлэгч</th><th class="num">Үнэ</th><th>Агент</th><th>Авсан</th><th>Төлөв</th><th></th></tr></thead>
+    <tbody>${d.claimed.map((r) => `<tr style="${['signed', 'rejected'].includes(r.lead_status) ? 'opacity:.6' : ''}">
+      <td><b style="cursor:pointer" onclick="marketDetail(${r.id})">${esc((r.title || '').slice(0, 60))}</b>${r.active ? '' : ' <span class="badge warn">зар хаагдсан</span>'}<br><span style="font-size:12px;color:var(--muted)"><span class="badge mut">${CAT_MN[r.category] || r.category}</span> ${esc(r.district)}${r.khoroolol ? ' · ' + esc(r.khoroolol) : ''}</span></td>
+      <td>${esc(r.poster_name || 'нэргүй')}</td><td class="num">${fmt(r.price)} сая</td><td>${esc(r.agent_name || '—')}</td><td>${esc(String(r.lead_at || '').slice(0, 10))}</td>
+      <td><select onchange="leadStatus(${r.id},this.value)">${Object.entries(LEAD_ST).map(([k, v]) => `<option value="${k}" ${r.lead_status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td style="white-space:nowrap">${r.lead_client ? `<button class="small" onclick="show('clients')">Харилцагч</button>` : ''} ${phoneBtn(r.source_url)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
   <div class="tablebox"><table>
     <thead><tr><th class="num">Оноо</th><th>Зар</th><th>Нийтлэгч</th><th class="num">Үнэ</th><th class="num">Индекс</th><th class="num">Хоног</th><th>Төлөв</th><th></th></tr></thead>
     <tbody>${rows.map((r) => `<tr style="${r.lead_status ? 'opacity:.75' : ''}">
