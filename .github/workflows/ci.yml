@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zuuch
+          POSTGRES_PASSWORD: zuuchci
+          POSTGRES_DB: zuuch
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U zuuch" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://zuuch:zuuchci@localhost:5432/zuuch
+      RESTORE_DATABASE_URL: postgres://zuuch:zuuchci@localhost:5432/zuuch_restore
+      ZUUCH_COLLECTOR_LIVE: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Сэргээх сан үүсгэх
+        run: PGPASSWORD=zuuchci psql -h localhost -U zuuch -d zuuch -c "CREATE DATABASE zuuch_restore"
+      - name: Синтакс
+        run: node tools/check.js
+      - name: Тест
+        run: npm test
