@@ -87,6 +87,11 @@ function advantagesFrom(prop, loc) {
     if (loc.growth === 'high') out.push('Үнэ цэн эрчимтэй өсөх төлөвтэй бүс' + (loc.growth_note ? ' — ' + loc.growth_note : ''));
     else if (loc.growth === 'growing') out.push('Өсөх төлөвтэй бүс' + (loc.growth_note ? ' — ' + loc.growth_note : ''));
   }
+  if (loc && loc.point && loc.walk) { // цэгийн түвшин: хамгийн ойр 2 бодит баримт (5 мин дотор)
+    const near = [['kinder', 'Цэцэрлэг'], ['school', 'Сургууль'], ['grocery', 'Хүнсний дэлгүүр'], ['bus', 'Автобусны буудал'], ['pharmacy', 'Эмийн сан'], ['playground', 'Тоглоомын талбай']]
+      .filter(([k]) => loc.walk[k] && loc.walk[k].min <= 5).sort((a, b) => loc.walk[a[0]].m - loc.walk[b[0]].m).slice(0, 2);
+    for (const [k, l] of near) out.push(`${l} алхаж ${loc.walk[k].min} минут`);
+  }
   if (prop.is_new) out.push('Шинэ барилга');
   if (prop.floor && prop.total_floors && prop.floor > 1 && prop.floor < prop.total_floors) out.push(`${prop.floor}-р давхар (1 ба дээд давхар биш)`);
   return out.slice(0, 6);
@@ -128,7 +133,7 @@ function plan30(prop) {
 async function writeTexts(prop, loc, val, ranked, advantages) {
   const facts = `Төрөл: ${prop.deal_type === 'rent' ? 'түрээслүүлнэ' : 'зарна'}; Дүүрэг: ${prop.district}; Хороолол/байршил: ${prop.khoroolol || '—'}; Өрөө: ${prop.rooms}; Талбай: ${prop.area} м²; Давхар: ${prop.floor || '—'}/${prop.total_floors || '—'}; Барилга: ${prop.is_new ? 'шинэ' : 'хуучин'}; Үнэ: ${prop.price} сая ₮${prop.deal_type === 'rent' ? '/сар' : ''}; Агентын тэмдэглэл: ${prop.notes || '—'}`;
   const rooms = [...new Set(ranked.map(r => r.room))].filter(r => r !== 'бусад' && r !== 'тодорхойгүй').join(', ') || 'мэдээлэлгүй';
-  const adv = advantages.join('; ') || '—';
+  const adv = (advantages.join('; ') || '—') + (loc && loc.facts && loc.facts.length ? '; ОРЧНЫ БОДИТ ЗАЙ: ' + loc.facts.join('; ') : '');
   const ai = client();
   if (!ai) {
     const base = `${prop.district} дүүрэг, ${prop.khoroolol || ''} — ${prop.rooms} өрөө, ${prop.area} м² орон сууц ${prop.deal_type === 'rent' ? 'түрээслүүлнэ' : 'зарна'}. ${prop.is_new ? 'Шинэ барилга. ' : ''}${advantages.length ? advantages.join('. ') + '. ' : ''}Үнэ: ${prop.price} сая ₮${prop.deal_type === 'rent' ? '/сар' : ''}. Үзэх цаг товлохоор холбогдоно уу.`;

@@ -102,9 +102,41 @@ async function opportunities() {
   return out.sort((a, b) => b.tags.length - a.tags.length || a.m2 / a.baseline - b.m2 / b.baseline).slice(0, 20);
 }
 
-// ---- А8: Байршлын оноо (демо: дүүргийн түвшин) ----
-async function locationScore(district) {
-  return (await db.one('SELECT * FROM location_scores WHERE district=?', district)) || null;
+// ---- А8: Байршлын оноо ----
+// Байршил (lat/lng) заасан бол ЦЭГИЙН түвшинд: хотын өгөгдлийн сангийн явган зай (ангилал бүрийн хамгийн ойр байгууллага) + замын профайлын кэш (байвал — шинээр API дуудахгүй).
+// Үгүй бол дүүргийн жишиг оноо. growth/орчин (environment) нь дүүргийнхээр.
+const sc = (m, full, zero) => (m == null ? null : Math.round(100 * Math.max(0, Math.min(1, (zero - m) / (zero - full)))));
+const avg = (...v) => { const a = v.filter((x) => x != null); return a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null; };
+async function locationScore(district, lat, lng, extra = []) { // extra = агент/оршин суугчийн нэмсэн ойрын газар (tours.local_pois)
+  const base = (await db.one('SELECT * FROM location_scores WHERE district=?', district)) || null;
+  lat = Number(lat); lng = Number(lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return base;
+  let a = null; try { const gs = require('./geostore'); a = gs.covers(lat, lng) ? gs.access(lat, lng) : null; } catch { a = null; }
+  if (!a) return base;
+  const C = { ...a.cats }, m = (k) => (C[k] ? C[k].m : null);
+  const kx = Math.cos((lat * Math.PI) / 180) * 111320;
+  for (const q of extra || []) { // нээлттэй газрын зурагт байхгүй ойрын газар — шулуун зай × 1.15 (хашаагаар алхах)
+    if (!q || !q.cat || !Number.isFinite(Number(q.lat))) continue; const dm = Math.round(Math.hypot((Number(q.lng) - lng) * kx, (Number(q.lat) - lat) * 110540) * 1.15);
+    if (!C[q.cat] || dm < C[q.cat].m) C[q.cat] = { m: dm, min: Math.max(1, Math.round(dm / 75)), name: q.name || '', lat: q.lat, lng: q.lng, verified: true, agent: true };
+  }
+  let commute = null;
+  try { const cm = require('./commute'); const c = await db.one("SELECT profile, score FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cm.cellOf(lat, lng)); if (c) commute = { score: c.score, peakMin: c.profile && c.profile.peakMin, freeMin: c.profile && c.profile.freeMin }; } catch { commute = null; }
+  const s = {
+    education: avg(sc(m('kinder'), 250, 1500), sc(m('school'), 300, 1800)),
+    transport: avg(sc(m('bus'), 150, 1000), commute ? commute.score : null),
+    commerce: Math.max(sc(m('grocery'), 150, 1200) || 0, sc(m('mall'), 400, 2500) || 0),
+    health: avg(sc(m('pharmacy'), 200, 1200), sc(m('health'), 400, 2000)),
+    green: Math.max(sc(m('park'), 250, 1500) || 0, sc(m('playground'), 150, 1000) || 0),
+    gov: sc(m('gov'), 400, 2500),
+    parking: base ? base.parking : null,
+    environment: base ? base.environment : null,
+  };
+  const W = { education: 1.3, transport: 1.3, commerce: 1.1, health: 1, green: 0.8, gov: 0.4, environment: 0.6, parking: 0.5 };
+  let t = 0, w = 0; for (const [k, v] of Object.entries(W)) if (s[k] != null) { t += s[k] * v; w += v; }
+  const L = { kinder: 'цэцэрлэг', school: 'сургууль', grocery: 'хүнсний дэлгүүр', pharmacy: 'эмийн сан', health: 'эмнэлэг', bus: 'автобусны буудал', park: 'ногоон байгууламж', playground: 'тоглоомын талбай' };
+  const facts = Object.entries(L).filter(([k]) => C[k] && C[k].m <= 1200).map(([k, l]) => `${l} ${C[k].name ? '«' + C[k].name + '» ' : ''}${C[k].m} м (алхаж ${C[k].min} мин)`);
+  if (commute && commute.peakMin) facts.push(`гол цэгүүд рүү машинаар оргил цагт дунджаар ${commute.peakMin} мин`);
+  return { ...(base || { district, growth: 'stable', growth_note: '' }), ...s, total: w ? Math.round(t / w) : (base ? base.total : null), point: true, walkScore: a.score, walk: C, commute, facts };
 }
 
 module.exports = { valuation, matchScore, matchesForRequest, opportunities, locationScore };

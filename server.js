@@ -236,7 +236,7 @@ app.get('/api/valuation', wrap(async (req, res) => {
 app.get('/api/matches/:id', wrap(async (req, res) => res.json(await A.matchesForRequest(req.params.id, req.user.company_id))));
 app.get('/api/market/index', wrap(async (req, res) => res.json(await db.all('SELECT * FROM price_index ORDER BY median_m2 DESC'))));
 app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.opportunities())));
-app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district)) || { error: 'Оноо олдсонгүй' })));
+app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district, req.query.lat, req.query.lng)) || { error: 'Оноо олдсонгүй' })));
 // ---- Д-5: Замын/түгжрэлийн профайл ----
 const commute = require('./commute');
 const exterior = require('./exterior');
@@ -436,7 +436,7 @@ app.post('/api/studio/:pid/analyze', wrap(async (req, res) => {
   const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id);
   const assets = rows.map(a => ({ ...a, path: assetPath(a) }));
   const [loc, val] = await Promise.all([
-    A.locationScore(prop.district),
+    db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id).then((t) => A.locationScore(prop.district, prop.lat, prop.lng, (t && t.local_pois) || [])), // цэгийн түвшний А8 + бодит зай + оршин суугчийн нэмсэн газар
     prop.deal_type === 'sale' ? A.valuation({ district: prop.district, rooms: prop.rooms, area: prop.area, isNew: !!prop.is_new, floor: prop.floor, totalFloors: prop.total_floors }) : null,
   ]);
   const out = await studio.run({ property: prop, assets, loc, val });

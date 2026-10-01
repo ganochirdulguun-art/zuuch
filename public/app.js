@@ -122,16 +122,16 @@ async function properties() {
       <td>${p.id}</td><td>${DEAL_T[p.deal_type]}${p.is_new ? ' · шинэ' : ''}</td>
       <td><b>${esc(p.district)}</b> ${esc(p.khoroolol || '')}</td>
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
-      <td><span class="score loc-score" data-d="${esc(p.district)}">…</span></td>
+      <td><span class="score loc-score" data-d="${esc(p.district)}" data-ll="${p.lat != null && p.lng != null ? p.lat + ',' + p.lng : ''}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
       <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="accessView(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})" title="Орчны алхалтын профайл (хотын өгөгдлийн сан)"><svg class="ic solo"><use href=#i-footprints></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
   for (const el of document.querySelectorAll('.loc-score')) {
-    const d = el.dataset.d;
-    cache[d] = cache[d] || api('/location-score?district=' + encodeURIComponent(d));
-    cache[d].then((s) => { el.textContent = s.total ? s.total + '/100' : '—'; });
+    const d = el.dataset.d, ll = el.dataset.ll; const k = ll || d; // байршил заасан бол цэгийн түвшний А8 (бодит алхах зай)
+    cache[k] = cache[k] || api('/location-score?district=' + encodeURIComponent(d) + (ll ? '&lat=' + ll.split(',')[0] + '&lng=' + ll.split(',')[1] : ''));
+    cache[k].then((s) => { el.textContent = s.total ? s.total + '/100' : '—'; if (s.point) el.title = 'Цэгийн түвшин: ' + (s.facts || []).slice(0, 4).join('; '); });
   }
 }
 
@@ -176,7 +176,7 @@ window.propForm = function (p = {}) {
       is_new: f.is_new.value, floor: f.floor.value, total_floors: f.total_floors.value,
     });
     if (f.deal_type.value !== 'sale') { $('#val-hint').innerHTML = '<svg class=ic><use href=#i-lightbulb></use></svg>Үнэлгээ одоогоор худалдах объектод л ажиллана (түрээсийн индекс Шат 2-т).'; return; }
-    const [v, loc] = await Promise.all([api('/valuation?' + q), api('/location-score?district=' + encodeURIComponent(f.district.value))]);
+    const [v, loc] = await Promise.all([api('/valuation?' + q), api('/location-score?district=' + encodeURIComponent(f.district.value) + (f.lat && f.lat.value && f.lng.value ? '&lat=' + f.lat.value + '&lng=' + f.lng.value : ''))]);
     $('#val-hint').innerHTML = v.estimate ? `
       <svg class=ic><use href=#i-lightbulb></use></svg><b>А3 үнэлгээ:</b> ~<b>${fmt(v.estimate)} сая ₮</b> (интервал ${fmt(v.low)}–${fmt(v.high)}, ${fmt(v.m2)} сая ₮/м²)
       · итгэлцэл <b>${v.confidence}%</b> · эх: ${v.source}${v.notes.length ? ' · ' + v.notes.join(', ') : ''}<br>
