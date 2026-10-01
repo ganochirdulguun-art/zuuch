@@ -416,28 +416,46 @@ export function createExterior(ext, opts = {}) {
     for (const m of [wm, rm, tn, dn]) { m.castShadow = true; m.receiveShadow = true; } scene.add(wm, rm, tn, dn);
   }
 
-  // Мод: OSM мод + ногоон байгууламж/хашаанд санамсаргүй (давтагдахуйц seed)
-  const treePts = pairs(ext.trees || []);
+  // Мод: OSM мод + хиймэл дагуулын (WorldCover 10 м) мод + ногоон байгууламж/хашаанд санамсаргүй (давтагдахуйц seed) + гудамжны мод.
+  // Мод асфальт, явган зам, зогсоол, барилга дээр ургахгүй: эх сурвалж бүрийг treeFree()-ээр шүүнэ (WorldCover-ийн 10 м нүд замын дээгүүр унжсан титмийг «мод» гэж ангилдаг;
+  // хоёр урсгалтай замд нэг урсгалын «гудамжны мод» нөгөө урсгал дээр буудаг байв)
   const inPoly = (x, z, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && x < ((p[j][0] - p[i][0]) * (z - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; return c; };
+  const segD = (x, z, ax, az, bx, bz) => { const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1; let t = ((x - ax) * vx + (z - az) * vz) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t; return Math.hypot(x - ax - t * vx, z - az - t * vz); };
+  const treeFree = (() => {
+    const C = 24, G = new Map(), gk = (i, j) => i * 100003 + j;
+    const put = (x0, x1, z0, z1, v) => { for (let i = Math.floor(x0 / C); i <= Math.floor(x1 / C); i++) for (let j = Math.floor(z0 / C); j <= Math.floor(z1 / C); j++) { const k = gk(i, j); if (!G.has(k)) G.set(k, []); G.get(k).push(v); } };
+    // Зам: хучилтын хагас өргөн + их бие хүртэлх зай (явган хүний замын хашлага/бордюр)
+    const CLR = { major: 1.2, mid: 1.0, minor: 0.8, service: 0.6, path: 0.4 };
+    for (const r of ext.roads || []) { const p = pairs(r.p), hw = r.w / 2 + (CLR[r.k] ?? 0.6); for (let i = 0; i + 1 < p.length; i++) { const [ax, az] = p[i], [bx, bz] = p[i + 1]; put(Math.min(ax, bx) - hw, Math.max(ax, bx) + hw, Math.min(az, bz) - hw, Math.max(az, bz) + hw, { s: [ax, az, bx, bz], hw }); } }
+    // Барилга (яг контураар + 1 м) ба зогсоол/спорт талбай
+    const poly = (p, m) => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } put(x0 - m, x1 + m, z0 - m, z1 + m, { p, m, bb: [x0 - m, x1 + m, z0 - m, z1 + m] }); };
+    for (const b of ext.buildings || []) { const p = pairs(b.p); if (p.length >= 3) poly(p, 1.0); }
+    for (const a of ext.areas || []) if (a.k === 'parking' || a.k === 'pitch') { const p = pairs(a.p); if (p.length >= 3) poly(p, 0); }
+    return (x, z) => {
+      for (const v of G.get(gk(Math.floor(x / C), Math.floor(z / C))) || []) {
+        if (v.s) { if (segD(x, z, ...v.s) < v.hw) return false; continue; }
+        if (x < v.bb[0] || x > v.bb[1] || z < v.bb[2] || z > v.bb[3]) continue;
+        if (inPoly(x, z, v.p)) return false;
+        if (v.m) for (let i = 0, j = v.p.length - 1; i < v.p.length; j = i++) if (segD(x, z, v.p[j][0], v.p[j][1], v.p[i][0], v.p[i][1]) < v.m) return false;
+      }
+      return true;
+    };
+  })();
+  const treePts = pairs(ext.trees || []).filter(([x, z]) => treeFree(x, z));
   let seed = 1; const rnd = () => hash(seed++);
   for (const a of ext.areas || []) {
     if (!['park', 'grass', 'school'].includes(a.k)) continue; const p = pairs(a.p); let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const [x, z] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
     const areaBox = (x1 - x0) * (z1 - z0); const n = Math.min(80, Math.round(areaBox / (a.k === 'school' ? 380 : 150)));
-    for (let i = 0; i < n; i++) { const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0); if (inPoly(x, z, p) && (a.k !== 'school' || rnd() < 0.5)) treePts.push([x, z]); }
+    for (let i = 0; i < n; i++) { const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0); if (inPoly(x, z, p) && (a.k !== 'school' || rnd() < 0.5) && treeFree(x, z)) treePts.push([x, z]); }
   }
-  // Гудамжны мод: гол/дунд замын явган замын дагуу ~15 м тутамд (барилгын дотор биш)
-  {
-    const bl = []; for (const b of ext.buildings || []) { const p = pairs(b.p); if (p.length < 3) continue; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [x, z] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } bl.push([x0 - 1.5, x1 + 1.5, z0 - 1.5, z1 + 1.5, p]); }
-    const G = new Map(), gk = (x, z) => Math.floor(x / 40) * 100003 + Math.floor(z / 40); for (const q of bl) for (let i = Math.floor(q[0] / 40); i <= Math.floor(q[1] / 40); i++) for (let j = Math.floor(q[2] / 40); j <= Math.floor(q[3] / 40); j++) { const k = i * 100003 + j; if (!G.has(k)) G.set(k, []); G.get(k).push(q); }
-    const blocked = (x, z) => (G.get(gk(x, z)) || []).some((q) => x >= q[0] && x <= q[1] && z >= q[2] && z <= q[3]);
-    for (const r of ext.roads || []) {
-      if (r.k !== 'major' && r.k !== 'mid') continue; const pts = pairs(r.p); const off = r.w / 2 + 2.3; let carry = 7;
-      for (let i = 0; i + 1 < pts.length; i++) {
-        const a = pts[i], b = pts[i + 1]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.5) continue; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
-        for (let t = carry; t < L; t += 15) { for (const sd of [1, -1]) { const x = a[0] + ux * t - uz * off * sd, z = a[1] + uz * t + ux * off * sd; if (Math.hypot(x, z) < 1600 && hash(x * 0.37 + z * 0.11) > 0.18 && !blocked(x, z)) treePts.push([x, z]); } carry = t + 15 - L; }
-        if (carry < 0) carry = 0;
-      }
+  // Гудамжны мод: гол/дунд замын явган замын гадна талаар ~15 м тутамд (өөр зам, явган зам, барилга дээр биш)
+  for (const r of ext.roads || []) {
+    if (r.k !== 'major' && r.k !== 'mid') continue; const pts = pairs(r.p); const off = r.w / 2 + 2.3; let carry = 7;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.5) continue; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+      for (let t = carry; t < L; t += 15) { for (const sd of [1, -1]) { const x = a[0] + ux * t - uz * off * sd, z = a[1] + uz * t + ux * off * sd; if (Math.hypot(x, z) < 1600 && hash(x * 0.37 + z * 0.11) > 0.18 && treeFree(x, z)) treePts.push([x, z]); } carry = t + 15 - L; }
+      if (carry < 0) carry = 0;
     }
   }
   if (treePts.length) {
