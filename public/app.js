@@ -1310,13 +1310,30 @@ async function owner() {
     <div style="display:flex;gap:8px;margin-bottom:8px"><button class="small primary" onclick="ownerImport()"><svg class=ic><use href=#i-upload></use></svg>Импорт (JSON)</button><button class="small" onclick="ownerTours()">↻ Шинэчлэх</button></div>
     <div id="ot-list" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Медиа хадгалалт ба хувийн мэдээлэл</h3><div id="st-box" style="font-size:12.5px">…</div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-route></use></svg>Хотын замын хугацаа (Google Routes)</h3><div id="cc-box" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Өгөгдлийн сангийн нөөц</h3>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Өдөр бүр автоматаар (Улаанбаатарын цагаар өдөрт 1 удаа) бүх хүснэгтийг нөөцөлж, Postgres-оос тусдаа дискэнд сүүлийн <span id="bk-keep">14</span> хувийг хадгална. Сар бүр нэг хувийг татаж аваад өөрийн компьютерт хадгалахыг зөвлөж байна.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="small primary" onclick="backupNow(this)"><svg class=ic><use href=#i-archive></use></svg>Одоо нөөцлөх</button><span id="bk-st" style="font-size:12.5px"></span></div>
     <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
-  backupList(); ownerTours(); storageBox();
+  backupList(); ownerTours(); storageBox(); cityCommuteBox();
 }
+let CC_T = null;
+async function cityCommuteBox() {
+  clearTimeout(CC_T); const d = await api('/owner/city-commute').catch(() => null); const el = $('#cc-box'); if (!el || !d || d.error) return;
+  const e = d.estimate, j = d.job; const run = j && j.running;
+  el.innerHTML = `<div style="color:var(--muted);margin-bottom:6px">Барилгатай (≥${e.minBuildings}) 500 м нүд бүрээс ${e.destinations} гол цэг (хотын төв, 4 зам, гүүр, молл, нисэх…) хүртэл ${e.slots} цагийн цонхоор (өглөө/өдөр/орой/чөлөөт) машинаар явах хугацаа. Дууссаны дараа ямар ч объектын замын профайл, байршлын оноо (А8) API дуудалтгүй шууд гарна. 120 хоног хүчинтэй.</div>
+    <div>Нүд: <b>${e.done}</b> / ${e.cells} тооцоологдсон · үлдсэн ${e.todo}${e.todo ? ` → ${e.elements.toLocaleString()} тооцоо, ≈ <b>$${e.usd}</b> (сарын үнэгүй 5 000-г хасаад; хасахгүй бол $${e.usdNoFree}), ~${e.minutes} мин` : ''}</div>
+    ${j ? `<div style="margin-top:6px">${run ? '⏳' : j.errors ? '⚠️' : '✓'} ${esc(j.msg || 'явж байна…')} — ${j.doneCells}/${j.cells} нүд, ${j.elements.toLocaleString()} тооцоо (~$${j.usd})${j.lastError ? `<br><small>${esc(j.lastError)}</small>` : ''}
+      <div style="height:6px;background:var(--surface-2);border-radius:3px;margin-top:4px"><div style="height:100%;width:${j.cells ? Math.round((j.doneCells / j.cells) * 100) : 0}%;background:var(--accent);border-radius:3px"></div></div></div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:8px">${!d.hasKey ? '<span class="badge warn">GOOGLE_MAPS_KEY алга</span>' : run ? '<button class="small" onclick="cityCommuteGo(true)">Зогсоох</button>' : e.todo ? `<button class="small primary" onclick="cityCommuteGo(false, ${e.usd}, ${e.elements})">Тооцоолж эхлэх (≈$${e.usd})</button>` : '<span class="badge ok">Бүх нүд бэлэн</span>'}</div>`;
+  if (run) CC_T = setTimeout(cityCommuteBox, 5000);
+}
+window.cityCommuteGo = async (stop, usd, elements) => {
+  if (!stop && !confirm(`Google Routes-ээр хотын ${elements.toLocaleString()} тооцоо хийнэ — таны Google Cloud billing-д ойролцоогоор $${usd} зардал гарна. Эхлүүлэх үү?`)) return;
+  const r = await api('/owner/city-commute', { method: 'POST', body: stop ? { stop: true } : { maxElements: Math.ceil(elements * 1.02) } }).catch((e) => ({ error: e.message }));
+  if (r.error) return alert(r.error); toast(stop ? 'Зогсоож байна…' : 'Хотын замын тооцоолол эхэллээ'); cityCommuteBox();
+};
 async function storageBox() {
   const d = await api('/owner/storage').catch(() => null); const el = $('#st-box'); if (!el || !d || d.error) return;
   const dk = d.disk || {}; const used = dk.total ? dk.total - dk.free : 0; const pct = dk.total ? Math.round((used / dk.total) * 100) : 0;
@@ -1334,11 +1351,14 @@ async function ownerTours() {
   clearTimeout(OT_T); const d = await api('/owner/tours').catch(() => null); const el = $('#ot-list'); if (!el || !d || !d.items) return;
   el.innerHTML = d.items.length ? `<div class="tablebox"><table><thead><tr><th>Компани</th><th>Объект</th><th>Гадаах</th><th class="num">Ойрын газар</th><th></th></tr></thead><tbody>${d.items.map((t) => {
     const j = t.job; const st = j && j.status === 'running' ? `<span class="badge">${esc(j.msg || 'бэлтгэж байна…')}</span>` : j && j.status === 'error' ? `<span class="badge warn">${esc(j.msg)}</span>` : j && j.status === 'done' ? `<span class="badge ok">${esc(j.msg)}</span>` : t.ext_at ? `${esc(t.ext_at.slice(0, 10))} · ${esc(t.ext_src || '')}${t.study ? ' · замын хугацаа' : ''}` : '<span class="badge warn">бэлтгээгүй</span>';
-    return `<tr><td>${esc(t.company)}</td><td><a href="/tour/${esc(t.token)}" target="_blank" rel="noopener">${esc(t.district || '')} ${esc(t.khoroolol || '')}</a> · ${t.rooms}ө ${t.area}м²</td><td>${st}</td><td class="num">${t.local}</td><td style="white-space:nowrap">${t.lat != null ? `<button class="small" onclick="ownerRegen(${t.id})">Дахин бэлтгэх</button>` : ''} <button class="small" onclick="navigator.clipboard.writeText(location.origin+'/tour/${esc(t.token)}').then(()=>toast('Холбоос хуулагдлаа'))">Холбоос</button></td></tr>`;
+    return `<tr><td>${esc(t.company)}</td><td><a href="/tour/${esc(t.token)}" target="_blank" rel="noopener">${esc(t.district || '')} ${esc(t.khoroolol || '')}</a> · ${t.rooms}ө ${t.area}м²</td><td>${st}</td><td class="num">${t.local}</td><td style="white-space:nowrap">${t.lat != null ? `<button class="small" onclick="ownerRegen(${t.id})">Дахин бэлтгэх</button>` : ''} <button class="small" onclick="navigator.clipboard.writeText(location.origin+'/tour/${esc(t.token)}').then(()=>toast('Холбоос хуулагдлаа'))">Холбоос</button>
+      <label title="Хуваалцах холбоост компанийн нэрийг харуулахгүй" style="font-size:12px;margin-left:4px"><input type="checkbox" ${t.settings && t.settings.hideCompany ? 'checked' : ''} onchange="ownerTourSet(${t.id},{hideCompany:this.checked})"> нэр нуух</label>
+      <label title="Хаягийг зөвхөн дүүргээр" style="font-size:12px"><input type="checkbox" ${t.settings && t.settings.districtOnly ? 'checked' : ''} onchange="ownerTourSet(${t.id},{districtOnly:this.checked})"> дүүргээр</label></td></tr>`;
   }).join('')}</tbody></table></div>` : 'Аялал алга';
   if (d.items.some((t) => t.job && t.job.status === 'running')) OT_T = setTimeout(ownerTours, 3000);
 }
 window.ownerTours = ownerTours;
+window.ownerTourSet = async (id, b) => { const r = await api('/owner/tours/' + id + '/settings', { method: 'PUT', body: b }).catch((e) => ({ error: e.message })); if (r.error) return alert(r.error); toast('Нууцлал хадгалагдлаа'); };
 window.ownerRegen = async (id) => { const r = await api('/owner/tours/' + id + '/exterior', { method: 'POST', body: {} }); if (r.error) return alert(r.error); toast('Гадаах орчин бэлтгэж байна…'); ownerTours(); };
 window.ownerImport = () => {
   modal(`<h3><svg class=ic><use href=#i-upload></use></svg>Объект + аялал импорт</h3>

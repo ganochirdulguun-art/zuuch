@@ -82,7 +82,10 @@ function scoreProfile(rows) {
 async function profile(lat, lng, { force = false } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Байршил (lat/lng) шаардлагатай');
   const cell = cellOf(lat, lng);
-  if (!force) { const c = await dbm().one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cell); if (c) return { ...c.profile, score: c.score, cached: true, computed_at: c.computed_at }; }
+  if (!force) {
+    const c = await dbm().one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cell); if (c) return { ...c.profile, score: c.score, cached: true, computed_at: c.computed_at };
+    const city = await require('./citycommute').lookup(dbm(), lat, lng); if (city) return { ...city, cached: true }; // хотын 500 м нүд (Ш3) — API дуудахгүй
+  }
   if (!provider()) throw new Error('Замын API түлхүүр тохируулаагүй — TOMTOM_KEY (карт шаардахгүй) эсвэл GOOGLE_MAPS_KEY');
   const dests = destinations(); const rows = [];
   for (const d of dests) {
@@ -97,4 +100,4 @@ async function profile(lat, lng, { force = false } = {}) {
   return { ...prof, cached: false };
 }
 // Гэрээс гараад ГОЛ ЗАМ хүртэл: хамгийн ойрын гол цэг рүү чөлөөт урсгалын анхны 1–2 км — тусдаа маягаар хойшлуулав; одоо профайлд «хамгийн ойр 4 зам» гэж харуулна
-module.exports = { profile, destinations, SLOTS, cellOf, routeOnce, nextTuesdayAt, hasKey: () => !!provider(), provider };
+module.exports = { profile, destinations, SLOTS, cellOf, routeOnce, nextTuesdayAt, scoreProfile, hasKey: () => !!provider(), provider };

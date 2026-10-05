@@ -352,6 +352,14 @@ CREATE INDEX IF NOT EXISTS market_listings_poster ON market_listings(poster_key)
 -- Д-5: Замын/түгжрэлийн профайл — объектын байршил (lat/lng) + ~100 м торны нүд бүрд кэш (Google Routes, 30 хоног)
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+-- Ш3: хотын хэмжээний замын хугацаа — барилгатай 500 м нүд бүр (geo хавтангийн түлхүүр) → { цэг: { цонх: {min, freeMin, km} } }
+CREATE TABLE IF NOT EXISTS city_commute (
+  cell TEXT PRIMARY KEY,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  data JSONB NOT NULL,
+  computed_at TIMESTAMPTZ DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS commute_cells (
   cell TEXT PRIMARY KEY,
   lat DOUBLE PRECISION NOT NULL,

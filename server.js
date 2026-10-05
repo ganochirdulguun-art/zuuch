@@ -28,6 +28,12 @@ app.use((req, res, next) => {
     `frame-ancestors ${embeddable ? '*' : "'self'"}`);
   next();
 });
+// Нүүр/апп хуудас: туршилтын эрхийн мөр (.dev-only) зөвхөн локал хөгжүүлэлтэд — production-д эх кодонд ч очихгүй
+const isLocalReq = (req) => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(req.hostname || '');
+const PAGES = {}; const DEV_ONLY = /<span class="[^"]*dev-only[^"]*">[\s\S]*?<\/span>/g;
+const sendPage = (name) => (req, res) => { const html = PAGES[name] || (PAGES[name] = fs.readFileSync(path.join(__dirname, 'public', name), 'utf8')); res.type('html').setHeader('Cache-Control', 'no-cache'); res.send(isLocalReq(req) ? html : html.replace(DEV_ONLY, '')); };
+app.get(['/', '/landing.html'], sendPage('landing.html'));
+app.get(['/app', '/index.html'], sendPage('index.html'));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Async route алдааг барих туслах
@@ -159,6 +165,12 @@ app.get('/api/owner/storage', ownerOnly, wrap(async (req, res) => {
   const byCo = await db.all("SELECT m.company_id, c.name, m.kind, COUNT(*)::int n, COALESCE(SUM(m.size),0)::bigint bytes FROM tour_media m LEFT JOIN companies c ON c.id=m.company_id WHERE m.status='ready' GROUP BY 1,2,3 ORDER BY bytes DESC");
   res.json({ retention: { days: retention.RETENTION_DAYS, last: retention.lastRun(), next7: await retention.upcoming(db, 7) }, anon: await media.anon.status(), disk: media.diskInfo(), media: byCo, mediaDir: media.MEDIA_DIR, uploads: await media.dirSize(path.join(media.MEDIA_DIR, '_uploads')), backups: await media.dirSize(backup.DIR), assets: await media.dirSize(UPLOAD_DIR), ffmpeg: !!media.tools().ffmpeg, queue: media.queueLength() });
 }));
+// Ш3: хотын хэмжээний замын хугацаа — урьдчилсан зардал, эхлүүлэх (төсвийн хязгаартай), зогсоох
+app.get('/api/owner/city-commute', ownerOnly, wrap(async (req, res) => res.json({ estimate: await cityCommute.estimate(db), job: cityCommute.status(), hasKey: !!process.env.GOOGLE_MAPS_KEY })));
+app.post('/api/owner/city-commute', ownerOnly, wrap(async (req, res) => {
+  const b = req.body || {}; if (b.stop) { cityCommute.stop(); return res.json({ ok: true, job: cityCommute.status() }); }
+  try { res.json({ ok: true, job: await cityCommute.run(db, { maxElements: b.maxElements }) }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 app.get('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ items: backup.list(), keep: backup.KEEP })));
 app.post('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ ok: true, ...(await backup.run(db, { reason: 'manual:' + (req.user.name || req.user.id) })) })));
 app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
@@ -243,6 +255,7 @@ app.get('/api/market/opportunities', wrap(async (req, res) => res.json(await A.o
 app.get('/api/location-score', wrap(async (req, res) => res.json((await A.locationScore(req.query.district, req.query.lat, req.query.lng)) || { error: 'Оноо олдсонгүй' })));
 // ---- Д-5: Замын/түгжрэлийн профайл ----
 const commute = require('./commute');
+const cityCommute = require('./citycommute'); // Ш3: хотын хэмжээний замын хугацаа (Google Route Matrix)
 const exterior = require('./exterior');
 const geostore = require('./geostore'); // хотын 500×500 м хавтан сан (data/geo)
 const backup = require('./backup'); // өдөр тутмын нөөц (/data/backups)
@@ -257,7 +270,8 @@ app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   if (!p) return res.status(404).json({ error: 'Объект олдсонгүй' });
   if (p.lat == null || p.lng == null) return res.json({ property: p, profile: null, hasKey: commute.hasKey(), needLocation: true });
   const c = await db.one("SELECT * FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", commute.cellOf(p.lat, p.lng));
-  res.json({ property: p, profile: c ? { ...c.profile, cached: true } : null, hasKey: commute.hasKey() });
+  const city = c ? null : await cityCommute.lookup(db, Number(p.lat), Number(p.lng)); // хотын 500 м нүд (Ш3)
+  res.json({ property: p, profile: c ? { ...c.profile, cached: true } : city ? { ...city, cached: true } : null, hasKey: commute.hasKey() });
 }));
 app.post('/api/properties/:id/commute', wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
@@ -670,10 +684,16 @@ app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
   res.status(202).json(startExterior(req.user.company_id, prop));
 }));
 // ---- Эзний аяллын хэрэгсэл: бүх компанийн аялал, дахин бэлтгэх, нэг файлаар объект + план + ойрын газар оруулах ----
+app.put('/api/owner/tours/:id/settings', ownerOnly, wrap(async (req, res) => {
+  const t = await db.one('SELECT id, settings FROM tours WHERE id=?', Number(req.params.id)); if (!t) return res.status(404).json({ error: 'Аялал олдсонгүй' });
+  const b = req.body || {}, cur = t.settings || {};
+  const st = { hideCompany: b.hideCompany !== undefined ? !!b.hideCompany : !!cur.hideCompany, districtOnly: b.districtOnly !== undefined ? !!b.districtOnly : !!cur.districtOnly };
+  await db.run('UPDATE tours SET settings=? WHERE id=?', JSON.stringify(st), t.id); res.json({ ok: true, settings: st });
+}));
 app.get('/api/owner/tours', ownerOnly, wrap(async (req, res) => {
   const rows = await db.all(`SELECT t.id, t.token, t.company_id, c.name AS company, p.id AS property_id, p.district, p.khoroolol, p.rooms, p.area, p.lat, p.lng,
       t.exterior->>'generated_at' AS ext_at, t.exterior->'data_source'->>'kind' AS ext_src, jsonb_typeof(t.exterior->'study') = 'object' AS study,
-      jsonb_array_length(COALESCE(t.local_pois, '[]'::jsonb)) AS local, jsonb_array_length(COALESCE(t.plan->'rooms', '[]'::jsonb)) AS rooms_n, t.updated_at
+      jsonb_array_length(COALESCE(t.local_pois, '[]'::jsonb)) AS local, jsonb_array_length(COALESCE(t.plan->'rooms', '[]'::jsonb)) AS rooms_n, t.settings, t.updated_at
     FROM tours t JOIN properties p ON p.id=t.property_id JOIN companies c ON c.id=t.company_id ORDER BY t.updated_at DESC NULLS LAST LIMIT 200`);
   res.json({ items: rows.map((r) => ({ ...r, job: extJobs.get(`${r.company_id}:${r.property_id}`) || null })) });
 }));
@@ -816,8 +836,6 @@ app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
 }));
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'landing.html')));
-app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/capture', (req, res) => res.sendFile(path.join(__dirname, 'public', 'capture.html'))); // утсаар алхалтын бичлэг (GPS-тэй)
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 

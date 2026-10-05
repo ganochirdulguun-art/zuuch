@@ -120,7 +120,8 @@ async function locationScore(district, lat, lng, extra = []) { // extra = аге
     if (!C[q.cat] || dm < C[q.cat].m) C[q.cat] = { m: dm, min: Math.max(1, Math.round(dm / 75)), name: q.name || '', lat: q.lat, lng: q.lng, verified: true, agent: true };
   }
   let commute = null;
-  try { const cm = require('./commute'); const c = await db.one("SELECT profile, score FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cm.cellOf(lat, lng)); if (c) commute = { score: c.score, peakMin: c.profile && c.profile.peakMin, freeMin: c.profile && c.profile.freeMin }; } catch { commute = null; }
+  try { const cm = require('./commute'); let c = await db.one("SELECT profile, score FROM commute_cells WHERE cell=? AND computed_at > NOW() - INTERVAL '30 days'", cm.cellOf(lat, lng)); if (c) commute = { score: c.score, peakMin: c.profile && c.profile.peakMin, freeMin: c.profile && c.profile.freeMin };
+    else { const city = await require('./citycommute').lookup(db, lat, lng); if (city) commute = { score: city.score, peakMin: city.peakMin, freeMin: city.freeMin, city: true }; } } catch { commute = null; } // хотын 500 м нүд (Ш3)
   const s = {
     education: avg(sc(m('kinder'), 250, 1500), sc(m('school'), 300, 1800)),
     transport: avg(sc(m('bus'), 150, 1000), commute ? commute.score : null),
