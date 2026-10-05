@@ -347,11 +347,11 @@ export function createExterior(ext, opts = {}) {
   let bi = 0; const roofRC = (b, fb) => (b.rc ? mul(hex(b.rc), SAT_K) : hex(fb));
   for (const b of ext.buildings || []) {
     const pts = pairs(b.p); if (pts.length < 3) continue; bi++;
-    const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = hex(pal[Math.floor(hash(bi) * pal.length)]);
-    if (b.t && b.lv >= 12) { walls(B.homeTw, pts, h, hex(TW_COL[0]), 0.84, true, TW_B, TW_F); podium(pts); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#e2ded6')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
-    if (b.t) { walls(B.home, pts, h, hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
+    const h = Math.max(2.8, b.lv * FL + (b.lv > 1 ? 0.6 : 0)); const pal = PAL[b.k] || PAL.bld; const col = b.wc ? hex(b.wc) : hex(pal[Math.floor(hash(bi) * pal.length)]); // wc: бодит фасадын өнгө (өөрсдийн зураг)
+    if (b.t && b.lv >= 12) { walls(B.homeTw, pts, h, b.wc ? hex(b.wc) : hex(TW_COL[0]), 0.84, true, TW_B, TW_F); podium(pts); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#e2ded6')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
+    if (b.t) { walls(B.home, pts, h, b.wc ? hex(b.wc) : hex('#efe3cf'), 0.82, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, '#a4523f')); parapet(B.roof, pts, h, hex('#d8d2c8')); homeInfo.pts = pts; homeInfo.h = h; let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } homeInfo.c = [cx / pts.length, cz / pts.length]; continue; }
     if (b.lv <= 2 && b.k !== 'house' && b.k !== 'edu' && pArea(pts) >= 260) {
-      walls(B.ind, pts, h, hex(['#d4d1ca', '#cbc9c3', '#d9d3c7', '#c6c8c9'][Math.floor(hash(bi * 2.9) * 4)]), 0.82, true, FT_B, FT_F);
+      walls(B.ind, pts, h, b.wc ? hex(b.wc) : hex(['#d4d1ca', '#cbc9c3', '#d9d3c7', '#c6c8c9'][Math.floor(hash(bi * 2.9) * 4)]), 0.82, true, FT_B, FT_F);
       B.roof.poly(pts, h, roofRC(b, ['#9a9c9e', '#a6a7a8', '#8d9092', '#b0b0ae'][Math.floor(hash(bi * 4.1) * 4)])); parapet(B.roof, pts, h, hex('#b8b8b4'), 0.4);
     } else if (b.k === 'house' || b.k === 'shed' || (b.lv <= 2 && b.k !== 'com' && b.k !== 'edu')) {
       walls(B.house, pts, h, col, 0.78);
@@ -359,7 +359,7 @@ export function createExterior(ext, opts = {}) {
       if (pts.length === 4 && b.k !== 'shed' && b.lv <= 2) gable(B.house, B.roof, pts, h, col, roofC); else B.roof.poly(pts, h, b.k === 'shed' ? hex('#7d7f84') : roofC);
     } else if (b.k === 'com' || b.k === 'edu') { walls(B.com, pts, h, col, 0.8, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 5.3) > 0.5 ? '#86888b' : '#949597')); parapet(B.roof, pts, h, hex('#aeb1b4'), 0.6); }
     else {
-      if (b.lv >= 12) { const v = Math.floor(hash(bi * 6.1) * TWV.length); walls(B.tw[v], pts, h, hex(TW_COL[Math.floor(hash(bi * 2.3) * 3)]), 0.84, true, TW_B, TW_F); if (hash(bi * 8.7) < 0.6) podium(pts); B.roof.poly(pts, h, roofRC(b, '#9d9e9f')); parapet(B.roof, pts, h, hex('#e2ded6')); }
+      if (b.lv >= 12) { const v = Math.floor(hash(bi * 6.1) * TWV.length); walls(B.tw[v], pts, h, b.wc ? hex(b.wc) : hex(TW_COL[Math.floor(hash(bi * 2.3) * 3)]), 0.84, true, TW_B, TW_F); if (hash(bi * 8.7) < 0.6) podium(pts); B.roof.poly(pts, h, roofRC(b, '#9d9e9f')); parapet(B.roof, pts, h, hex('#e2ded6')); }
       else { walls(B.block, pts, h, col, 0.78, true, FT_B, FT_F); B.roof.poly(pts, h, roofRC(b, hash(bi * 3.7) > 0.5 ? '#8f9193' : '#9d9e9f')); parapet(B.roof, pts, h, mul(col, 0.9)); }
       if (b.lv >= 5) { // хэсэг (орц) бүрд дээвэр дээр лифтний машин өрөө
         const [ux, uz] = longAxis(pts); let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length;

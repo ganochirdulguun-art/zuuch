@@ -537,7 +537,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     const [ox, oz] = Number.isFinite(o.x) ? [o.x, o.z] : P.f(o.lat, o.lng); let q = nearB.find((b) => inPoly(ox, oz, b.p));
     if (!q) { let bd = 12; for (const b of nearB) { const d = Math.hypot(b.cx - ox, b.cz - oz); if (d < bd) { bd = d; q = b; } } }
     if (!q) { log(`засвар: барилга олдсонгүй (${r1(ox)}, ${r1(oz)}) ${o.note || ''}`); continue; }
-    if (o.lv > 0) { q.lv = o.lv; q.kn = 1; q.slab = 0; q.rule = 'засвар'; } if (o.k) q.k = o.k; if (o.rp) q.rp = o.rp; q.uc = 1; log(`засвар: (${r1(q.cx)}, ${r1(q.cz)}) → ${q.lv} давхар ${o.note || ''}`);
+    if (o.lv > 0) { q.lv = o.lv; q.kn = 1; q.slab = 0; q.rule = 'засвар'; } if (o.k) q.k = o.k; if (o.rp) q.rp = o.rp; if (/^#[0-9a-f]{6}$/i.test(o.wc || '')) q.wc = o.wc; if (/^#[0-9a-f]{6}$/i.test(o.wc2 || '')) q.wc2 = o.wc2; q.uc = 1; // wc: фасадын зурагнаас (tools/facade) log(`засвар: (${r1(q.cx)}, ${r1(q.cz)}) → ${q.lv} давхар ${o.note || ''}`);
   }
   // ---- GHSL (EU JRC ANBH R2023A, ~100 м нүдний барилгын дундаж өндөр) — ӨГӨГДМӨЛӨӨР ДАВХАРТ НӨЛӨӨЛӨХГҮЙ ----
   // Шалгалт (2026-09-30, энэ байршил, мэдэгдэх давхартай барилгууд): ойрын бүсийн 5 давхар угсармал блок 7/7-ийн ANBH 15–20 м (≥ 14 → 9 болох байсан),
@@ -627,7 +627,7 @@ async function generate(lat, lng, { commuteHours = true, log = () => {}, buildin
     if (q.k === 'ger') { gers.push([r1(q.cx), r1(q.cz), r1(Math.max(2.2, Math.min(4.5, Math.sqrt(q.A / Math.PI))))]); continue; }
     const sp = simplify(q.p, 0.45); if (sp.length < 3) continue; const t = q.t;
     const b = { p: flat(sp), lv: q.lv, k: q.k }; if (t.name) b.n = String(t.name).slice(0, 40); if (t['addr:housenumber']) b.no = String(t['addr:housenumber']).slice(0, 10); if (q.src) b.s = q.src;
-    if (!q.kn) b.e = 1; if (q.rp) b.rp = q.rp; if (t._rc) b.rc = t._rc; if (q === hq) { b.t = 1; home = b; } // e = таамаг өндөр; rp = дээвэр дээрх (playground г.м.)
+    if (!q.kn) b.e = 1; if (q.rp) b.rp = q.rp; if (t._rc) b.rc = t._rc; if (q.wc) b.wc = q.wc; if (q.wc2) b.wc2 = q.wc2; if (q === hq) { b.t = 1; home = b; } // e = таамаг өндөр; rp = дээвэр дээрх (playground г.м.)
     // rf = 'flat': ≥ 300 м², 1–2 давхар, байшин/саравч/худалдаа/сургууль биш → хавтгай дээвэр (үзэгч одоогоор 1–2 давхар 'bld'-г байшин загвараар зурдаг)
     if (q.lv <= 2 && q.A >= 300 && !['house', 'shed', 'com', 'edu', 'ger'].includes(q.k)) b.rf = 'flat';
     b._poly = sp; b._c = [q.cx, q.cz]; buildings.push(b);
