@@ -140,8 +140,15 @@ async function makePoster(T, out, poster, dur, eq) { await run(T.ffmpeg, ['-y', 
 
 // Энгийн (360 биш) бичлэгт баруун дээд буланд брэнд тэмдэг (QR + «Смарт Зууч · Virtual POV Tour технологи») шигтгэнэ — татаж авсан файлд ч үлдэнэ
 const BADGE = path.join(__dirname, 'public', 'brand', 'video-badge.png');
-function brandFor(W, eq, H = 0) { if (eq || process.env.ZUUCH_VIDEO_BRAND === '0' || !fs.existsSync(BADGE)) return null; return { file: BADGE, bw: Math.round(W * (H > W ? 0.44 : 0.27) / 2) * 2, m: Math.round(Math.min(W, H || W) * 0.03) }; } // босоо (утасны) бичлэгт томоор
-const brandFilter = (b, base) => `[1:v]scale=${b.bw}:-1:flags=lanczos[zb];${base}[zb]overlay=W-w-${b.m}:${b.m}:format=auto,format=yuv420p[zv]`;
+// 360 (equirect): хөлийн доор (nadir) дугуй лого — доош харахад тэгш дугуй, саваа нуугдана (tools/brand/nadir.py)
+const NADIR = path.join(__dirname, 'public', 'brand', 'nadir-3840.png');
+function brandFor(W, eq, H = 0) {
+  if (process.env.ZUUCH_VIDEO_BRAND === '0') return null;
+  if (eq) return fs.existsSync(NADIR) ? { file: NADIR, bw: Math.round(W / 2) * 2, x: '0', y: 'H-h', nadir: true } : null;
+  if (!fs.existsSync(BADGE)) return null; const m = Math.round(Math.min(W, H || W) * 0.03);
+  return { file: BADGE, bw: Math.round(W * (H > W ? 0.44 : 0.27) / 2) * 2, x: `W-w-${m}`, y: String(m) }; // босоо (утасны) бичлэгт томоор
+}
+const brandFilter = (b, base) => `[1:v]scale=${b.bw}:-1:flags=lanczos[zb];${base}[zb]overlay=${b.x}:${b.y}:format=auto,format=yuv420p[zv]`;
 
 async function processVideo(m, src, outDir, onMsg) {
   const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй — бичлэг хөрвүүлэх боломжгүй');
@@ -179,6 +186,8 @@ async function processPano(m, src, outDir, onMsg) {
   await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map_metadata', '-1', '-vf', `${pad}scale='min(8192,iw)':-2:flags=lanczos`, '-q:v', blurOn(m) ? '2' : '3', out], { timeoutMs: 300000 });
   let po = await probe(out); const meta = { partial: !!pad, src_w: pr.w, src_h: pr.h };
   if (blurOn(m)) { if (onMsg) onMsg('Нүүр, дугаар, домофон хайж байна…'); const r = await anonChild({ op: 'image', file: out, width: po.w, height: po.h, eq: true, intercom: true }, onMsg); meta.anon = r.stats; po = await probe(out); }
+  const nb = brandFor(po.w, true, po.h); // хөлийн доорх лого (бүдгэрүүлэлтийн дараа)
+  if (nb) { const tmp = out + '.nadir.jpg'; await run(T.ffmpeg, ['-y', '-hide_banner', '-i', out, '-i', nb.file, '-filter_complex', brandFilter(nb, '[0:v]').replace(',format=yuv420p[zv]', '[zv]'), '-map', '[zv]', '-q:v', blurOn(m) ? '2' : '3', tmp], { timeoutMs: 300000 }); await fsp.rename(tmp, out); meta.brand = true; }
   await run(T.ffmpeg, ['-y', '-hide_banner', '-i', out, '-vf', 'scale=2048:1024', '-q:v', '5', prev], { timeoutMs: 120000 });
   return { file: path.basename(out), poster: path.basename(prev), size: (await fsp.stat(out)).size + (await fsp.stat(prev)).size, width: po.w, height: po.h, projection: 'equirect', meta };
 }
@@ -292,7 +301,7 @@ async function rebrand(m, onMsg) {
 // Сервер асахад: брэндгүй хуучин энгийн бичлэгүүдийг дараалалд нэмнэ (нэг удаа — meta.brand тэмдэглэгдэнэ). ZUUCH_REBRAND_AUTO=0 унтраана
 async function rebrandAll(db) {
   if (process.env.ZUUCH_VIDEO_BRAND === '0' || !fs.existsSync(BADGE)) return 0;
-  const rows = await db.all("SELECT id FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN (" + Object.keys(KINDS).filter((k) => KINDS[k] === 'video').map((k) => `'${k}'`).join(',') + ") AND COALESCE(projection,'flat') <> 'equirect' AND COALESCE(meta->>'brand','false') <> 'true' AND meta->>'brand_err' IS NULL AND meta->>'brand_skip' IS NULL ORDER BY id");
+  const rows = await db.all("SELECT id FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN (" + Object.keys(KINDS).filter((k) => KINDS[k] === 'video').map((k) => `'${k}'`).join(',') + ") AND COALESCE(meta->>'brand','false') <> 'true' AND meta->>'brand_err' IS NULL AND meta->>'brand_skip' IS NULL ORDER BY id");
   for (const r of rows) if (!queue.some((j) => j.mediaId === r.id)) enqueue(r.id, null, { op: 'rebrand' });
   const all = await db.one("SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE projection='equirect')::int eq, COUNT(*) FILTER (WHERE meta->>'brand'='true')::int done FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN ('walk_ext','walk_in')").catch(() => ({}));
   console.log(`[медиа] брэнд шигтгэх: ${rows.length} хуучин бичлэг дараалалд · нийт бэлэн бичлэг ${all.n} (360: ${all.eq}, брэндтэй: ${all.done})`);

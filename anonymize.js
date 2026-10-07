@@ -301,7 +301,7 @@ async function detectVideo(o) {
 async function renderVideo({ ff, src, vf, W, H, fps, tracks, eq, enc, duration, onMsg, brand }) {
   const fb = (W * H * 3) / 2; const total = Math.max(1, Math.round((duration || 1) * fps));
   const dec = spawnFF(ff, ['-hide_banner', '-loglevel', 'error', '-i', src, '-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-f', 'rawvideo', '-pix_fmt', 'yuv420p', 'pipe:1'], ['ignore', 'pipe', 'pipe']);
-  const encP = spawnFF(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-s', `${W}x${H}`, '-framerate', String(fps), '-i', 'pipe:0', ...(brand ? ['-i', brand.file, '-filter_complex', `[1:v]scale=${brand.bw}:-1:flags=lanczos[zb];[0:v][zb]overlay=W-w-${brand.m}:${brand.m}:format=auto,format=yuv420p[zv]`, '-map', '[zv]'] : []), ...enc], ['pipe', 'ignore', 'pipe']); // brand: брэнд тэмдэг (media.js brandFor)
+  const encP = spawnFF(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-s', `${W}x${H}`, '-framerate', String(fps), '-i', 'pipe:0', ...(brand ? ['-i', brand.file, '-filter_complex', `[1:v]scale=${brand.bw}:-1:flags=lanczos[zb];[0:v][zb]overlay=${brand.x}:${brand.y}:format=auto,format=yuv420p[zv]`, '-map', '[zv]'] : []), ...enc], ['pipe', 'ignore', 'pipe']); // brand: брэнд тэмдэг (media.js brandFor)
   let encErr = ''; encP.stderr.on('data', (d) => { encErr += d; if (encErr.length > 2e4) encErr = encErr.slice(-1e4); });
   const encDone = new Promise((res, rej) => { encP.on('error', rej); encP.on('close', (c) => (c === 0 ? res() : rej(new Error((encErr.trim().split('\n').slice(-2).join(' ') || 'x264 код ' + c).slice(0, 300))))); });
   encP.stdin.on('error', () => { /* кодлогч унтарвал encDone алдааг мэдээлнэ */ });
