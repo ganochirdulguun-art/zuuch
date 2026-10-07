@@ -138,6 +138,11 @@ function anonChild(job, onMsg, timeoutMs = 6 * 3600e3) {
 }
 async function makePoster(T, out, poster, dur, eq) { await run(T.ffmpeg, ['-y', '-hide_banner', '-ss', String(Math.min(1, dur / 3)), '-i', out, '-frames:v', '1', '-vf', eq ? 'scale=1024:512' : "scale='min(960,iw)':-2", '-q:v', '4', poster], { timeoutMs: 120000 }).catch(() => {}); }
 
+// Энгийн (360 биш) бичлэгт баруун дээд буланд брэнд тэмдэг (QR + «Смарт Зууч · Virtual POV Tour технологи») шигтгэнэ — татаж авсан файлд ч үлдэнэ
+const BADGE = path.join(__dirname, 'public', 'brand', 'video-badge.png');
+function brandFor(W, eq, H = 0) { if (eq || process.env.ZUUCH_VIDEO_BRAND === '0' || !fs.existsSync(BADGE)) return null; return { file: BADGE, bw: Math.round(W * (H > W ? 0.44 : 0.27) / 2) * 2, m: Math.round(Math.min(W, H || W) * 0.03) }; } // босоо (утасны) бичлэгт томоор
+const brandFilter = (b, base) => `[1:v]scale=${b.bw}:-1:flags=lanczos[zb];${base}[zb]overlay=W-w-${b.m}:${b.m}:format=auto,format=yuv420p[zv]`;
+
 async function processVideo(m, src, outDir, onMsg) {
   const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй — бичлэг хөрвүүлэх боломжгүй');
   const pr = await probe(src); if (!pr || !pr.w) throw new Error('Бичлэг уншигдсангүй (кодек дэмжигдэхгүй?)');
@@ -145,15 +150,18 @@ async function processVideo(m, src, outDir, onMsg) {
   const out = path.join(outDir, `${m.id}.mp4`), poster = path.join(outDir, `${m.id}-poster.jpg`), tmp = path.join(outDir, `${m.id}.part.mp4`);
   const hdr = /arib-std-b67|smpte2084/.test(pr.transfer) && T.zscale ? 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,' : ''; // iPhone HDR → SDR
   const { W, H } = outDims(pr, eq); const fps = outFps(pr.fps); const dur = pr.duration || 1;
-  const meta = { src_codec: pr.codec, src_w: pr.w, src_h: pr.h, hdr: !!hdr };
+  const brand = brandFor(W, eq, H);
+  const meta = { src_codec: pr.codec, src_w: pr.w, src_h: pr.h, hdr: !!hdr, brand: !!brand };
   if (blurOn(m)) {
     // 1) илрүүлэх (4 кадр/с) → 2) нэг удаа кодлох: кадр бүрт мозайк (нүүр, улсын дугаар, домофон)
-    const det = await anonChild({ op: 'video', src, pre: hdr, W, H, eq, fps, duration: dur, kind: m.kind, vf: `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`, enc: X264(eq, tmp) }, onMsg);
+    const det = await anonChild({ op: 'video', src, pre: hdr, W, H, eq, fps, duration: dur, kind: m.kind, vf: `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`, enc: X264(eq, tmp), brand }, onMsg);
     await fsp.rename(tmp, out);
     await fsp.writeFile(path.join(outDir, `${m.id}-blur.json`), JSON.stringify({ W, H, fps, tracks: det.tracks })).catch(() => {}); // гараар засах үед харуулах (нийтэд үйлчлэхгүй)
     meta.anon = det.stats;
   } else {
-    await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1', '-vf', `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`, '-progress', 'pipe:1', '-nostats', ...X264(eq, out)],
+    const vf = `${hdr}scale=${W}:${H}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p`;
+    const vargs = brand ? ['-i', brand.file, '-filter_complex', `[0:v:0]${vf}[zbase];` + brandFilter(brand, '[zbase]'), '-map', '[zv]'] : ['-map', '0:v:0', '-vf', vf];
+    await run(T.ffmpeg, ['-y', '-hide_banner', '-i', src, ...vargs, '-an', '-sn', '-dn', '-map_metadata', '-1', '-progress', 'pipe:1', '-nostats', ...X264(eq, out)],
       { onLine: (l) => { const mm = /^out_time_ms=(\d+)/.exec(l); if (mm) onMsg(`Хөрвүүлж байна… ${Math.min(99, Math.round(Number(mm[1]) / 1e6 / dur * 100))}%`); } });
     meta.anon = { off: true };
   }

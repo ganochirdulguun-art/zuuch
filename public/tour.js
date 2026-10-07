@@ -1333,6 +1333,7 @@ async function main() {
   for (const m of data.media || []) if (m.kind === 'pano') { const a = { id: 'm' + m.id, url: m.url, preview: m.poster, kind: 'pano', room_id: m.room_id }; if (String(m.room_id || '').startsWith('ext:')) extNodes.push({ ...a, label: m.room_id.slice(4) }); else if (m.room_id) panoByRoom[m.room_id] = a; } // шинэ (том файл) нь хуучныг дарна
   const p = data.property || {};
   $('#title').textContent = `${p.district || ''}${p.khoroolol ? ', ' + p.khoroolol : ''} · ${p.rooms || rooms.length} өрөө · ${p.area || plan.totalArea} м²${p.floor ? ` · ${p.floor}/${p.total_floors || '—'} давхар` : ''}${data.company ? ' · ' + data.company : ''}`;
+  window.dispatchEvent(new CustomEvent('tour:data', { detail: { company: data.company || '' } })); // брэнд давхаргад агентлагийн нэр
   document.title = `POV Tour — ${p.district || 'Зууч'}`;
   // FPS: pixel ratio ≤1.5, статик сүүдэр (зөвхөн тавилга гарч ирэх үед шинэчилнэ), high-performance GPU
   renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); // canvas MSAA — bloom-гүй (түвшин 0) болон гадаах нислэгт renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
