@@ -58,7 +58,15 @@ async function enterApp() {
   $('#user-role').textContent = ME.role === 'zahiral' ? 'Захирал' : 'Агент';
   $('#menu-team').hidden = ME.role !== 'zahiral';
   $('#menu-owner').hidden = !ME.is_owner;
+  guestBanner();
   show('dashboard');
+}
+// Танилцуулгын эрх: үлдсэн хоног, төлбөртэй функцийн хэрэглээ
+function guestBanner() {
+  let el = $('#guest-banner'); const g = ME && ME.guest;
+  if (!g) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'guest-banner'; el.style.cssText = 'margin:0 0 12px;padding:9px 14px;border-radius:10px;background:var(--surface-2);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center'; $('#main').before(el); }
+  el.innerHTML = `<b>Танилцуулгын эрх</b><span>${g.days_left} хоног үлдсэн</span><span>Жишээ компани — өөрчлөлт зөвхөн танд харагдана</span><span>AI студи, гадна 3D, замын профайл, бодит медиа: <b>${g.paid_used}/${g.limit}</b> объект дээр туршсан</span>`;
 }
 
 document.getElementById('menu').addEventListener('click', (e) => {
@@ -1311,13 +1319,37 @@ async function owner() {
     <div id="ot-list" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Медиа хадгалалт ба хувийн мэдээлэл</h3><div id="st-box" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-route></use></svg>Хотын замын хугацаа (Google Routes)</h3><div id="cc-box" style="font-size:12.5px">…</div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-users></use></svg>Танилцуулгын эрх</h3>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Зочин бүрт тусдаа жишээ компани (демо компанийн объект, харилцагч, гэрээ, бэлэн POV аяллын хуулбар) үүснэ — бие биедээ саад болохгүй. Хугацаа дуусахад нэвтрэлт хаагдана. Төлбөртэй функц (AI студи, гадна 3D, замын профайл, бодит медиа) зочин бүрт <span id="g-limit">2</span> объект дээр.</div>
+    <form id="g-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;font-size:13px">
+      <label>Нэрийн угтвар<br><input id="g-prefix" value="guest" style="width:90px"></label>
+      <label>Тоо<br><input id="g-count" type="number" min="1" max="20" value="5" style="width:60px"></label>
+      <label>Хугацаа (хоног)<br><input id="g-days" type="number" min="1" max="90" value="14" style="width:70px"></label>
+      <label>Нууц үг (бүгдэд)<br><input id="g-pass" type="text" autocomplete="off" required minlength="6" style="width:130px"></label>
+      <button class="small primary" type="submit">Үүсгэх</button><span id="g-st"></span>
+    </form>
+    <div id="g-list" style="font-size:12.5px;margin-top:10px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Өгөгдлийн сангийн нөөц</h3>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Өдөр бүр автоматаар (Улаанбаатарын цагаар өдөрт 1 удаа) бүх хүснэгтийг нөөцөлж, Postgres-оос тусдаа дискэнд сүүлийн <span id="bk-keep">14</span> хувийг хадгална. Сар бүр нэг хувийг татаж аваад өөрийн компьютерт хадгалахыг зөвлөж байна.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="small primary" onclick="backupNow(this)"><svg class=ic><use href=#i-archive></use></svg>Одоо нөөцлөх</button><span id="bk-st" style="font-size:12.5px"></span></div>
     <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
-  backupList(); ownerTours(); storageBox(); cityCommuteBox();
+  backupList(); ownerTours(); storageBox(); cityCommuteBox(); guestList();
+  $('#g-form').onsubmit = async (e) => {
+    e.preventDefault(); $('#g-st').textContent = 'Үүсгэж байна…';
+    const r = await api('/owner/guests', { method: 'POST', body: { prefix: $('#g-prefix').value, count: Number($('#g-count').value), days: Number($('#g-days').value), password: $('#g-pass').value } }).catch((x) => ({ error: x.message }));
+    if (r.error) { $('#g-st').textContent = ''; return alert(r.error); }
+    $('#g-pass').value = ''; $('#g-st').textContent = `Үүслээ: ${r.created.map((x) => x.username).join(', ') || '—'}${r.skipped.length ? ` · алгассан (бүртгэлтэй): ${r.skipped.map((x) => x.username).join(', ')}` : ''}`; guestList();
+  };
 }
+async function guestList() {
+  const d = await api('/owner/guests').catch(() => null); const el = $('#g-list'); if (!el || !d) return; if ($('#g-limit')) $('#g-limit').textContent = d.limit;
+  el.innerHTML = d.items.length ? `<div class="tablebox"><table><thead><tr><th>Нэвтрэх нэр</th><th>Компани</th><th>Дуусах</th><th class="num">Объект</th><th class="num">Төлбөртэй</th><th></th></tr></thead><tbody>${d.items.map((g) => { const left = g.expires_at ? Math.ceil((new Date(g.expires_at) - Date.now()) / 864e5) : null;
+    return `<tr><td><b>${esc(g.username || '—')}</b></td><td>${esc(g.name)}</td><td>${g.expires_at ? new Date(g.expires_at).toLocaleDateString('mn-MN') : '—'} ${left != null ? (left > 0 ? `<span class="badge ok">${left} хоног</span>` : '<span class="badge warn">дууссан</span>') : ''}</td><td class="num">${g.properties}</td><td class="num">${g.paid}/${d.limit}</td>
+      <td style="white-space:nowrap"><button class="small" onclick="guestExtend(${g.id})">+7 хоног</button> <button class="small" onclick="guestDel(${g.id},'${esc(g.username || '')}')">Устгах</button></td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--muted)">Танилцуулгын эрх алга</span>';
+}
+window.guestExtend = async (id) => { const r = await api('/owner/guests/' + id + '/extend', { method: 'POST', body: { days: 7 } }); if (r.error) return alert(r.error); toast('7 хоног сунгалаа'); guestList(); };
+window.guestDel = async (id, u) => { if (!confirm(`«${u}» эрх ба түүний жишээ компанийг бүх өгөгдөлтэй нь устгах уу?`)) return; const r = await api('/owner/company/' + id, { method: 'DELETE' }); if (r.error) return alert(r.error); toast('Устгалаа'); guestList(); };
 let CC_T = null;
 async function cityCommuteBox() {
   clearTimeout(CC_T); const d = await api('/owner/city-commute').catch(() => null); const el = $('#cc-box'); if (!el || !d || d.error) return;

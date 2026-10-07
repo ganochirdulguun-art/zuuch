@@ -71,10 +71,11 @@ app.post('/api/login', wrap(async (req, res) => {
   if (!user.is_owner) {
     const co = await db.one('SELECT status FROM companies WHERE id=?', user.company_id);
     if (co && co.status !== 'active') return res.status(403).json({ error: 'Таны компанийн хандалт түр хаагдсан. Платформын админтай холбогдоно уу.' });
+    if (guests.expired(await guests.info(db, user.company_id))) return res.status(403).json({ error: guests.EXPIRED_MSG });
   }
   const token = await newSession(user);
   const company = await db.one('SELECT name FROM companies WHERE id=?', user.company_id);
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0 } });
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, guest: await guestMe(user.company_id) } });
 }));
 
 app.post('/api/register', wrap(async (req, res) => {
@@ -95,16 +96,26 @@ async function auth(req, res, next) {
     const s = await loadSession(token);
     if (!s) return res.status(401).json({ error: 'Нэвтрээгүй байна' });
     if (Date.now() > s.exp) { sessions.delete(token); db.run('DELETE FROM sessions WHERE token=?', token).catch(() => {}); return res.status(401).json({ error: 'Сесс дууссан' }); }
-    req.user = s; req.token = token; next();
+    req.user = s; req.token = token;
+    if (!s.is_owner && req.path !== '/logout' && guests.expired(await guests.info(db, s.company_id))) return res.status(403).json({ error: guests.EXPIRED_MSG });
+    next();
   } catch (e) { next(e); }
 }
+async function guestMe(cid) { const g = await guests.info(db, cid); return g ? { days_left: guests.daysLeft(g), expires_at: g.expires_at, paid_used: g.paid.length, limit: g.limit } : null; }
+// Төлбөртэй функц (AI, Google Routes, медиа боловсруулалт): зочин компанид LIMIT объект хүртэл
+const paid = (param) => async (req, res, next) => {
+  try {
+    const pid = Number(req.params[param]); if (!(await db.one('SELECT 1 FROM properties WHERE id=? AND company_id=?', pid, req.user.company_id))) return next(); // өөрийнх биш бол маршрут 404 өгнө
+    const r = await guests.allowPaid(db, req.user.company_id, pid); if (!r.ok) return res.status(r.status).json({ error: r.error }); next();
+  } catch (e) { next(e); }
+};
 const OPEN = new Set(['/login', '/register']);
 app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res, next)));
 
 app.post('/api/logout', (req, res) => { sessions.delete(req.token); db.run('DELETE FROM sessions WHERE token=?', req.token).catch(() => {}); res.json({ ok: true }); });
 app.get('/api/me', wrap(async (req, res) => {
   const company = await db.one('SELECT name FROM companies WHERE id=?', req.user.company_id);
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0 });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0, guest: await guestMe(req.user.company_id) });
 }));
 app.post('/api/me/password', wrap(async (req, res) => {
   const { current, next: nx } = req.body || {};
@@ -154,9 +165,11 @@ app.delete('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.company_id) return res.status(400).json({ error: 'Өөрийн харьяа компанийг устгах боломжгүй' });
   await db.tx(async (t) => {
-    for (const tb of ['listing_assets', 'listing_drafts', 'properties', 'clients', 'requests', 'deals', 'users']) await t.run(`DELETE FROM ${tb} WHERE company_id=?`, id);
+    await t.run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE company_id=?)', id);
+    for (const tb of ['listing_assets', 'listing_drafts', 'tours', 'properties', 'clients', 'requests', 'deals', 'users']) await t.run(`DELETE FROM ${tb} WHERE company_id=?`, id); // бодит медиаг (tour_media) хадгалалтын ажил эзэнгүй гэж цэвэрлэнэ
     await t.run('DELETE FROM companies WHERE id=?', id);
   });
+  for (const [tok, s] of sessions) if (s.company_id === id) sessions.delete(tok); guests.forget(id);
   res.json({ ok: true });
 }));
 
@@ -171,6 +184,14 @@ app.post('/api/owner/city-commute', ownerOnly, wrap(async (req, res) => {
   const b = req.body || {}; if (b.stop) { cityCommute.stop(); return res.json({ ok: true, job: cityCommute.status() }); }
   try { res.json({ ok: true, job: await cityCommute.run(db, { maxElements: b.maxElements }) }); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
+// Танилцуулгын эрх: үүсгэх (нууц үгийг эзэн оруулна), жагсаалт, сунгах — устгах нь DELETE /api/owner/company/:id
+app.get('/api/owner/guests', ownerOnly, wrap(async (req, res) => res.json({ items: await guests.list(db), limit: guests.LIMIT })));
+app.post('/api/owner/guests', ownerOnly, wrap(async (req, res) => {
+  const b = req.body || {};
+  try { res.json(await guests.create(db, { prefix: b.prefix, count: b.count, start: b.start, password: b.password, days: b.days, template: Number(b.template) || req.user.company_id, hash })); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+}));
+app.post('/api/owner/guests/:id/extend', ownerOnly, wrap(async (req, res) => { await guests.extend(db, Number(req.params.id), (req.body || {}).days); res.json({ ok: true }); }));
 app.get('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ items: backup.list(), keep: backup.KEEP })));
 app.post('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ ok: true, ...(await backup.run(db, { reason: 'manual:' + (req.user.name || req.user.id) })) })));
 app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
@@ -180,7 +201,7 @@ app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
 
 // ---- Баг ----
 app.get('/api/users', wrap(async (req, res) => res.json(await db.all('SELECT id, username, name, role, phone FROM users WHERE company_id=? ORDER BY role, name', req.user.company_id))));
-app.post('/api/users', zahiralOnly, wrap(async (req, res) => {
+app.post('/api/users', zahiralOnly, wrap(async (req, res, next) => { if (await guests.info(db, req.user.company_id)) return res.status(403).json({ error: 'Танилцуулгын эрхэд хэрэглэгч нэмэх боломжгүй' }); next(); }), wrap(async (req, res) => {
   const b = req.body || {};
   const username = String(b.username || '').trim().toLowerCase(), password = String(b.password || ''), name = String(b.name || '').trim();
   if (!name || username.length < 3 || password.length < 6) return res.status(400).json({ error: 'Нэр, нэвтрэх нэр (3+), нууц үг (6+) шаардлагатай' });
@@ -263,6 +284,7 @@ const priceIndex = require('./priceindex'); // дүүргийн үнийн ин�
 const dedupX = require('./dedup'); // эх сурвалж хоорондын давхардал
 const media = require('./media'); // POV аяллын бодит медиа (бичлэг, 360, splat)
 const retention = require('./retention'); // хаагдсан объектын медиаг 30 хоногийн дараа устгана
+const guests = require('./guests'); // танилцуулгын эрх (зочин компани, хугацаа, төлбөртэй функцийн хязгаар)
 const roomplan = require('./roomplan'); // iPhone LiDAR RoomPlan → план
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
 app.get('/api/properties/:id/commute', wrap(async (req, res) => {
@@ -273,7 +295,7 @@ app.get('/api/properties/:id/commute', wrap(async (req, res) => {
   const city = c ? null : await cityCommute.lookup(db, Number(p.lat), Number(p.lng)); // хотын 500 м нүд (Ш3)
   res.json({ property: p, profile: c ? { ...c.profile, cached: true } : city ? { ...city, cached: true } : null, hasKey: commute.hasKey() });
 }));
-app.post('/api/properties/:id/commute', wrap(async (req, res) => {
+app.post('/api/properties/:id/commute', paid('id'), wrap(async (req, res) => {
   const p = await db.one('SELECT id, lat, lng FROM properties WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!p) return res.status(404).json({ error: 'Объект олдсонгүй' });
   if (p.lat == null || p.lng == null) return res.status(400).json({ error: 'Эхлээд объектын байршлыг газрын зураг дээр заана уу' });
@@ -451,7 +473,7 @@ app.delete('/api/studio/asset/:id', wrap(async (req, res) => {
   fs.promises.unlink(assetPath(a)).catch(() => {});
   res.json({ ok: true });
 }));
-app.post('/api/studio/:pid/analyze', wrap(async (req, res) => {
+app.post('/api/studio/:pid/analyze', paid('pid'), wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
   const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id);
@@ -553,10 +575,11 @@ app.get('/api/tour/:pid/media', auth, wrap(async (req, res) => {
   res.json({ items, token: t && t.token, used, disk, limits: media.LIMITS, chunk: media.CHUNK, ffmpeg: !!media.tools().ffmpeg, queue: media.queueLength(),
     status: prop.status, closed_at: prop.closed_at || null, purge_at: prop.status === 'closed' ? retention.purgeDate(prop.closed_at || new Date()) : null, retention_days: retention.RETENTION_DAYS, anon: await media.anon.status() });
 }));
-app.post('/api/tour/:pid/media/init', auth, wrap(async (req, res) => {
+app.post('/api/tour/:pid/media/init', auth, paid('pid'), wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return; const b = req.body || {};
   const kind = String(b.kind || ''), size = Number(b.size), filename = String(b.filename || '').slice(0, 160);
   const chk = media.canAccept(kind, filename, size); if (chk.error) return res.status(chk.code === 'disk' ? 507 : 400).json({ error: chk.error });
+  if (size > guests.MEDIA_MAX && (await guests.info(db, req.user.company_id))) return res.status(400).json({ error: `Танилцуулгын эрхэд нэг файл ${Math.round(guests.MEDIA_MAX / 1048576)} MB хүртэл` });
   let t = await db.one('SELECT id FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id);
   if (!t) t = await saveTour(req.user.company_id, prop.id, tourLib.autoPlan(prop));
   const roomId = b.room_id ? String(b.room_id).slice(0, 60) : null;
@@ -678,7 +701,7 @@ function startExterior(companyId, prop, { keepStudy = false } = {}) {
   })();
   return job;
 }
-app.post('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
+app.post('/api/tour/:pid/exterior', auth, paid('pid'), wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) return res.status(400).json({ error: 'Объектын байршлыг газрын зураг дээр заана уу (lat/lng)' });
   res.status(202).json(startExterior(req.user.company_id, prop));
@@ -760,7 +783,7 @@ app.get('/api/tour/:pid/exterior', auth, wrap(async (req, res) => {
   res.json({ job, has: !!(t && t.has), generated_at: t && t.at, pois: t ? t.pois : 0, geostore: Number.isFinite(prop.lat) && geostore.covers(prop.lat, prop.lng) });
 }));
 // AI зургийн шинжилгээ → бодит орон зайн параметр (таазны өндөр, хаалга/цонх/довжоо, дам нуруу, шал, ханын өнгө) → plan.style
-app.post('/api/tour/:pid/analyze', auth, wrap(async (req, res) => {
+app.post('/api/tour/:pid/analyze', auth, paid('pid'), wrap(async (req, res) => {
   const prop = await tourProp(req, res); if (!prop) return;
   if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY тохируулаагүй' });
   // Студийн зураг + бичлэгийн кадрууд (kind='frame', өрөөний шошготой) — өрөө тус бүрийн зөвлөмж гаргана

@@ -431,6 +431,9 @@ ALTER TABLE price_index ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'demo';
 ALTER TABLE price_index ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 -- Хаагдсан (зарагдсан/түрээслэгдсэн) огноо: бодит медиаг хаагдсанаас 30 хоногийн дараа устгана (retention.js). Аль ч кодоос төлөв солиход trigger тэмдэглэнэ.
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+-- Танилцуулгын (зочин) компани: plan='guest', хугацаа, төлбөртэй функц ашигласан объектууд (guests.js)
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS meta JSONB;
 CREATE OR REPLACE FUNCTION zuuch_closed_at() RETURNS trigger AS $fn$
 BEGIN
   IF NEW.status = 'closed' THEN NEW.closed_at := COALESCE(NEW.closed_at, NOW()); ELSE NEW.closed_at := NULL; END IF;
