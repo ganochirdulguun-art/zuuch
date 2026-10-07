@@ -294,7 +294,8 @@ async function rebrandAll(db) {
   if (process.env.ZUUCH_VIDEO_BRAND === '0' || !fs.existsSync(BADGE)) return 0;
   const rows = await db.all("SELECT id FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN (" + Object.keys(KINDS).filter((k) => KINDS[k] === 'video').map((k) => `'${k}'`).join(',') + ") AND COALESCE(projection,'flat') <> 'equirect' AND COALESCE(meta->>'brand','false') <> 'true' AND meta->>'brand_err' IS NULL AND meta->>'brand_skip' IS NULL ORDER BY id");
   for (const r of rows) if (!queue.some((j) => j.mediaId === r.id)) enqueue(r.id, null, { op: 'rebrand' });
-  if (rows.length) console.log(`[медиа] брэнд шигтгэх: ${rows.length} хуучин бичлэг дараалалд`);
+  const all = await db.one("SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE projection='equirect')::int eq, COUNT(*) FILTER (WHERE meta->>'brand'='true')::int done FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN ('walk_ext','walk_in')").catch(() => ({}));
+  console.log(`[медиа] брэнд шигтгэх: ${rows.length} хуучин бичлэг дараалалд · нийт бэлэн бичлэг ${all.n} (360: ${all.eq}, брэндтэй: ${all.done})`);
   return rows.length;
 }
 function enqueue(mediaId, src, extra = {}) { queue.push({ mediaId, src, ...extra }); pump(); }
