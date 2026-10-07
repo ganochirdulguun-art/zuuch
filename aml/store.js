@@ -158,6 +158,7 @@ const DOC_OWNERS = new Set(['profile', 'company', 'user', 'training', 'change', 
 async function saveDoc(db, req, dir, { ownerType, ownerId, kind, file, note }) {
   if (!DOC_OWNERS.has(ownerType)) throw Object.assign(new Error('Буруу төрөл'), { status: 400 });
   if (!file || !file.buffer || !file.buffer.length) throw Object.assign(new Error('Файл алга'), { status: 400 });
+  if (!DOC_KEY && (process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production')) throw Object.assign(new Error('Баримтын шифрлэлтийн түлхүүр (ZUUCH_DOC_KEY) тохируулаагүй тул хувийн баримт хүлээж авахгүй. Платформын эзэнд хандана уу.'), { status: 503 });
   if (!/^(image\/(jpeg|png|webp|heic)|application\/pdf)$/.test(file.mimetype)) throw Object.assign(new Error('Зөвхөн PDF, JPG, PNG'), { status: 400 });
   const sha = crypto.createHash('sha256').update(file.buffer).digest('hex');
   const d = path.join(dir, 'aml', String(req.user.company_id)); await fsp.mkdir(d, { recursive: true });
