@@ -115,7 +115,7 @@ app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res
 app.post('/api/logout', (req, res) => { sessions.delete(req.token); db.run('DELETE FROM sessions WHERE token=?', req.token).catch(() => {}); res.json({ ok: true }); });
 app.get('/api/me', wrap(async (req, res) => {
   const company = await db.one('SELECT name FROM companies WHERE id=?', req.user.company_id);
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0, guest: await guestMe(req.user.company_id) });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0, guest: await guestMe(req.user.company_id), credits: await credits.balance(db, req.user.company_id, req.user.id) });
 }));
 app.post('/api/me/password', wrap(async (req, res) => {
   const { current, next: nx } = req.body || {};
@@ -156,10 +156,11 @@ app.post('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
   const id = Number(req.params.id), b = req.body || {};
   const sets = [], vals = [];
   if (b.status && ['active', 'suspended'].includes(b.status)) { sets.push('status=?'); vals.push(b.status); }
-  if (b.plan && ['demo', 'trial', 'basic', 'pro'].includes(b.plan)) { sets.push('plan=?'); vals.push(b.plan); }
+  if (b.plan && ['demo', 'trial', ...Object.keys(credits.PLANS)].includes(b.plan)) { sets.push('plan=?'); vals.push(b.plan); }
   if (!sets.length) return res.json({ ok: false, error: 'Өөрчлөх утга алга' });
   const r = await db.run(`UPDATE companies SET ${sets.join(',')} WHERE id=?`, ...vals, id);
-  res.json({ ok: r.changes > 0 });
+  const grant = credits.PLANS[b.plan] ? await credits.monthly(db, id) : null; // багц идэвхжмэгц энэ сарын кредит
+  res.json({ ok: r.changes > 0, grant });
 }));
 app.delete('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
@@ -192,6 +193,37 @@ app.post('/api/owner/guests', ownerOnly, wrap(async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 }));
 app.post('/api/owner/guests/:id/extend', ownerOnly, wrap(async (req, res) => { await guests.extend(db, Number(req.params.id), (req.body || {}).days); res.json({ ok: true }); }));
+// ---- Кредит: захирал — нөөц, агентын үлдэгдэл, шилжүүлэг, тохиргоо; агент — өөрийн үлдэгдэл, түүх ----
+app.get('/api/credits', wrap(async (req, res) => {
+  const cid = req.user.company_id; const s = await credits.settings(db, cid); const isZ = req.user.role === 'zahiral' || req.user.is_owner;
+  const mine = await credits.balance(db, cid, req.user.id);
+  const myHist = await db.all('SELECT delta, kind, note, created_at FROM credit_ledger WHERE company_id=? AND user_id=? ORDER BY id DESC LIMIT 30', cid, req.user.id);
+  const out = { plan: s.plan ? { key: s.plan, ...credits.PLANS[s.plan] } : null, plans: credits.PLANS, packs: credits.PACKS, special: credits.SPECIAL, perAgentHint: credits.PER_AGENT, reserveHint: credits.RESERVE_HINT, mine, myHistory: myHist, settings: s, zahiral: !!isZ };
+  if (isZ) {
+    const b = await credits.balances(db, cid); const m = credits.ubMonth() + '-01';
+    const spent = new Map((await db.all("SELECT user_id, COALESCE(-SUM(delta),0)::int n FROM credit_ledger WHERE company_id=? AND kind='spend' AND user_id IS NOT NULL AND created_at >= (?::date - INTERVAL '8 hours') GROUP BY user_id", cid, m)).map((r) => [r.user_id, r.n]));
+    const deals = new Map((await db.all("SELECT p.agent_id, COUNT(*)::int n FROM deals d JOIN properties p ON p.id=d.property_id WHERE d.company_id=? AND d.deal_date >= to_char(NOW() - INTERVAL '90 days','YYYY-MM-DD') GROUP BY p.agent_id", cid)).map((r) => [r.agent_id, r.n]));
+    const users = await db.all('SELECT id, name, role, created_at FROM users WHERE company_id=? ORDER BY role DESC, name', cid);
+    out.reserve = b.reserve; out.users = users.map((u) => ({ ...u, bal: b.users.get(u.id) || 0, spentMonth: spent.get(u.id) || 0, deals90: deals.get(u.id) || 0 }));
+    out.usage = await credits.usage(db, cid);
+    out.history = await db.all('SELECT l.delta, l.kind, l.note, l.created_at, u.name AS user_name FROM credit_ledger l LEFT JOIN users u ON u.id=l.user_id WHERE l.company_id=? AND l.user_id IS NULL ORDER BY l.id DESC LIMIT 40', cid);
+  }
+  res.json(out);
+}));
+app.post('/api/credits/transfer', zahiralOnly, wrap(async (req, res) => {
+  const b = req.body || {}; const kind = b.kind === 'reward' ? 'reward' : 'transfer';
+  try { res.json(await credits.transfer(db, { cid: req.user.company_id, uid: Number(b.uid), n: Number(b.n), note: String(b.note || '').slice(0, 120), by: req.user.id, kind })); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+app.put('/api/credits/settings', zahiralOnly, wrap(async (req, res) => res.json(await credits.saveSettings(db, req.user.company_id, req.body || {}))));
+app.post('/api/credits/allocate', zahiralOnly, wrap(async (req, res) => { // одоо бүх ажилтанд perAgent хүртэл нөхөх (хэн нь дутуу байна)
+  const cid = req.user.company_id; const s = await credits.settings(db, cid); const b = await credits.balances(db, cid); let left = b.reserve, given = 0, n = 0;
+  for (const u of await db.all('SELECT id FROM users WHERE company_id=? ORDER BY id', cid)) { const need = Math.max(0, s.perAgent - (b.users.get(u.id) || 0)); if (!need || need > left) continue; await credits.transfer(db, { cid, uid: u.id, n: need, note: 'нөхөн хуваарилалт', by: req.user.id }); left -= need; given += need; n++; }
+  res.json({ ok: true, given, users: n, reserve: left });
+}));
+app.post('/api/owner/company/:id/credits', ownerOnly, wrap(async (req, res) => { // эзэн: кредит нэмэх (худалдан авалт, урамшуулал)
+  const n = Math.trunc(Number((req.body || {}).n)); if (!n) return res.status(400).json({ error: 'Тоо буруу' });
+  await db.tx((t) => credits.add(t, { cid: Number(req.params.id), delta: n, kind: n > 0 ? 'bonus' : 'refund', note: String((req.body || {}).note || 'Эзэн нэмсэн').slice(0, 120), by: req.user.id })); res.json({ ok: true });
+}));
 app.get('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ items: backup.list(), keep: backup.KEEP })));
 app.post('/api/owner/backups', ownerOnly, wrap(async (req, res) => res.json({ ok: true, ...(await backup.run(db, { reason: 'manual:' + (req.user.name || req.user.id) })) })));
 app.get('/api/owner/backups/:name', ownerOnly, (req, res) => {
@@ -213,8 +245,8 @@ app.post('/api/users', zahiralOnly, wrap(async (req, res, next) => { if (await g
 app.delete('/api/users/:id', zahiralOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id) return res.status(400).json({ error: 'Өөрийгөө устгах боломжгүй' });
-  await db.run('DELETE FROM users WHERE id=? AND company_id=?', id, req.user.company_id);
-  res.json({ ok: true });
+  const reclaimed = await db.tx(async (t) => { const u = await t.one('SELECT name FROM users WHERE id=? AND company_id=?', id, req.user.company_id); const n = u ? await credits.reclaim(t, req.user.company_id, id, u.name) : 0; await t.run('DELETE FROM users WHERE id=? AND company_id=?', id, req.user.company_id); return n; });
+  res.json({ ok: true, reclaimed }); // ашиглаагүй кредит компанийн нөөц рүү
 }));
 
 // ---- Хянах самбар ----
@@ -284,6 +316,7 @@ const priceIndex = require('./priceindex'); // дүүргийн үнийн ин�
 const dedupX = require('./dedup'); // эх сурвалж хоорондын давхардал
 const media = require('./media'); // POV аяллын бодит медиа (бичлэг, 360, splat)
 const retention = require('./retention'); // хаагдсан объектын медиаг 30 хоногийн дараа устгана
+const credits = require('./credits'); // сарын багц, AI студийн кредит (компанийн нөөц → агент)
 const guests = require('./guests'); // танилцуулгын эрх (зочин компани, хугацаа, төлбөртэй функцийн хязгаар)
 const roomplan = require('./roomplan'); // iPhone LiDAR RoomPlan → план
 app.get('/api/commute/meta', (req, res) => res.json({ hasKey: commute.hasKey(), destinations: commute.destinations(), slots: commute.SLOTS }));
@@ -892,4 +925,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); media.boot(db); retention.schedule(db); });
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); media.boot(db); retention.schedule(db); credits.schedule(db); });

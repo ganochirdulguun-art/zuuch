@@ -58,6 +58,7 @@ async function enterApp() {
   $('#user-role').textContent = ME.role === 'zahiral' ? 'Захирал' : 'Агент';
   $('#menu-team').hidden = ME.role !== 'zahiral';
   $('#menu-owner').hidden = !ME.is_owner;
+  crChip(ME.credits);
   guestBanner();
   show('dashboard');
 }
@@ -88,7 +89,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, leads, team, owner }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, leads, team, owner, credits }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------
@@ -1312,7 +1313,7 @@ window.studioAnalyze = async function (pid) {
 };
 
 // ---------- Эзэн самбар (зөвхөн платформын эзэн) ----------
-const PLAN_T = { demo: 'Демо', trial: 'Туршилт', basic: 'Суурь', pro: 'Про' };
+const PLAN_T = { demo: 'Демо', trial: 'Туршилт', standard: 'Стандарт', pro: 'Мэргэжлийн', premium: 'Тэргүүлэх', basic: 'Суурь (хуучин)' };
 async function owner() {
   const d = await api('/owner/overview');
   if (d.error) { $('#main').innerHTML = `<div class="page-head"><h2><svg class=ic><use href=#i-crown></use></svg>Эзэн самбар</h2></div><p style="color:var(--accent-2)">${esc(d.error)}</p>`; return; }
@@ -1332,7 +1333,8 @@ async function owner() {
       <tbody>${d.companies.map((c) => `<tr>
         <td>${c.id}</td><td><b>${esc(c.name)}</b></td>
         <td><select onchange="setCompany(${c.id},{plan:this.value})" style="width:auto;padding:3px 6px;font-size:12.5px">
-          ${['demo', 'trial', 'basic', 'pro'].map((p) => `<option value="${p}" ${c.plan === p ? 'selected' : ''}>${PLAN_T[p]}</option>`).join('')}</select></td>
+          ${['demo', 'trial', 'standard', 'pro', 'premium', ...(c.plan === 'basic' ? ['basic'] : [])].map((p) => `<option value="${p}" ${c.plan === p ? 'selected' : ''}>${PLAN_T[p]}</option>`).join('')}</select>
+          <button class="small" title="Кредит нэмэх (худалдан авалт, урамшуулал)" onclick="ownerCredits(${c.id},'${esc(c.name).replace(/'/g, '')}')"><svg class=ic><use href=#i-coins></use></svg></button></td>
         <td>${c.status === 'active' ? '<span class="badge ok">Идэвхтэй</span>' : '<span class="badge warn">Хаагдсан</span>'}</td>
         <td class="num">${c.users}</td><td class="num">${c.properties}</td>
         <td class="num">${c.deals}</td><td class="num">${fmt(c.commission)}</td>
@@ -1451,6 +1453,7 @@ window.backupGet = async (name) => {
 window.setCompany = async function (id, body) {
   const r = await api('/owner/company/' + id, { method: 'POST', body });
   if (r.error) { alert(r.error); return; }
+  if (r.grant && r.grant.granted) alert(`Багц идэвхжлээ: ${r.grant.granted} кредит нөөцөд орж, ${r.grant.agents} ажилтанд ${r.grant.allocated} хуваарилагдлаа.`);
   owner();
 };
 window.delCompany = async function (id, name) {
@@ -1501,17 +1504,86 @@ window.userForm = function () {
     <div class="field"><label>Нэвтрэх нэр (3+)</label><input name="username" autocomplete="off" required></div>
     <div class="field"><label>Нууц үг (6+)</label><input name="password" type="text" autocomplete="off" required></div>
     <div class="field wide"><label>Утас</label><input name="phone"></div>
+    <div class="field wide"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="give" checked style="width:auto"> Компанийн нөөцөөс <input name="credits" type="number" min="0" max="500" value="25" style="width:70px"> AI кредит олгох (зөвлөмж 25 = 1 листинг)</label></div>
     <div class="err wide" id="uf-err"></div>
     <div class="modal-actions wide"><button type="button" onclick="closeModal()">Болих</button><button class="primary">Нэмэх</button></div>
   </form>`);
   $('#f').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const r = await api('/users', { method: 'POST', body: Object.fromEntries(new FormData($('#f'))) });
+    const fd = Object.fromEntries(new FormData($('#f'))); const give = fd.give && Number(fd.credits) > 0 ? Number(fd.credits) : 0; delete fd.give; delete fd.credits;
+    const r = await api('/users', { method: 'POST', body: fd });
     if (r.error) { $('#uf-err').textContent = r.error; return; }
+    if (give && r.id) { const t = await api('/credits/transfer', { method: 'POST', body: { uid: r.id, n: give, note: 'шинэ ажилтан' } }); if (t.error) alert('Ажилтан нэмэгдсэн, гэхдээ кредит олгосонгүй: ' + t.error); }
     closeModal(); team();
   });
 };
-window.delUser = async (id) => { if (!confirm('Ажилтныг устгах уу?')) return; await api('/users/' + id, { method: 'DELETE' }); team(); };
+window.delUser = async (id) => { if (!confirm('Ажилтныг устгах уу? Ашиглаагүй AI кредит нь компанийн нөөц рүү буцна.')) return; const r = await api('/users/' + id, { method: 'DELETE' }); if (r.reclaimed) alert(r.reclaimed + ' кредит компанийн нөөц рүү буцлаа'); team(); };
+
+// ---------- Багц ба кредит ----------
+const CR_KIND = { grant: 'Сарын олголт', allocate: 'Сарын хуваарилалт', transfer: 'Шилжүүлэг', reward: 'Урамшуулал', reclaim: 'Буцаалт', purchase: 'Худалдан авалт', spend: 'Зарцуулалт', refund: 'Хасалт', bonus: 'Нэмэлт' };
+const tg = (n) => String(Math.round(Number(n || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+function crChip(n) { const el = $('#menu-cr'); if (el) el.textContent = n != null ? n + ' кр' : ''; }
+async function credits() {
+  const d = await api('/credits'); if (d.error) { $('#main').innerHTML = `<p>${esc(d.error)}</p>`; return; }
+  crChip(d.mine);
+  const P = d.plan; const u = d.usage || {};
+  const bar = (v, max) => { const p = max ? Math.min(100, Math.round(v / max * 100)) : 0; return `<div style="height:6px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:6px;width:${p}%;background:${p >= 90 ? 'var(--accent-2)' : 'var(--accent)'};border-radius:3px"></div></div>`; };
+  const hist = (rows, who) => rows.length ? `<div class="tablebox"><table><thead><tr><th>Огноо</th><th>Төрөл</th>${who ? '<th>Ажилтан</th>' : ''}<th>Тайлбар</th><th class="num">Кредит</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${r.created_at ? new Date(r.created_at).toLocaleString('sv-SE', { timeZone: 'Asia/Ulaanbaatar' }).slice(0, 16) : ''}</td><td>${CR_KIND[r.kind] || r.kind}</td>${who ? `<td>${esc(r.user_name || '')}</td>` : ''}<td>${esc(r.note || '')}</td><td class="num" style="color:${r.delta < 0 ? 'var(--accent-2)' : 'inherit'}">${r.delta > 0 ? '+' : ''}${r.delta}</td></tr>`).join('')}</tbody></table></div>` : '<div style="color:var(--muted)">Одоохондоо хөдөлгөөн алга.</div>';
+  const plans = Object.entries(d.plans).map(([k, p]) => `<div class="card" style="flex:1;min-width:200px;margin:0;${P && P.key === k ? 'outline:2px solid var(--accent)' : ''}">
+      <div style="font-size:12px;color:var(--muted)">${P && P.key === k ? '✓ Таны багц' : 'Багц'}</div><h3 style="margin:2px 0">${p.name}</h3>
+      <div style="font-size:20px;font-weight:700">${tg(p.price)}₮<small style="font-size:12px;font-weight:400"> /сар</small></div>
+      <ul style="font-size:12.5px;padding-left:18px;margin:8px 0 0;line-height:1.6"><li>Агентын тоо хязгааргүй</li><li><b>${p.credits}</b> AI кредит/сар</li><li>AI студийн зар ${p.studio}/сар</li><li>Гадаах 3D орчин ${p.tours}/сар</li><li>Медиа сан ${p.storageGB} GB</li><li>«Онцгой лист» ${p.special}/сар</li><li>${p.logo ? 'Аяллын өөрийн лого' : 'Зуучийн тамгатай аялал'}</li><li>Дэмжлэг: ${p.support}</li></ul></div>`).join('');
+  let html = `<div class="page-head"><h2><svg class=ic><use href=#i-coins></use></svg>Багц ба кредит</h2><span class="demo-note">1 кредит = 1 зургийн виртуал цэгцлэлт · Зургийн автомат засвар (өнцөг, гэрэл) үнэгүй</span></div>
+  <div class="tiles">
+    <div class="tile"><div class="v">${d.mine}</div><div class="k">Миний кредит</div></div>
+    ${d.zahiral ? `<div class="tile"><div class="v">${d.reserve}</div><div class="k">Компанийн нөөц</div></div><div class="tile"><div class="v">${(d.users || []).reduce((s, x) => s + x.bal, 0)}</div><div class="k">Ажилтнуудад байгаа</div></div>` : ''}
+    <div class="tile"><div class="v" style="font-size:20px">${P ? P.name : '—'}</div><div class="k">${P ? tg(P.price) + '₮ / сар' : 'Багц идэвхжээгүй'}</div></div>
+  </div>`;
+  if (!d.zahiral) {
+    html += `<div class="card"><h3>Кредит дуусвал</h3><div style="font-size:13px;line-height:1.6">Захирал танд компанийн нөөцөөс кредит шилжүүлж болно. Мөн удахгүй QPay-ээр нэмэлт кредит авах боломжтой (S ${d.packs.S.credits} — ${tg(d.packs.S.price)}₮ · M ${d.packs.M.credits} — ${tg(d.packs.M.price)}₮ · L ${d.packs.L.credits} — ${tg(d.packs.L.price)}₮). «Онцгой лист» багц — ${tg(d.special.price)}₮ (${d.special.credits} кредит + онцлох).</div></div>
+    <div class="card"><h3>Миний түүх</h3>${hist(d.myHistory)}</div>`;
+    $('#main').innerHTML = html; return;
+  }
+  const s = d.settings;
+  html += `${P ? `<div class="card"><h3>Энэ сарын хэрэглээ · ${u.month}</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;font-size:13px">
+      <div>AI студийн зар <b>${u.studio}</b> / ${P.studio}${bar(u.studio, P.studio)}</div>
+      <div>Гадаах 3D орчин <b>${u.tours}</b> / ${P.tours}${bar(u.tours, P.tours)}</div>
+      <div>Медиа сан <b>${(u.storageBytes / 1073741824).toFixed(1)}</b> / ${P.storageGB} GB${bar(u.storageBytes / 1073741824, P.storageGB)}</div>
+      <div>Зарцуулсан кредит <b>${u.creditsSpent}</b> / ${P.credits}${bar(u.creditsSpent, P.credits)}</div></div></div>` : `<div class="card" style="border-color:var(--accent-2)"><b>Сарын багц идэвхжээгүй байна.</b> <span style="font-size:13px">Гэрээ байгуулмагц Зууч багцыг идэвхжүүлж, тухайн сарын кредит компанийн нөөцөд орно.</span></div>`}
+  <div class="card"><h3>Ажилтнуудын кредит</h3>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Сар бүрийн 1-нд багцын кредит компанийн нөөцөд орж, доорх тохиргоогоор ажилтан бүрт автоматаар хуваарилагдана. Үлдсэнийг нөөцөд хадгалж — шинэ ажилтан, урамшуулал, их ачаалалтай агентад өгнө. Ажилтан гарахад ашиглаагүй кредит нөөц рүү буцна.</div>
+    <div class="tablebox"><table><thead><tr><th>Ажилтан</th><th>Роль</th><th class="num">Үлдэгдэл</th><th class="num">Энэ сард зарцуулсан</th><th class="num">Хэлцэл (90 хоног)</th><th>Шилжүүлэх</th></tr></thead>
+    <tbody>${d.users.map((x) => `<tr><td><b>${esc(x.name)}</b></td><td>${ROLE_T[x.role] || x.role}</td><td class="num"><b>${x.bal}</b></td><td class="num">${x.spentMonth}</td><td class="num">${x.deals90}</td>
+      <td style="white-space:nowrap"><input id="crn-${x.id}" type="number" value="${d.perAgentHint}" min="1" style="width:64px;padding:3px 6px">
+        <button class="small primary" onclick="crMove(${x.id},1,'transfer')" title="Нөөцөөс өгөх">+ Өгөх</button>
+        <button class="small" onclick="crMove(${x.id},1,'reward')" title="Урамшуулал болгож өгөх">🏆</button>
+        <button class="small" onclick="crMove(${x.id},-1,'transfer')" title="Нөөц рүү буцаах">− Буцаах</button></td></tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:10px"><button class="small" onclick="crAllocate()">Бүгдийг ${s.perAgent} хүртэл нөхөх</button> <span id="cr-st" style="font-size:12.5px"></span></div></div>
+  <div class="card"><h3><svg class=ic><use href=#i-settings></use></svg>Хуваарилалтын тохиргоо</h3>
+    <form id="cr-set" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;font-size:13px">
+      <label>Ажилтан бүрт сард<br><input name="perAgent" type="number" min="0" max="500" value="${s.perAgent}" style="width:80px"> кредит</label>
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="auto" ${s.auto ? 'checked' : ''} style="width:auto"> Сар бүр автоматаар хуваарилах</label>
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="fallback" ${s.fallback ? 'checked' : ''} style="width:auto"> Ажилтны кредит дуусвал нөөцөөс шууд хэрэглүүлэх</label>
+      <button class="small primary">Хадгалах</button><span id="crs-st"></span></form>
+    ${P ? `<div style="font-size:12.5px;color:var(--muted);margin-top:8px">Зөвлөмж: ${d.users.length} ажилтан × ${d.perAgentHint} = ${d.users.length * d.perAgentHint} кредит; багцын ${P.credits}-ийн ${Math.round(d.reserveHint * 100)}%+ (${Math.ceil(P.credits * d.reserveHint)}) нөөцөд үлдээвэл зохимжтой.${d.users.length * s.perAgent > P.credits * (1 - d.reserveHint) ? ' <b style="color:var(--accent-2)">Одоогийн тохиргоогоор нөөц бага үлдэнэ.</b>' : ''}</div>` : ''}</div>
+  <div class="card"><h3>Тарифууд</h3><div style="display:flex;gap:12px;flex-wrap:wrap">${plans}</div>
+    <div style="font-size:12.5px;margin-top:10px;line-height:1.6">Нэмэлт кредит (QPay — удахгүй): <b>S</b> ${d.packs.S.credits} — ${tg(d.packs.S.price)}₮ · <b>M</b> ${d.packs.M.credits} — ${tg(d.packs.M.price)}₮ · <b>L</b> ${d.packs.L.credits} — ${tg(d.packs.L.price)}₮ · «Онцгой лист» нэг удаа — ${tg(d.special.price)}₮ (${d.special.credits} кредит + онцлох). Үнэ НӨАТ орсон.</div></div>
+  <div class="card"><h3>Нөөцийн түүх</h3>${hist(d.history, true)}</div>
+  <div class="card"><h3>Миний түүх</h3>${hist(d.myHistory)}</div>`;
+  $('#main').innerHTML = html;
+  $('#cr-set').addEventListener('submit', async (e) => { e.preventDefault(); const f = e.target; const r = await api('/credits/settings', { method: 'PUT', body: { perAgent: Number(f.perAgent.value), auto: f.auto.checked, fallback: f.fallback.checked } }); $('#crs-st').textContent = r.error ? r.error : '✓ Хадгалагдлаа'; if (!r.error) setTimeout(credits, 600); });
+}
+window.crMove = async function (uid, sign, kind) {
+  const n = Math.trunc(Number($('#crn-' + uid).value)); if (!(n > 0)) return;
+  const note = kind === 'reward' ? (prompt('Урамшууллын шалтгаан (заавал биш):', 'Сайн ажилласан') || '') : '';
+  const r = await api('/credits/transfer', { method: 'POST', body: { uid, n: sign * n, kind, note } }); if (r.error) return alert(r.error); credits();
+};
+window.crAllocate = async function () { const r = await api('/credits/allocate', { method: 'POST' }); if (r.error) return alert(r.error); alert(`${r.users} ажилтанд нийт ${r.given} кредит олгов. Нөөцөд ${r.reserve} үлдлээ.`); credits(); };
+window.ownerCredits = async function (cid, name) {
+  const v = prompt(`«${name}» компанийн нөөцөд кредит нэмэх (хасах бол −):`, '100'); if (!v) return; const n = Math.trunc(Number(v)); if (!n) return;
+  const note = prompt('Тайлбар (жишээ: L багц QPay, урамшуулал):', n > 0 ? 'Нэмэлт кредит' : 'Залруулга') || '';
+  const r = await api('/owner/company/' + cid + '/credits', { method: 'POST', body: { n, note } }); alert(r.error || '✓ Нэмэгдлээ');
+};
 
 // ---------- Цуглуулагч (Шат 2 демо) ----------
 const KIND_T = { listing_site: 'Зарын сайт', broker: 'Брокер вэб', rss: 'Мэдээ', fb: 'FB групп' };

@@ -438,6 +438,19 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
 -- Танилцуулгын (зочин) компани: plan='guest', хугацаа, төлбөртэй функц ашигласан объектууд (guests.js)
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS meta JSONB;
+-- Кредитийн бүртгэл (credits.js): user_id NULL = компанийн нөөц; delta +/−; kind: grant|allocate|transfer|reward|reclaim|purchase|spend|refund|bonus
+CREATE TABLE IF NOT EXISTS credit_ledger (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL,
+  user_id INTEGER,
+  delta INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  ref TEXT,
+  by_user INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS credit_ledger_co ON credit_ledger(company_id, user_id);
 CREATE OR REPLACE FUNCTION zuuch_closed_at() RETURNS trigger AS $fn$
 BEGIN
   IF NEW.status = 'closed' THEN NEW.closed_at := COALESCE(NEW.closed_at, NOW()); ELSE NEW.closed_at := NULL; END IF;
