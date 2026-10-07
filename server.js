@@ -425,7 +425,8 @@ app.post('/api/collector/reset', zahiralOnly, wrap(async (req, res) => { await c
 app.post('/api/collector/takedown', zahiralOnly, wrap(async (req, res) => { const r = await collector.takedownLatest(); res.json({ ...r, ...(await collector.status()) }); }));
 
 // ---- Ш3а: Листингийн AI студи ----
-const UPLOAD_DIR = process.env.ZUUCH_UPLOADS || path.join(__dirname, 'uploads');
+const UPLOAD_DIR = process.env.ZUUCH_UPLOADS || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'uploads') : path.join(__dirname, 'uploads')); // Railway: байнгын диск (deploy бүрт устахгүй)
+const photofix = require('./photofix'); // зургийн автомат засвар (өнцөг, перспектив, цагаан тэнцвэр, гэрэл)
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
@@ -437,13 +438,14 @@ const upload = multer({
 });
 async function ownProperty(req) { return db.one('SELECT * FROM properties WHERE id=? AND company_id=?', req.params.pid, req.user.company_id); }
 const assetPath = (a) => path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id), a.filename);
+const assetUse = (a) => (a.enh_file ? path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id), a.enh_file) : assetPath(a)); // засвартай бол засварласныг (AI шинжилгээ, харагдац)
 
 app.get('/api/studio/:pid', wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
-  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, created_at FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
+  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, enh_mode, enh_note, created_at FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
   const draft = await db.one('SELECT * FROM listing_drafts WHERE company_id=? AND property_id=? ORDER BY id DESC LIMIT 1', req.user.company_id, prop.id);
-  res.json({ property: prop, assets, draft, ai: !!process.env.ANTHROPIC_API_KEY });
+  res.json({ property: prop, assets, draft, ai: !!process.env.ANTHROPIC_API_KEY, enhance: fixJobs.get(`${req.user.company_id}:${prop.id}`) || null });
 }));
 app.post('/api/studio/:pid/photos', wrap(async (req, res, next) => {
   const prop = await ownProperty(req);
@@ -456,7 +458,7 @@ app.post('/api/studio/:pid/photos', wrap(async (req, res, next) => {
         const r = await db.one('INSERT INTO listing_assets (company_id, property_id, filename, mime, size) VALUES (?,?,?,?,?) RETURNING id', req.user.company_id, prop.id, f.filename, f.mimetype, f.size);
         ids.push(r.id);
       }
-      res.json({ ok: true, added: ids.length });
+      res.json({ ok: true, added: ids.length, ids });
     } catch (e) { next(e); }
   });
 }));
@@ -464,20 +466,40 @@ app.get('/api/studio/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!a) return res.status(404).end();
   res.setHeader('Cache-Control', 'private, max-age=3600');
+  if (a.enh_file && req.query.v !== 'orig') return res.type('image/jpeg').sendFile(assetUse(a));
   res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
 }));
 app.delete('/api/studio/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!a) return res.status(404).json({ error: 'Олдсонгүй' });
   await db.run('DELETE FROM listing_assets WHERE id=?', a.id);
-  fs.promises.unlink(assetPath(a)).catch(() => {});
+  fs.promises.unlink(assetPath(a)).catch(() => {}); if (a.enh_file) fs.promises.unlink(assetUse(a)).catch(() => {});
   res.json({ ok: true });
 }));
+// Зургийн автомат засвар (AI-гүй, үнэгүй): mode = 'natural' (бодит) | 'vivid' (тод) | 'none' (засваргүй — эх рүү буцаана). Арын горимд, явцыг асууна.
+const fixJobs = new Map(); // "company:pid" → { status, done, total, msg }
+app.post('/api/studio/:pid/enhance', wrap(async (req, res) => {
+  const prop = await ownProperty(req); if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
+  const mode = ['natural', 'vivid', 'none'].includes((req.body || {}).mode) ? req.body.mode : 'natural'; const only = Array.isArray((req.body || {}).ids) ? req.body.ids.map(Number) : null;
+  const key = `${req.user.company_id}:${prop.id}`; const cur = fixJobs.get(key); if (cur && cur.status === 'running') return res.json(cur);
+  const rows = (await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id)).filter((a) => !only || only.includes(a.id));
+  const job = { status: 'running', done: 0, total: rows.length, mode, msg: '' }; fixJobs.set(key, job); res.json(job);
+  for (const a of rows) {
+    try {
+      if (a.enh_file) await fs.promises.unlink(path.join(path.dirname(assetPath(a)), a.enh_file)).catch(() => {});
+      if (mode === 'none') { await db.run('UPDATE listing_assets SET enh_file=NULL, enh_mode=NULL, enh_note=NULL WHERE id=?', a.id); }
+      else { const out = a.filename.replace(/\.[a-z0-9]+$/i, '') + '-' + mode + '.jpg'; const r = await photofix.fix(assetPath(a), path.join(path.dirname(assetPath(a)), out), mode); await db.run('UPDATE listing_assets SET enh_file=?, enh_mode=?, enh_note=? WHERE id=?', out, mode, r.note, a.id); }
+    } catch (e) { job.msg = 'Зарим зураг засагдсангүй: ' + e.message.slice(0, 120); }
+    job.done++;
+  }
+  job.status = 'done';
+}));
+app.get('/api/studio/:pid/enhance', wrap(async (req, res) => res.json(fixJobs.get(`${req.user.company_id}:${Number(req.params.pid)}`) || null)));
 app.post('/api/studio/:pid/analyze', paid('pid'), wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
   const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id);
-  const assets = rows.map(a => ({ ...a, path: assetPath(a) }));
+  const assets = rows.map(a => ({ ...a, path: assetUse(a), mime: a.enh_file ? 'image/jpeg' : a.mime })); // засвартай бол засварласан зургийг шинжилнэ
   const [loc, val] = await Promise.all([
     db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id).then((t) => A.locationScore(prop.district, prop.lat, prop.lng, (t && t.local_pois) || [])), // цэгийн түвшний А8 + бодит зай + оршин суугчийн нэмсэн газар
     prop.deal_type === 'sale' ? A.valuation({ district: prop.district, rooms: prop.rooms, area: prop.area, isNew: !!prop.is_new, floor: prop.floor, totalFloors: prop.total_floors }) : null,
@@ -792,7 +814,7 @@ app.post('/api/tour/:pid/analyze', auth, paid('pid'), wrap(async (req, res) => {
   const Anthropic = require('@anthropic-ai/sdk'); const ai = new Anthropic();
   const content = [];
   for (let i = 0; i < rows.length; i++) {
-    const buf = await fs.promises.readFile(assetPath(rows[i])).catch(() => null); if (!buf) continue;
+    const buf = await fs.promises.readFile(assetUse(rows[i])).catch(() => null); if (!buf) continue;
     content.push({ type: 'text', text: `${rows[i].kind === 'frame' ? 'Бичлэгийн кадр' : 'Зураг'} #${i + 1}${rows[i].room ? ' — өрөө: ' + rows[i].room : ''}` });
     content.push({ type: 'image', source: { type: 'base64', media_type: rows[i].mime || 'image/jpeg', data: buf.toString('base64') } });
   }
@@ -856,7 +878,7 @@ app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=? AND property_id=?', req.params.id, t.company_id, t.property_id);
   if (!a) return res.status(404).end();
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
+  res.type(a.enh_file ? 'image/jpeg' : a.mime || 'image/jpeg').sendFile(assetUse(a)); // засвартай бол засварласан зураг
 }));
 
 app.get('/capture', (req, res) => res.sendFile(path.join(__dirname, 'public', 'capture.html'))); // утсаар алхалтын бичлэг (GPS-тэй)

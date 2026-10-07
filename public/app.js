@@ -1223,7 +1223,8 @@ window.studioView = async function (pid) {
   if (d.error) { alert(d.error); return; }
   renderStudio(d);
 };
-function renderStudio(d) {
+function renderStudio(d) { renderStudio0(d); studioFixInit(d); }
+function renderStudio0(d) {
   const p = d.property, dr = d.draft || {};
   const texts = dr.texts || {}, adv = dr.advantages || [], price = dr.price || null, plan = dr.plan || [], notes = dr.photo_notes || [];
   const img = (a) => `/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}`;
@@ -1237,12 +1238,24 @@ function renderStudio(d) {
       <button class="primary" onclick="studioUpload(${p.id})"><svg class=ic><use href=#i-upload></use></svg>Оруулах</button>
       <button class="primary" onclick="studioAnalyze(${p.id})" ${d.assets.length ? '' : 'disabled'}><svg class=ic><use href=#i-bot></use></svg>AI шинжилгээ хийх</button>
       <span id="st-status" style="color:var(--muted);font-size:13px"></span></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">
+      <b style="font-size:13px">Зургийн засвар</b>
+      <select id="st-fix" onchange="try{localStorage.setItem('zuuch_fix_mode',this.value)}catch(e){}" style="width:auto">
+        <option value="natural">Бодит — өнцөг, босоо шугам, гэрэл, өнгө</option>
+        <option value="vivid">Тод — бодит + илүү гэрэлтэй, ханасан</option>
+        <option value="none">Засахгүй — эх зургаар</option>
+        <option value="declutter" disabled>Виртуал цэгцлэлт — удахгүй (төлбөртэй)</option>
+      </select>
+      <button class="small" onclick="studioFix(${p.id})" ${d.assets.length ? '' : 'disabled'}>Бүх зургийг засах</button>
+      <span style="font-size:12px;color:var(--muted)">Шинээр оруулсан зураг сонгосон горимоор автоматаар засагдана. Эх зураг үргэлж хадгалагдана.</span>
+      <span id="st-fix-st" style="font-size:12.5px"></span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:14px">
       ${d.assets.map((a) => `<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)">
         <div style="position:relative"><img src="${img(a)}" style="width:100%;height:110px;object-fit:cover;display:block" loading="lazy">
           ${a.rank ? `<span class="badge ${a.rank === 1 ? 'ok' : 'mut'}" style="position:absolute;top:6px;left:6px">${a.rank === 1 ? '★ 1' : '#' + a.rank}</span>` : ''}</div>
         <div style="padding:6px 8px;font-size:12px">
           <div><b>${esc(a.room || '—')}</b> ${a.quality != null ? `· чанар ${a.quality} · wow ${a.wow}` : ''}</div>
+          ${a.enh_mode ? `<div style="color:var(--muted)" title="${esc(a.enh_note || '')}">✓ ${a.enh_mode === 'vivid' ? 'Тод' : 'Бодит'} засвар · <a href="/api/studio/asset/${a.id}?v=orig&token=${encodeURIComponent(TOKEN)}" target="_blank" rel="noopener">эх</a><br><span style="font-size:11px">${esc(a.enh_note || '')}</span></div>` : ''}
           ${a.issues ? `<div style="color:var(--accent-2)">${esc(a.issues)}</div>` : ''}
           <button class="small" style="margin-top:4px" onclick="studioDel(${a.id},${p.id})">Устгах</button></div></div>`).join('') || '<span style="color:var(--muted)">Зураг байхгүй — утсаараа авсан зургуудаа оруулна уу</span>'}
     </div></div>
@@ -1260,6 +1273,20 @@ function renderStudio(d) {
     <div class="tablebox"><table><thead><tr><th class="num">Өдөр</th><th>Ажил</th></tr></thead><tbody>${plan.map((s) => `<tr><td class="num">${s.day}</td><td>${esc(s.task)}</td></tr>`).join('')}</tbody></table></div></div>`
   : '<div class="card" style="color:var(--muted)">Зургуудаа оруулаад «<svg class=ic><use href=#i-bot></use></svg>AI шинжилгээ хийх» дарахад: зургийн эрэмбэ/чанар, зарын текст ×3, давуу тал, үнийн стратеги, 30 хоногийн төлөвлөгөө үүснэ.</div>'}`;
 }
+function studioFixInit(d) {
+  const sel = $('#st-fix'); if (!sel) return; try { const m = localStorage.getItem('zuuch_fix_mode'); if (m && [...sel.options].some((o) => o.value === m && !o.disabled)) sel.value = m; } catch (e) { /* */ }
+  if (d.enhance && d.enhance.status === 'running') studioFixPoll(d.property.id);
+}
+async function studioFixPoll(pid) {
+  const j = await api('/studio/' + pid + '/enhance').catch(() => null); const el = $('#st-fix-st'); if (!el) return;
+  if (j && j.status === 'running') { el.innerHTML = ic('loader-circle', 'spin') + ` Засаж байна… ${j.done}/${j.total}`; setTimeout(() => studioFixPoll(pid), 1500); return; }
+  if (j && j.status === 'done') { const d = await api('/studio/' + pid); renderStudio(d); const e2 = $('#st-fix-st'); if (e2) e2.textContent = `✓ ${j.total} зураг засагдлаа${j.msg ? ' · ' + j.msg : ''}`; }
+}
+window.studioFix = async function (pid, ids) {
+  const mode = ($('#st-fix') || {}).value || 'natural';
+  const r = await api('/studio/' + pid + '/enhance', { method: 'POST', body: { mode, ids } }); if (r.error) return alert(r.error);
+  studioFixPoll(pid);
+};
 window.studioTab = function (btn) {
   document.querySelectorAll('[data-t]').forEach((b) => b.classList.remove('primary')); btn.classList.add('primary');
   const t = JSON.parse(document.getElementById('st-texts').textContent || '{}');
@@ -1272,7 +1299,9 @@ window.studioUpload = async function (pid) {
   $('#st-status').textContent = 'Оруулж байна…';
   const r = await fetch('/api/studio/' + pid + '/photos', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then((x) => x.json());
   if (r.error) { alert(r.error); return; }
-  studioView(pid);
+  const mode = ($('#st-fix') || {}).value || 'natural';
+  await studioView(pid);
+  if (mode !== 'none' && r.ids && r.ids.length) { const sel = $('#st-fix'); if (sel) sel.value = mode; studioFix(pid, r.ids); }
 };
 window.studioDel = async function (id, pid) { await api('/studio/asset/' + id, { method: 'DELETE' }); studioView(pid); };
 window.studioAnalyze = async function (pid) {

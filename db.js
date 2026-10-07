@@ -394,6 +394,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS market_listings_src ON market_listings(source,
 CREATE INDEX IF NOT EXISTS market_listings_seen ON market_listings(source, active, last_seen);
 ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'photo';
 ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS room_id TEXT;
+-- Зургийн автомат засвар (photofix.js): засварласан файл тусдаа, эх зураг хэвээр
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_file TEXT;
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_mode TEXT;
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_note TEXT;
 -- Ш3д: Virtual POV Tour (объект бүрд нэг план + нийтийн хуваалцах token)
 CREATE TABLE IF NOT EXISTS tours (
   id SERIAL PRIMARY KEY,
