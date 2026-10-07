@@ -89,7 +89,7 @@ const badge = (s) => { const [t, c] = STATUS_T[s] || [s, 'mut']; return `<span c
 let POLL = null;
 function show(view) {
   if (POLL) { clearInterval(POLL); POLL = null; }
-  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, leads, team, owner, credits }[view] || dashboard)();
+  ({ dashboard, properties, clients, requests: buyers, deals, market, collector, tours, mylist, studio, buyers, findbuyers, leads, team, owner, credits, compliance: () => window.compliance() }[view] || dashboard)();
 }
 
 // ---------- Хянах самбар ----------

@@ -165,6 +165,7 @@ app.post('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
 app.delete('/api/owner/company/:id', ownerOnly, wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.company_id) return res.status(400).json({ error: 'Өөрийн харьяа компанийг устгах боломжгүй' });
+  const amlHold = await aml.retentionBlock(id); if (amlHold && req.query.aml !== 'keep') return res.status(409).json({ error: `Компанид МУТСТ-ийн бүртгэл байна (ХТМ ${amlHold.p}, гүйлгээ ${amlHold.t}, тайлан ${amlHold.r}) — хуулиар 5 жил хадгална (МУТСТХ 8.1). Экспортолж хүлээлгэн өгсний дараа МУТСТ бүртгэлийг хадгалан устгана (?aml=keep).` });
   await db.tx(async (t) => {
     await t.run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE company_id=?)', id);
     for (const tb of ['listing_assets', 'listing_drafts', 'tours', 'properties', 'clients', 'requests', 'deals', 'users']) await t.run(`DELETE FROM ${tb} WHERE company_id=?`, id); // бодит медиаг (tour_media) хадгалалтын ажил эзэнгүй гэж цэвэрлэнэ
@@ -270,18 +271,20 @@ app.get('/api/dashboard', wrap(async (req, res) => {
 }));
 
 // ---- Tenant-scoped CRUD ----
-function crud(name, table, fields) {
+function crud(name, table, fields, after) {
   app.get(`/api/${name}`, wrap(async (req, res) => res.json(await db.all(`SELECT * FROM ${table} WHERE company_id=? ORDER BY id DESC`, req.user.company_id))));
   app.post(`/api/${name}`, wrap(async (req, res) => {
     const cols = ['company_id', ...fields];
     const vals = [req.user.company_id, ...fields.map(f => (req.body[f] === '' || req.body[f] === undefined) ? null : req.body[f])];
     const r = await db.one(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')}) RETURNING id`, ...vals);
+    if (after) await after(req, r.id);
     res.json({ id: r.id });
   }));
   app.put(`/api/${name}/:id`, wrap(async (req, res) => {
     const sets = fields.filter(f => f in req.body);
     if (!sets.length) return res.json({ ok: true });
     const r = await db.run(`UPDATE ${table} SET ${sets.map(f => f + '=?').join(',')} WHERE id=? AND company_id=?`, ...sets.map(f => (req.body[f] === '' ? null : req.body[f])), req.params.id, req.user.company_id);
+    if (after && r.changes) await after(req, Number(req.params.id));
     res.json({ ok: r.changes > 0 });
   }));
   app.delete(`/api/${name}/:id`, wrap(async (req, res) => {
@@ -290,9 +293,10 @@ function crud(name, table, fields) {
   }));
 }
 crud('properties', 'properties', ['deal_type', 'district', 'khoroolol', 'rooms', 'area', 'floor', 'total_floors', 'is_new', 'price', 'status', 'agent_id', 'owner_name', 'owner_phone', 'notes', 'lat', 'lng']);
+app.delete('/api/clients/:id', wrap(async (req, res, next) => { await db.run('UPDATE aml_profiles SET client_id=NULL WHERE client_id=? AND company_id=?', req.params.id, req.user.company_id); next(); })); // ХТМ профайл 5 жил хадгалагдана (МУТСТХ 8.1)
 crud('clients', 'clients', ['name', 'phone', 'type', 'notes']);
 crud('requests', 'requests', ['client_id', 'deal_type', 'budget', 'districts', 'rooms', 'area_min', 'area_max', 'status', 'agent_id', 'last_contact']);
-crud('deals', 'deals', ['property_id', 'client_id', 'deal_type', 'amount', 'commission', 'payment_form', 'contract_end', 'deal_date']);
+crud('deals', 'deals', ['property_id', 'client_id', 'deal_type', 'amount', 'commission', 'payment_form', 'contract_end', 'deal_date'], (req, id) => aml.syncDeal(req, id)); // худалдах хэлцэл → МУТСТ гүйлгээний бүртгэл
 
 app.get('/api/requests-full', wrap(async (req, res) => res.json(await db.all(`SELECT r.*, c.name client_name, u.name agent_name FROM requests r
   JOIN clients c ON c.id=r.client_id LEFT JOIN users u ON u.id=r.agent_id WHERE r.company_id=? ORDER BY r.id DESC`, req.user.company_id))));
@@ -461,6 +465,7 @@ app.post('/api/collector/takedown', zahiralOnly, wrap(async (req, res) => { cons
 
 // ---- Ш3а: Листингийн AI студи ----
 const UPLOAD_DIR = process.env.ZUUCH_UPLOADS || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'uploads') : path.join(__dirname, 'uploads')); // Railway: байнгын диск (deploy бүрт устахгүй)
+const aml = require('./aml/routes')(app, { db, wrap, ownerOnly, UPLOAD_DIR }); // комплаенс: МУТСТ + СЗХ
 const photofix = require('./photofix'); // зургийн автомат засвар (өнцөг, перспектив, цагаан тэнцвэр, гэрэл)
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({

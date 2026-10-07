@@ -451,6 +451,41 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS credit_ledger_co ON credit_ledger(company_id, user_id);
+-- Комплаенс (aml/*): МУТСТ хууль, Монголбанкны А-26/А-171, СЗХ №648/№235/№22. Бүртгэлийг 5 жил хадгална (МУТСТХ 8.1)
+CREATE TABLE IF NOT EXISTS aml_profiles (
+  id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, client_id INTEGER, kind TEXT NOT NULL DEFAULT 'individual',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb, pep JSONB DEFAULT '{}'::jsonb, bo JSONB DEFAULT '[]'::jsonb, factors JSONB DEFAULT '{}'::jsonb,
+  risk TEXT DEFAULT 'low', risk_score INTEGER DEFAULT 0, risk_reasons JSONB DEFAULT '[]'::jsonb, cdd TEXT DEFAULT 'standard',
+  status TEXT NOT NULL DEFAULT 'draft', verified_by INTEGER, verified_at TIMESTAMPTZ, edd_approved_by INTEGER, edd_approved_at TIMESTAMPTZ,
+  sanctions JSONB DEFAULT '{}'::jsonb, review_due DATE, ended_at DATE, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS aml_profiles_co ON aml_profiles(company_id, client_id);
+CREATE TABLE IF NOT EXISTS aml_docs (
+  id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, owner_type TEXT NOT NULL, owner_id INTEGER, kind TEXT, filename TEXT NOT NULL, orig_name TEXT, mime TEXT,
+  size INTEGER, sha256 TEXT, enc BOOLEAN DEFAULT FALSE, original_seen BOOLEAN DEFAULT FALSE, note TEXT, uploaded_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS aml_docs_owner ON aml_docs(company_id, owner_type, owner_id);
+CREATE TABLE IF NOT EXISTS aml_tx (
+  id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, deal_id INTEGER, buyer_id INTEGER, seller_id INTEGER, amount BIGINT NOT NULL, method TEXT NOT NULL,
+  tx_date DATE NOT NULL, purpose TEXT, third_party BOOLEAN DEFAULT FALSE, note TEXT, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS aml_tx_co ON aml_tx(company_id, deal_id);
+CREATE TABLE IF NOT EXISTS aml_reports (
+  id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, type TEXT NOT NULL, tx_id INTEGER, profile_id INTEGER, referral_id INTEGER, status TEXT NOT NULL DEFAULT 'draft',
+  detected_at TIMESTAMPTZ, due_at TIMESTAMPTZ, grounds TEXT, indicators JSONB DEFAULT '[]'::jsonb, content JSONB DEFAULT '{}'::jsonb, goaml_ref TEXT,
+  submitted_at TIMESTAMPTZ, submitted_by INTEGER, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS aml_referrals (
+  id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, profile_id INTEGER, deal_id INTEGER, text TEXT NOT NULL, indicators JSONB DEFAULT '[]'::jsonb, status TEXT NOT NULL DEFAULT 'open',
+  decision TEXT, closed_by INTEGER, closed_at TIMESTAMPTZ, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS aml_training (id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, date DATE NOT NULL, topic TEXT NOT NULL, hours NUMERIC DEFAULT 0, trainer TEXT, kind TEXT DEFAULT 'internal', attendees JSONB DEFAULT '[]'::jsonb, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS aml_staff (company_id INTEGER NOT NULL, user_id INTEGER NOT NULL, position TEXT, cert_no TEXT, cert_issued DATE, cert_expires DATE, fit_checked DATE, note TEXT, updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (company_id, user_id));
+CREATE TABLE IF NOT EXISTS aml_changes (id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, type TEXT NOT NULL, description TEXT, decision_date DATE NOT NULL, due DATE NOT NULL, submitted_at DATE, frc_ref TEXT, created_by INTEGER, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS aml_filings (id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, key TEXT NOT NULL, period TEXT NOT NULL, due DATE, submitted_at DATE, ref TEXT, by_user INTEGER, UNIQUE (company_id, key, period));
+CREATE TABLE IF NOT EXISTS aml_audit (id BIGSERIAL PRIMARY KEY, company_id INTEGER NOT NULL, user_id INTEGER, user_name TEXT, action TEXT NOT NULL, entity TEXT, entity_id INTEGER, detail JSONB DEFAULT '{}'::jsonb, ip TEXT, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS aml_audit_co ON aml_audit(company_id, id);
+CREATE TABLE IF NOT EXISTS aml_sanctions (id SERIAL PRIMARY KEY, source TEXT NOT NULL, ref TEXT NOT NULL, kind TEXT, names JSONB DEFAULT '[]'::jsonb, dob JSONB DEFAULT '[]'::jsonb, nationality TEXT, listed_on TEXT, info TEXT, updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE (source, ref));
 CREATE OR REPLACE FUNCTION zuuch_closed_at() RETURNS trigger AS $fn$
 BEGIN
   IF NEW.status = 'closed' THEN NEW.closed_at := COALESCE(NEW.closed_at, NOW()); ELSE NEW.closed_at := NULL; END IF;
