@@ -1406,8 +1406,10 @@ async function storageBox() {
   el.innerHTML = `<div>Диск: <b>${fmtMB(used)}</b> / ${fmtMB(dk.total || 0)} (${pct}%) · чөлөөтэй ${fmtMB(dk.free || 0)}<div style="height:8px;background:var(--surface-2);border-radius:4px;margin:4px 0 8px"><div style="height:100%;width:${pct}%;background:${pct > 85 ? 'var(--accent-2)' : 'var(--accent)'};border-radius:4px"></div></div></div>
     <div>Медиа компани тус бүр: ${Object.entries(byCo).map(([k, v]) => `${esc(k)} <b>${fmtMB(v)}</b>`).join(' · ') || 'алга'} · upload түр ${fmtMB(d.uploads || 0)} · нөөц ${fmtMB(d.backups || 0)} · зураг ${fmtMB(d.assets || 0)}</div>
     <div style="margin-top:6px">⏳ Хадгалах бодлого: хаагдсан объектын бодит медиа хаагдсанаас <b>${R.days || 30} хоногийн</b> дараа автоматаар устна. Ойрын 7 хоногт устах: ${n7.n || 0} файл (${fmtMB(Number(n7.bytes || 0))}).${R.last ? ` Сүүлд: ${new Date(R.last.at).toLocaleString('mn-MN')} — ${R.last.removed} файл (${fmtMB(R.last.bytes)}).` : ''}</div>
-    <div style="margin-top:6px">🔒 Автомат бүдгэрүүлэлт: ${an.enabled ? `идэвхтэй (${models})` : '<span class="badge warn">идэвхгүй</span>'} · ffmpeg ${d.ffmpeg ? '✓' : '<span class="badge warn">алга</span>'} · боловсруулалтын дараалал ${d.queue || 0}</div>`;
+    <div style="margin-top:6px">🔒 Автомат бүдгэрүүлэлт: ${an.enabled ? `идэвхтэй (${models})` : '<span class="badge warn">идэвхгүй</span>'} · ffmpeg ${d.ffmpeg ? '✓' : '<span class="badge warn">алга</span>'} · боловсруулалтын дараалал ${d.queue || 0}</div>
+    ${d.brand ? `<div style="margin-top:6px">🏷️ Бичлэгийн брэнд тэмдэг (QR + «Смарт Зууч»): шигтгэсэн <b>${d.brand.done}</b> · хүлээгдэж буй <b>${d.brand.pending}</b>${d.brand.err ? ` · алдаатай ${d.brand.err}` : ''} ${d.brand.pending ? `<button class="small" onclick="ownerRebrand()">Одоо шигтгэх</button>` : ''}</div>` : ''}`;
 }
+window.ownerRebrand = async function () { const r = await api('/owner/media/rebrand', { method: 'POST' }); alert(r.error || `${r.queued} бичлэг дараалалд нэмэгдлээ — дууссаны дараа аялалд брэндтэй харагдана.`); storageBox(); };
 
 let OT_T = null;
 async function ownerTours() {

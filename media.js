@@ -277,6 +277,26 @@ const queue = []; let busy = false; let DB = null;
 function setDb(db) { DB = db; }
 const mediaDirOf = (m) => path.join(MEDIA_DIR, String(m.company_id), String(m.property_id));
 function filePath(m, name) { if (!name || !/^[\w.-]+$/.test(name)) return null; return path.join(mediaDirOf(m), name); }
+// Брэнд тэмдэггүй (өмнө нь боловсруулсан) энгийн бичлэгт брэнд шигтгэх: одоогийн файл дээр давхарлаж дахин кодлоно (бүдгэрүүлэлт хэвээр)
+async function rebrand(m, onMsg) {
+  const T = tools(); if (!T.ffmpeg) throw new Error('Сервер дээр ffmpeg суугаагүй');
+  const file = filePath(m, m.file); if (!file || !fs.existsSync(file)) throw new Error('Медиа файл олдсонгүй');
+  const pr = await probe(file); if (!pr || !pr.w) throw new Error('Бичлэг уншигдсангүй');
+  const eq = m.projection === 'equirect'; const brand = brandFor(pr.w, eq, pr.h); if (!brand) return { skipped: true };
+  const dir = path.dirname(file), tmp = path.join(dir, `${m.id}.part.mp4`), dur = pr.duration || 1;
+  await run(T.ffmpeg, ['-y', '-hide_banner', '-i', file, '-i', brand.file, '-filter_complex', brandFilter(brand, '[0:v:0]'), '-map', '[zv]', '-an', '-sn', '-dn', '-map_metadata', '-1', '-progress', 'pipe:1', '-nostats', ...X264(eq, tmp, -2)],
+    { onLine: (l) => { const mm = /^out_time_ms=(\d+)/.exec(l); if (mm && onMsg) onMsg(`Брэнд шигтгэж байна… ${Math.min(99, Math.round(Number(mm[1]) / 1e6 / dur * 100))}%`); } });
+  await fsp.rename(tmp, file); await makePoster(T, file, path.join(dir, `${m.id}-poster.jpg`), dur, eq);
+  return { size: (await fsp.stat(file)).size };
+}
+// Сервер асахад: брэндгүй хуучин энгийн бичлэгүүдийг дараалалд нэмнэ (нэг удаа — meta.brand тэмдэглэгдэнэ). ZUUCH_REBRAND_AUTO=0 унтраана
+async function rebrandAll(db) {
+  if (process.env.ZUUCH_VIDEO_BRAND === '0' || !fs.existsSync(BADGE)) return 0;
+  const rows = await db.all("SELECT id FROM tour_media WHERE status='ready' AND file IS NOT NULL AND kind IN (" + Object.keys(KINDS).filter((k) => KINDS[k] === 'video').map((k) => `'${k}'`).join(',') + ") AND COALESCE(projection,'flat') <> 'equirect' AND COALESCE(meta->>'brand','false') <> 'true' AND meta->>'brand_err' IS NULL AND meta->>'brand_skip' IS NULL ORDER BY id");
+  for (const r of rows) if (!queue.some((j) => j.mediaId === r.id)) enqueue(r.id, null, { op: 'rebrand' });
+  if (rows.length) console.log(`[медиа] брэнд шигтгэх: ${rows.length} хуучин бичлэг дараалалд`);
+  return rows.length;
+}
 function enqueue(mediaId, src, extra = {}) { queue.push({ mediaId, src, ...extra }); pump(); }
 async function pump() {
   if (busy || !queue.length || !DB) return; busy = true; const job = queue.shift();
@@ -285,10 +305,15 @@ async function pump() {
     if (!m) throw new Error('Медиа олдсонгүй');
     const outDir = mediaDirOf(m); await fsp.mkdir(outDir, { recursive: true });
     let last = 0; const msg = (t) => { if (Date.now() - last > 1500) { last = Date.now(); DB.run('UPDATE tour_media SET msg=? WHERE id=?', t, m.id).catch(() => {}); } };
-    await DB.run("UPDATE tour_media SET status='processing', msg='Боловсруулж байна…' WHERE id=?", m.id);
+    if (job.op !== 'rebrand') await DB.run("UPDATE tour_media SET status='processing', msg='Боловсруулж байна…' WHERE id=?", m.id); // брэнд шигтгэх үед аялалд харагдсаар (файлыг эцэст нь солино)
     if (job.op === 'reblur') { // гараар нэмсэн бүдгэрүүлэлт — файл хэвээр, мозайк нэмнэ
       const r = await reblur(m, job.regions, msg);
       await DB.run(`UPDATE tour_media SET status='ready', msg='', size=?, meta=jsonb_set(COALESCE(meta,'{}'::jsonb), '{manual}', ?::jsonb) WHERE id=?`, r.size, JSON.stringify(job.regions), m.id);
+      return;
+    }
+    if (job.op === 'rebrand') { // хуучин бичлэгт брэнд тэмдэг — алдаа гарвал файл хэвээр, бэлэн хэвээр
+      const r = await rebrand(m, msg);
+      await DB.run(`UPDATE tour_media SET status='ready', msg='', size=COALESCE(?, size), meta=COALESCE(meta,'{}'::jsonb) || ?::jsonb WHERE id=?`, r.size || null, JSON.stringify({ brand: !r.skipped, ...(r.skipped ? { brand_skip: true } : {}) }), m.id);
       return;
     }
     const cls = KINDS[m.kind];
@@ -298,7 +323,8 @@ async function pump() {
       r.file, r.poster || null, r.size || 0, r.duration || null, r.width || null, r.height || null, r.projection || null, JSON.stringify(r.meta || {}), m.id);
   } catch (e) {
     if (job.src) await fsp.unlink(job.src).catch(() => {});
-    if (m && job.op === 'reblur') await DB.run("UPDATE tour_media SET status='ready', msg=? WHERE id=?", ('Гараар бүдгэрүүлэлт амжилтгүй: ' + String(e.message || e)).slice(0, 300), m.id).catch(() => {}); // файл хэвээр — бэлэн хэвээр үлдээнэ
+    if (m && (job.op === 'reblur' || job.op === 'rebrand')) await DB.run("UPDATE tour_media SET status='ready', msg=? WHERE id=?", ((job.op === 'reblur' ? 'Гараар бүдгэрүүлэлт амжилтгүй: ' : 'Брэнд шигтгэж чадсангүй: ') + String(e.message || e)).slice(0, 300), m.id).catch(() => {}); // файл хэвээр — бэлэн хэвээр үлдээнэ
+    if (m && job.op === 'rebrand') { await fsp.unlink(path.join(mediaDirOf(m), `${m.id}.part.mp4`)).catch(() => {}); await DB.run("UPDATE tour_media SET meta=COALESCE(meta,'{}'::jsonb) || '{\"brand_err\":true}'::jsonb WHERE id=?", m.id).catch(() => {}); } // дахин дахин оролдохгүй
     else if (m) await DB.run("UPDATE tour_media SET status='error', msg=? WHERE id=?", String(e.message || e).slice(0, 300), m.id).catch(() => {});
     console.error('[медиа]', job.mediaId, e.message);
   } finally { busy = false; setImmediate(pump); }
@@ -309,9 +335,10 @@ async function removeDirIfEmpty(companyId, propertyId) { const d = path.join(MED
 async function boot(db) {
   setDb(db); await fsp.mkdir(TMP_DIR, { recursive: true }).catch(() => {});
   await db.run("UPDATE tour_media SET status='error', msg='Сервер дахин эхэлсэн — дахин оруулна уу' WHERE status='processing' AND file IS NULL").catch(() => {});
-  await db.run("UPDATE tour_media SET status='ready', msg='Гараар бүдгэрүүлэлт тасалдсан — дахин хадгална уу' WHERE status='processing' AND file IS NOT NULL").catch(() => {}); // reblur тасарсан: хуучин файл хэвээр
+  await db.run("UPDATE tour_media SET status='ready', msg='' WHERE status='processing' AND file IS NOT NULL").catch(() => {}); // reblur/rebrand тасарсан: хуучин файл хэвээр
+  if (process.env.ZUUCH_REBRAND_AUTO !== '0') setTimeout(() => rebrandAll(db).catch((e) => console.error('[медиа] rebrand', e.message)), 60e3).unref();
   anon.prepare(); // бүдгэрүүлэх загваруудыг урьдчилан татна
   sweep(); setInterval(sweep, 3600e3).unref();
 }
 
-module.exports = { _t: { processVideo, processPano, reblur }, MEDIA_DIR, CHUNK, LIMITS, KINDS, anon, outDims, outFps, removeDirIfEmpty, canAccept, initUpload, getSession, writeChunk, finishUpload, abortUpload, enqueue, filePath, removeFiles, boot, tools, diskInfo, dirSize, plyToSplat, splatBounds, spzBounds, probe, queueLength: () => queue.length + (busy ? 1 : 0) };
+module.exports = { rebrandAll, _t: { processVideo, processPano, reblur, rebrand }, MEDIA_DIR, CHUNK, LIMITS, KINDS, anon, outDims, outFps, removeDirIfEmpty, canAccept, initUpload, getSession, writeChunk, finishUpload, abortUpload, enqueue, filePath, removeFiles, boot, tools, diskInfo, dirSize, plyToSplat, splatBounds, spzBounds, probe, queueLength: () => queue.length + (busy ? 1 : 0) };
