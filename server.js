@@ -550,9 +550,9 @@ app.post('/api/studio/:pid/declutter', paid('pid'), wrap(async (req, res) => {
   if (!rows.length) return res.status(400).json({ error: 'Зураг сонгогдоогүй' });
   const job = { status: 'running', done: 0, total: rows.length, mode: 'declutter', msg: '', ok: 0 }; fixJobs.set(key, job); res.json(job);
   for (const a of rows) {
-    let charged = false;
+    let charged = false, sp = null;
     try {
-      await credits.spend(db, { cid: req.user.company_id, uid: req.user.id, n: 1, note: `Виртуал цэгцлэлт · зураг #${a.id}`, ref: `dec:${a.id}:${Date.now()}` }); charged = true;
+      sp = await credits.spend(db, { cid: req.user.company_id, uid: req.user.id, n: 1, note: `Виртуал цэгцлэлт · зураг #${a.id}`, ref: `dec:${a.id}:${Date.now()}`, allowReserve: req.user.role === 'zahiral' || !!req.user.is_owner }); charged = true;
       const src = a.enh_file ? path.join(path.dirname(assetPath(a)), a.enh_file) : assetPath(a);
       const pr = await media.probe(src).catch(() => null);
       const out = a.filename.replace(/\.[a-z0-9]+$/i, '') + '-dec-' + Date.now().toString(36) + '.jpg';
@@ -560,7 +560,7 @@ app.post('/api/studio/:pid/declutter', paid('pid'), wrap(async (req, res) => {
       if (a.dec_file) await fs.promises.unlink(path.join(path.dirname(assetPath(a)), a.dec_file)).catch(() => {});
       await db.run('UPDATE listing_assets SET dec_file=?, dec_note=? WHERE id=?', out, r.note, a.id); job.ok++;
     } catch (e) {
-      if (charged) await db.tx((t) => credits.add(t, { cid: req.user.company_id, uid: req.user.id, delta: 1, kind: 'refund', note: `Цэгцлэлт амжилтгүй · зураг #${a.id}` })).catch(() => {});
+      if (charged) await db.tx((t) => credits.add(t, { cid: req.user.company_id, uid: sp && sp.fromReserve ? null : req.user.id, delta: 1, kind: 'refund', note: `Цэгцлэлт амжилтгүй · зураг #${a.id}` })).catch(() => {}); // хассан газарт нь буцаана
       console.error(`[цэгцлэлт] компани ${req.user.company_id}, зураг #${a.id}:`, e.message); // техникийн дэлгэрэнгүй зөвхөн логт
       job.msg = e.status === 402 ? e.message : `AI үйлчилгээ түр ажиллахгүй байна — ${job.ok ? 'зарим зураг' : 'зураг'} цэгцлэгдсэнгүй, кредит буцаагдлаа. Дараа дахин оролдоно уу.`;
       if (req.user.is_owner) job.detail = String(e.message).slice(0, 300); // платформын эзэнд л дэлгэрэнгүй

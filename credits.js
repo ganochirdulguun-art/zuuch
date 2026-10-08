@@ -36,14 +36,16 @@ async function transfer(db, { cid, uid, n, note, by, kind = 'transfer' }) {
   });
 }
 // Кредит зарцуулах (виртуал цэгцлэлт г.м.): эхлээд агентынх, тохиргоогоор нөөцөөс нөхнө
-async function spend(db, { cid, uid, n, note, ref }) {
+// allowReserve: захирал/эзэн өөрийн кредит дуусвал компанийн нөөцөөс шууд (тохиргооноос үл хамааран)
+async function spend(db, { cid, uid, n, note, ref, allowReserve = false }) {
   n = Math.trunc(Number(n)); if (!(n > 0)) return { ok: true, used: 0 };
   return db.tx(async (t) => {
     const s = await settings(t, cid);
     const own = (await t.one('SELECT COALESCE(SUM(delta),0)::int AS bal FROM credit_ledger WHERE company_id=? AND user_id=?', cid, uid)).bal;
     const res = (await t.one('SELECT COALESCE(SUM(delta),0)::int AS bal FROM credit_ledger WHERE company_id=? AND user_id IS NULL', cid)).bal;
     const fromOwn = Math.min(own, n), fromRes = n - fromOwn;
-    if (fromRes > 0 && (!s.fallback || res < fromRes)) throw Object.assign(new Error(`Кредит хүрэлцэхгүй: танд ${own}${s.fallback ? `, нөөцөд ${res}` : ''}, хэрэгтэй ${n}. Захиралаас хүсэх эсвэл нэмэлт кредит авна уу.`), { status: 402 });
+    const canRes = s.fallback || allowReserve;
+    if (fromRes > 0 && (!canRes || res < fromRes)) throw Object.assign(new Error(allowReserve ? `Кредит хүрэлцэхгүй: танд ${own}, компанийн нөөцөд ${res}, хэрэгтэй ${n}. «Багц ба кредит» эсвэл эзний самбараас кредит нэмнэ үү.` : `Кредит хүрэлцэхгүй: танд ${own}${s.fallback ? `, нөөцөд ${res}` : ''}, хэрэгтэй ${n}. Захиралаас хүсэх эсвэл нэмэлт кредит авна уу.`), { status: 402 });
     if (fromOwn) await add(t, { cid, uid, delta: -fromOwn, kind: 'spend', note, ref });
     if (fromRes) await add(t, { cid, uid: null, delta: -fromRes, kind: 'spend', note: (note || '') + ' (нөөцөөс)', ref, by: uid });
     return { ok: true, used: n, fromOwn, fromReserve: fromRes };
