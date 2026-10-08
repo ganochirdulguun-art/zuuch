@@ -1284,7 +1284,7 @@ function studioFixInit(d) {
 async function studioFixPoll(pid) {
   const j = await api('/studio/' + pid + '/enhance').catch(() => null); const el = $('#st-fix-st'); if (!el) return;
   if (j && j.status === 'running') { el.innerHTML = ic('loader-circle', 'spin') + ` Засаж байна… ${j.done}/${j.total}`; setTimeout(() => studioFixPoll(pid), 1500); return; }
-  if (j && j.status === 'done') { const d = await api('/studio/' + pid); renderStudio(d); const e2 = $('#st-fix-st'); if (e2) e2.textContent = j.mode === 'declutter' ? `✓ ${j.ok || 0}/${j.total} зураг цэгцлэгдлээ${j.msg ? ' · ' + j.msg : ''}` : `✓ ${j.total} зураг засагдлаа${j.msg ? ' · ' + j.msg : ''}`; }
+  if (j && j.status === 'done') { const d = await api('/studio/' + pid); renderStudio(d); const e2 = $('#st-fix-st'); if (e2) e2.textContent = j.mode === 'declutter' ? `✓ ${j.ok || 0}/${j.total} зураг цэгцлэгдлээ${j.msg ? ' · ' + j.msg : ''}${j.detail ? ' [эзэнд: ' + j.detail + ']' : ''}` : `✓ ${j.total} зураг засагдлаа${j.msg ? ' · ' + j.msg : ''}`; }
 }
 window.studioFix = async function (pid, ids) {
   const mode = ($('#st-fix') || {}).value || 'natural';

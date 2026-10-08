@@ -539,11 +539,11 @@ app.post('/api/studio/:pid/enhance', wrap(async (req, res) => {
   }
   job.status = 'done';
 }));
-app.get('/api/studio/:pid/enhance', wrap(async (req, res) => res.json(fixJobs.get(`${req.user.company_id}:${Number(req.params.pid)}`) || null)));
+app.get('/api/studio/:pid/enhance', wrap(async (req, res) => { const j = fixJobs.get(`${req.user.company_id}:${Number(req.params.pid)}`) || null; res.json(j && j.detail && !req.user.is_owner ? { ...j, detail: undefined } : j); }));
 // Виртуал цэгцлэлт: зураг бүрт 1 кредит (агентынхаас, тохиргоогоор нөөцөөс), амжилтгүй бол буцаана. Засвартай бол засварласан хувилбар дээр хийнэ.
 app.post('/api/studio/:pid/declutter', paid('pid'), wrap(async (req, res) => {
   const prop = await ownProperty(req); if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
-  if (!declutter.enabled()) return res.status(503).json({ error: 'Виртуал цэгцлэлт идэвхжээгүй байна (GEMINI_API_KEY тохируулаагүй). Платформын эзэнд хандана уу.' });
+  if (!declutter.enabled()) return res.status(503).json({ error: 'Виртуал цэгцлэлт одоогоор боломжгүй байна. Платформын эзэнд хандана уу.' });
   const only = Array.isArray((req.body || {}).ids) ? req.body.ids.map(Number) : null;
   const key = `${req.user.company_id}:${prop.id}`; const cur = fixJobs.get(key); if (cur && cur.status === 'running') return res.json(cur);
   const rows = (await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id)).filter((a) => !only || only.includes(a.id));
@@ -561,7 +561,9 @@ app.post('/api/studio/:pid/declutter', paid('pid'), wrap(async (req, res) => {
       await db.run('UPDATE listing_assets SET dec_file=?, dec_note=? WHERE id=?', out, r.note, a.id); job.ok++;
     } catch (e) {
       if (charged) await db.tx((t) => credits.add(t, { cid: req.user.company_id, uid: req.user.id, delta: 1, kind: 'refund', note: `Цэгцлэлт амжилтгүй · зураг #${a.id}` })).catch(() => {});
-      job.msg = e.status === 402 ? e.message : 'Зарим зураг цэгцлэгдсэнгүй: ' + String(e.message).slice(0, 160);
+      console.error(`[цэгцлэлт] компани ${req.user.company_id}, зураг #${a.id}:`, e.message); // техникийн дэлгэрэнгүй зөвхөн логт
+      job.msg = e.status === 402 ? e.message : `AI үйлчилгээ түр ажиллахгүй байна — ${job.ok ? 'зарим зураг' : 'зураг'} цэгцлэгдсэнгүй, кредит буцаагдлаа. Дараа дахин оролдоно уу.`;
+      if (req.user.is_owner) job.detail = String(e.message).slice(0, 300); // платформын эзэнд л дэлгэрэнгүй
       if (e.status === 402 || e.status === 503) { job.done = job.total; break; }
     }
     job.done++;

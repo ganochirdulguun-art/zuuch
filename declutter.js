@@ -6,6 +6,9 @@ const fsp = require('fs').promises;
 const { spawn } = require('child_process');
 
 const MODEL = process.env.ZUUCH_GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
+// Ил тод шошго (заавал): «Смарт Зууч · виртуал цэгцлэлт» зүүн доод буланд — tools/brand/declutter_label.py
+const LABEL = require('path').join(__dirname, 'public', 'brand', 'declutter-label.png');
+const labelArgs = (W) => { const lw = Math.round(Math.max(260, W * 0.3) / 2) * 2, m = Math.round(W * 0.018); return ['-i', LABEL, '-filter_complex', `[0:v]scale=${Math.round(W / 2) * 2}:-2:flags=lanczos[b];[1:v]scale=${lw}:-1:flags=lanczos[l];[b][l]overlay=${m}:H-h-${m}`]; };
 const key = () => process.env.GEMINI_API_KEY || '';
 const enabled = () => !!key() || process.env.ZUUCH_GEMINI_MOCK === '1';
 
@@ -31,7 +34,7 @@ async function call(body, fetchImpl) {
 
 // src: JPEG/PNG/WEBP → out (JPEG). w, h: эх зургийн хэмжээ (гаралтыг эх өргөнд нь буцааж масштаблана)
 async function run(src, out, { w, h, fetchImpl = fetch } = {}) {
-  if (process.env.ZUUCH_GEMINI_MOCK === '1') { await ff(['-i', src, '-vf', 'eq=brightness=0.03', '-q:v', '2', out]); return { note: 'туршилтын горим (Gemini дуудаагүй)', model: 'mock' }; }
+  if (process.env.ZUUCH_GEMINI_MOCK === '1') { await ff(['-i', src, ...labelArgs(Math.min(2560, w || 2048)), '-q:v', '2', out]); return { note: 'туршилтын горим (AI дуудаагүй)', model: 'mock' }; }
   if (!key()) throw Object.assign(new Error('Виртуал цэгцлэлт идэвхжээгүй: GEMINI_API_KEY тохируулаагүй'), { status: 503 });
   // Gemini-д ≤2048 JPEG илгээнэ (хурд, хэмжээ)
   const tmpIn = out + '.in.jpg'; await ff(['-i', src, '-vf', "scale='min(2048,iw)':-2", '-q:v', '3', tmpIn]);
@@ -46,7 +49,7 @@ async function run(src, out, { w, h, fetchImpl = fetch } = {}) {
   if (!img) { const txt = ((cand.content && cand.content.parts) || []).map((p) => p.text || '').join(' ').slice(0, 160); throw new Error(`Gemini зураг буцаасангүй (${cand.finishReason || (r.j.promptFeedback && r.j.promptFeedback.blockReason) || 'шалтгаангүй'})${txt ? ': ' + txt : ''}`); }
   const d = img.inlineData || img.inline_data; const raw = out + '.raw'; await fsp.writeFile(raw, Buffer.from(d.data, 'base64'));
   // Эх зургийн өргөнд (≤2560) буцааж масштаблаад JPEG болгоно
-  const W = Math.min(2560, w || 2048); await ff(['-i', raw, '-vf', `scale=${Math.round(W / 2) * 2}:-2:flags=lanczos`, '-q:v', '2', out]); await fsp.unlink(raw).catch(() => {});
+  const W = Math.min(2560, w || 2048); await ff(['-i', raw, ...labelArgs(W), '-q:v', '2', out]); await fsp.unlink(raw).catch(() => {}); // эх өргөнд масштаблаж, шошго шигтгэнэ
   return { note: 'хог, тоглоом, барилгын үлдэгдэл, хүн арилгав (AI)', model: MODEL };
 }
 
