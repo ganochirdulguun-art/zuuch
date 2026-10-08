@@ -1228,7 +1228,8 @@ function renderStudio(d) { renderStudio0(d); studioFixInit(d); }
 function renderStudio0(d) {
   const p = d.property, dr = d.draft || {};
   const texts = dr.texts || {}, adv = dr.advantages || [], price = dr.price || null, plan = dr.plan || [], notes = dr.photo_notes || [];
-  const img = (a) => `/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}`;
+  const img = (a) => `/api/studio/asset/${a.id}?token=${encodeURIComponent(TOKEN)}&c=${encodeURIComponent(a.dec_file || a.enh_file || '0')}`;
+  window._stAssets = d.assets;
   $('#main').innerHTML = `
   <div class="page-head"><h2><svg class=ic><use href=#i-sparkles></use></svg>Студи · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м² · ${fmt(p.price)} сая ₮</h2>
     <div style="display:flex;gap:8px"><button onclick="properties()">← Объектууд</button></div></div>
@@ -1245,18 +1246,20 @@ function renderStudio0(d) {
         <option value="natural">Бодит — өнцөг, босоо шугам, гэрэл, өнгө</option>
         <option value="vivid">Тод — бодит + илүү гэрэлтэй, ханасан</option>
         <option value="none">Засахгүй — эх зургаар</option>
-        <option value="declutter" disabled>Виртуал цэгцлэлт — удахгүй (төлбөртэй)</option>
+        <option value="declutter" ${d.declutter ? '' : 'disabled'}>Виртуал цэгцлэлт — хог, тоглоом, барилгын үлдэгдэл, хүн арилгана (AI · 1 кредит/зураг)${d.declutter ? '' : ' — идэвхжээгүй'}</option>
       </select>
       <button class="small" onclick="studioFix(${p.id})" ${d.assets.length ? '' : 'disabled'}>Бүх зургийг засах</button>
       <span style="font-size:12px;color:var(--muted)">Шинээр оруулсан зураг сонгосон горимоор автоматаар засагдана. Эх зураг үргэлж хадгалагдана.</span>
       <span id="st-fix-st" style="font-size:12.5px"></span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:14px">
       ${d.assets.map((a) => `<div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)">
-        <div style="position:relative"><img src="${img(a)}" style="width:100%;height:110px;object-fit:cover;display:block" loading="lazy">
+        <div style="position:relative;cursor:zoom-in" onclick="studioView2(${a.id})" title="Томруулж харьцуулах"><img src="${img(a)}" style="width:100%;height:110px;object-fit:cover;display:block" loading="lazy">
+          ${a.dec_file ? '<span class="badge ok" style="position:absolute;bottom:6px;left:6px">Цэгцэлсэн</span>' : ''}
           ${a.rank ? `<span class="badge ${a.rank === 1 ? 'ok' : 'mut'}" style="position:absolute;top:6px;left:6px">${a.rank === 1 ? '★ 1' : '#' + a.rank}</span>` : ''}</div>
         <div style="padding:6px 8px;font-size:12px">
           <div><b>${esc(a.room || '—')}</b> ${a.quality != null ? `· чанар ${a.quality} · wow ${a.wow}` : ''}</div>
           ${a.enh_mode ? `<div style="color:var(--muted)" title="${esc(a.enh_note || '')}">✓ ${a.enh_mode === 'vivid' ? 'Тод' : 'Бодит'} засвар · <a href="/api/studio/asset/${a.id}?v=orig&token=${encodeURIComponent(TOKEN)}" target="_blank" rel="noopener">эх</a><br><span style="font-size:11px">${esc(a.enh_note || '')}</span></div>` : ''}
+          ${a.dec_file ? `<div style="color:var(--muted)">✓ Виртуал цэгцлэлт · <a href="#" onclick="studioUndec(${a.id},${p.id});return false">болиулах</a></div>` : ''}
           ${a.issues ? `<div style="color:var(--accent-2)">${esc(a.issues)}</div>` : ''}
           <button class="small" style="margin-top:4px" onclick="studioDel(${a.id},${p.id})">Устгах</button></div></div>`).join('') || '<span style="color:var(--muted)">Зураг байхгүй — утсаараа авсан зургуудаа оруулна уу</span>'}
     </div></div>
@@ -1281,13 +1284,52 @@ function studioFixInit(d) {
 async function studioFixPoll(pid) {
   const j = await api('/studio/' + pid + '/enhance').catch(() => null); const el = $('#st-fix-st'); if (!el) return;
   if (j && j.status === 'running') { el.innerHTML = ic('loader-circle', 'spin') + ` Засаж байна… ${j.done}/${j.total}`; setTimeout(() => studioFixPoll(pid), 1500); return; }
-  if (j && j.status === 'done') { const d = await api('/studio/' + pid); renderStudio(d); const e2 = $('#st-fix-st'); if (e2) e2.textContent = `✓ ${j.total} зураг засагдлаа${j.msg ? ' · ' + j.msg : ''}`; }
+  if (j && j.status === 'done') { const d = await api('/studio/' + pid); renderStudio(d); const e2 = $('#st-fix-st'); if (e2) e2.textContent = j.mode === 'declutter' ? `✓ ${j.ok || 0}/${j.total} зураг цэгцлэгдлээ${j.msg ? ' · ' + j.msg : ''}` : `✓ ${j.total} зураг засагдлаа${j.msg ? ' · ' + j.msg : ''}`; }
 }
 window.studioFix = async function (pid, ids) {
   const mode = ($('#st-fix') || {}).value || 'natural';
+  if (mode === 'declutter') {
+    const n = ids ? ids.length : (window._stAssets || []).length;
+    if (!confirm(`${n} зургийг виртуал цэгцлэх үү? Нэг зураг = 1 кредит (нийт ${n}). Амжилтгүй болсон зурагт кредит буцна.\n\nАнхаар: AI өөрчилсөн зургийг зарлахдаа «виртуал цэгцлэлт хийсэн» гэж тэмдэглэхийг зөвлөж байна.`)) return;
+    const r = await api('/studio/' + pid + '/declutter', { method: 'POST', body: { ids } }); if (r.error) return alert(r.error);
+    return studioFixPoll(pid);
+  }
   const r = await api('/studio/' + pid + '/enhance', { method: 'POST', body: { mode, ids } }); if (r.error) return alert(r.error);
   studioFixPoll(pid);
 };
+// Томруулж харьцуулах: Эх / Засвар / Цэгцлэлт + «Өмнө ↔ Дараа» гулсуур
+window.studioView2 = function (id) {
+  const a = (window._stAssets || []).find((x) => x.id === id); if (!a) return;
+  const u = (v) => `/api/studio/asset/${a.id}?v=${v}&token=${encodeURIComponent(TOKEN)}&c=${encodeURIComponent(a.dec_file || a.enh_file || '0')}`;
+  const vers = [['orig', 'Эх зураг']]; if (a.enh_file) vers.push(['enh', a.enh_mode === 'vivid' ? 'Тод засвар' : 'Бодит засвар']); if (a.dec_file) vers.push(['dec', 'Виртуал цэгцлэлт']);
+  const after = vers[vers.length - 1][0];
+  modal(`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><b style="margin-right:6px">${esc(a.room || 'Зураг')}</b>
+      ${vers.map(([v, t]) => `<button class="small" data-sv="${v}" onclick="svShow('${v}')">${t}</button>`).join('')}
+      ${vers.length > 1 ? `<button class="small primary" data-sv="cmp" onclick="svShow('cmp')">Өмнө ↔ Дараа</button>` : ''}
+      <span style="flex:1"></span><a class="small" href="${u(after)}" target="_blank" rel="noopener" style="font-size:12.5px">Бүтэн хэмжээгээр ↗</a><button class="small" onclick="closeModal()">Хаах</button></div>
+    <div id="sv-box" style="position:relative;user-select:none;background:#0b1220;border-radius:6px;overflow:hidden;line-height:0">
+      <img id="sv-a" src="${u(after)}" style="width:100%;max-height:72vh;object-fit:contain;display:block">
+      <img id="sv-b" src="${u('orig')}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none">
+      <div id="sv-line" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 6px rgba(0,0,0,.6);display:none;pointer-events:none"></div>
+      <span id="sv-lb" style="position:absolute;top:8px;left:8px;line-height:1.4;font-size:12px;background:rgba(0,0,0,.55);color:#fff;padding:2px 8px;border-radius:4px;display:none">Өмнө (эх)</span>
+      <span id="sv-la" style="position:absolute;top:8px;right:8px;line-height:1.4;font-size:12px;background:rgba(0,0,0,.55);color:#fff;padding:2px 8px;border-radius:4px;display:none">Дараа</span></div>
+    <input id="sv-r" type="range" min="0" max="100" value="50" style="width:100%;margin-top:8px;display:none" oninput="svPos(this.value)">
+    ${a.dec_note || a.enh_note ? `<div style="font-size:12px;color:var(--muted);margin-top:6px">${esc([a.enh_note, a.dec_note].filter(Boolean).join(' · '))}</div>` : ''}`);
+  const m = document.querySelector('.modal'); if (m) { m.style.width = '1100px'; m.style.maxWidth = '96vw'; }
+  window._sv = { u, after };
+  svShow(vers.length > 1 ? 'cmp' : 'orig');
+  const box = $('#sv-box'); let drag = false; const at = (e) => { const r = box.getBoundingClientRect(); const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; svPos(Math.max(0, Math.min(100, x))); $('#sv-r').value = x; };
+  box.addEventListener('mousedown', (e) => { if (window._sv.mode === 'cmp') { drag = true; at(e); } }); window.addEventListener('mouseup', () => { drag = false; }); box.addEventListener('mousemove', (e) => { if (drag) at(e); });
+  box.addEventListener('touchmove', (e) => { if (window._sv.mode === 'cmp') at(e); }, { passive: true });
+};
+window.svShow = function (v) {
+  const S = window._sv; S.mode = v; document.querySelectorAll('[data-sv]').forEach((b) => b.classList.toggle('primary', b.dataset.sv === v));
+  const cmp = v === 'cmp'; $('#sv-a').src = S.u(cmp ? S.after : v); $('#sv-b').style.display = cmp ? '' : 'none';
+  for (const id of ['#sv-line', '#sv-lb', '#sv-la', '#sv-r']) $(id).style.display = cmp ? '' : 'none';
+  if (cmp) svPos($('#sv-r').value);
+};
+window.svPos = function (x) { $('#sv-b').style.clipPath = `inset(0 ${100 - x}% 0 0)`; $('#sv-line').style.left = `calc(${x}% - 1px)`; };
+window.studioUndec = async function (id, pid) { if (!confirm('Виртуал цэгцлэлтийг болиулж, засварласан/эх зураг руу буцах уу? (Кредит буцахгүй)')) return; await api('/studio/asset/' + id + '/declutter', { method: 'DELETE' }); studioView(pid); };
 window.studioTab = function (btn) {
   document.querySelectorAll('[data-t]').forEach((b) => b.classList.remove('primary')); btn.classList.add('primary');
   const t = JSON.parse(document.getElementById('st-texts').textContent || '{}');
@@ -1302,7 +1344,8 @@ window.studioUpload = async function (pid) {
   if (r.error) { alert(r.error); return; }
   const mode = ($('#st-fix') || {}).value || 'natural';
   await studioView(pid);
-  if (mode !== 'none' && r.ids && r.ids.length) { const sel = $('#st-fix'); if (sel) sel.value = mode; studioFix(pid, r.ids); }
+  if (mode === 'declutter' && r.ids && r.ids.length) { await api('/studio/' + pid + '/enhance', { method: 'POST', body: { mode: 'natural', ids: r.ids } }); studioFixPoll(pid); const e = $('#st-fix-st'); if (e) e.textContent = 'Бодит засвар хийгдэж байна. Цэгцлэлтийг «Бүх зургийг засах» эсвэл зураг дээр дарж хийнэ (кредит).'; }
+  else if (mode !== 'none' && r.ids && r.ids.length) { const sel = $('#st-fix'); if (sel) sel.value = mode; studioFix(pid, r.ids); }
 };
 window.studioDel = async function (id, pid) { await api('/studio/asset/' + id, { method: 'DELETE' }); studioView(pid); };
 window.studioAnalyze = async function (pid) {

@@ -398,6 +398,8 @@ ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS room_id TEXT;
 ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_file TEXT;
 ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_mode TEXT;
 ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS enh_note TEXT;
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS dec_file TEXT; -- виртуал цэгцлэлт (declutter.js)
+ALTER TABLE listing_assets ADD COLUMN IF NOT EXISTS dec_note TEXT;
 -- Ш3д: Virtual Tour (POV) (объект бүрд нэг план + нийтийн хуваалцах token)
 CREATE TABLE IF NOT EXISTS tours (
   id SERIAL PRIMARY KEY,

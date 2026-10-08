@@ -40,7 +40,7 @@ async function analyzePhotos(assets) {
 - room: ${ROOM_ORDER.join(' | ')} гэсэн ангиллаас нэгийг
 - quality: 0–100 (гэрэл, хэвтээ тэнхлэг, тод байдал, эмх цэгц)
 - wow: 0–100 (худалдан авагчийн анхаарлыг татах чадвар, эхний зураг болох чадвар)
-- issues: Монголоор богино асуудлууд (ж: "бүдэг", "ташуу", "эмх цэгцгүй", "хүн харагдсан", "бичиг баримт харагдсан"), байхгүй бол []
+- issues: ЗӨВХӨН монгол кирилл үсгээр (хятад, англи үг холихгүй) богино асуудлууд (ж: "бүдэг", "ташуу", "эмх цэгцгүй", "хүн харагдсан", "бичиг баримт харагдсан"), байхгүй бол []
 ЗӨВХӨН JSON массив буцаа: [{"i":1,"room":"...","quality":80,"wow":70,"issues":[]}, ...]` });
   const res = await ai.messages.create({ model: MODEL, max_tokens: 6000, messages: [{ role: 'user', content }] });
   checkStop(res, 'зургийн шинжилгээ');
@@ -49,9 +49,11 @@ async function analyzePhotos(assets) {
   const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.photos) ? parsed.photos : []);
   return assets.map((a, i) => {
     const r = arr.find(x => Number(x.i) === i + 1) || {};
-    return { id: a.id, room: ROOM_ORDER.includes(r.room) ? r.room : 'бусад', quality: clamp(r.quality, 60), wow: clamp(r.wow, 50), issues: Array.isArray(r.issues) ? r.issues.slice(0, 4) : [] };
+    return { id: a.id, room: ROOM_ORDER.includes(r.room) ? r.room : 'бусад', quality: clamp(r.quality, 60), wow: clamp(r.wow, 50), issues: Array.isArray(r.issues) ? r.issues.slice(0, 4).map(noCJK).filter(Boolean) : [] };
   });
 }
+// Загвар заримдаа монгол бичвэрт хятад тэмдэгт холино (ж: «барилгын材料») — CJK тэмдэгтийг хасна
+const noCJK = (s) => String(s ?? '').replace(/[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]+/g, '').replace(/\s{2,}/g, ' ').trim();
 const clamp = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : d; };
 
 // ---- 2. Эрэмбэ: эхний зураг = хамгийн wow; дараа нь худалдан авагчийн аяллын дарааллаар ----
@@ -163,6 +165,7 @@ async function run({ property, assets, loc, val }) {
   const notes = photoNotes(ranked);
   const advantages = advantagesFrom(property, loc);
   const texts = await writeTexts(property, loc, val, ranked, advantages);
+  for (const k of Object.keys(texts)) if (typeof texts[k] === 'string' && k !== 'model') texts[k] = texts[k].replace(/[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]+/g, '');
   return { ranked, photo_notes: notes, advantages, texts, price: priceStrategy(val, property), plan: plan30(property), model: texts.model };
 }
 

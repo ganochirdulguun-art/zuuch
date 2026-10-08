@@ -478,14 +478,15 @@ const upload = multer({
 });
 async function ownProperty(req) { return db.one('SELECT * FROM properties WHERE id=? AND company_id=?', req.params.pid, req.user.company_id); }
 const assetPath = (a) => path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id), a.filename);
-const assetUse = (a) => (a.enh_file ? path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id), a.enh_file) : assetPath(a)); // засвартай бол засварласныг (AI шинжилгээ, харагдац)
+const assetUse = (a) => (a.dec_file || a.enh_file ? path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id), a.dec_file || a.enh_file) : assetPath(a)); // цэгцлэлт > засвар > эх (AI шинжилгээ, харагдац)
+const declutter = require('./declutter'); // виртуал цэгцлэлт (Gemini), 1 кредит/зураг
 
 app.get('/api/studio/:pid', wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
-  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, enh_mode, enh_note, created_at FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
+  const assets = await db.all('SELECT id, filename, mime, size, room, quality, wow, issues, rank, enh_mode, enh_note, enh_file, dec_file, dec_note, created_at FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,\'photo\')=\'photo\' ORDER BY CASE WHEN rank>0 THEN rank ELSE 9999 END, id', req.user.company_id, prop.id);
   const draft = await db.one('SELECT * FROM listing_drafts WHERE company_id=? AND property_id=? ORDER BY id DESC LIMIT 1', req.user.company_id, prop.id);
-  res.json({ property: prop, assets, draft, ai: !!process.env.ANTHROPIC_API_KEY, enhance: fixJobs.get(`${req.user.company_id}:${prop.id}`) || null });
+  res.json({ property: prop, assets, draft, ai: !!process.env.ANTHROPIC_API_KEY, declutter: declutter.enabled(), enhance: fixJobs.get(`${req.user.company_id}:${prop.id}`) || null });
 }));
 app.post('/api/studio/:pid/photos', wrap(async (req, res, next) => {
   const prop = await ownProperty(req);
@@ -506,14 +507,18 @@ app.get('/api/studio/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!a) return res.status(404).end();
   res.setHeader('Cache-Control', 'private, max-age=3600');
-  if (a.enh_file && req.query.v !== 'orig') return res.type('image/jpeg').sendFile(assetUse(a));
+  const dir = path.join(UPLOAD_DIR, String(a.company_id), String(a.property_id)); const v = req.query.v; // v: orig | enh | dec | (хоосон = хамгийн сүүлийн хувилбар)
+  if (v === 'orig') return res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
+  if (v === 'enh' && a.enh_file) return res.type('image/jpeg').sendFile(path.join(dir, a.enh_file));
+  if (v === 'dec' && a.dec_file) return res.type('image/jpeg').sendFile(path.join(dir, a.dec_file));
+  if (a.dec_file || a.enh_file) return res.type('image/jpeg').sendFile(assetUse(a));
   res.type(a.mime || 'image/jpeg').sendFile(assetPath(a));
 }));
 app.delete('/api/studio/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!a) return res.status(404).json({ error: 'Олдсонгүй' });
   await db.run('DELETE FROM listing_assets WHERE id=?', a.id);
-  fs.promises.unlink(assetPath(a)).catch(() => {}); if (a.enh_file) fs.promises.unlink(assetUse(a)).catch(() => {});
+  fs.promises.unlink(assetPath(a)).catch(() => {}); for (const f of [a.enh_file, a.dec_file]) if (f) fs.promises.unlink(path.join(path.dirname(assetPath(a)), f)).catch(() => {});
   res.json({ ok: true });
 }));
 // Зургийн автомат засвар (AI-гүй, үнэгүй): mode = 'natural' (бодит) | 'vivid' (тод) | 'none' (засваргүй — эх рүү буцаана). Арын горимд, явцыг асууна.
@@ -535,11 +540,44 @@ app.post('/api/studio/:pid/enhance', wrap(async (req, res) => {
   job.status = 'done';
 }));
 app.get('/api/studio/:pid/enhance', wrap(async (req, res) => res.json(fixJobs.get(`${req.user.company_id}:${Number(req.params.pid)}`) || null)));
+// Виртуал цэгцлэлт: зураг бүрт 1 кредит (агентынхаас, тохиргоогоор нөөцөөс), амжилтгүй бол буцаана. Засвартай бол засварласан хувилбар дээр хийнэ.
+app.post('/api/studio/:pid/declutter', paid('pid'), wrap(async (req, res) => {
+  const prop = await ownProperty(req); if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
+  if (!declutter.enabled()) return res.status(503).json({ error: 'Виртуал цэгцлэлт идэвхжээгүй байна (GEMINI_API_KEY тохируулаагүй). Платформын эзэнд хандана уу.' });
+  const only = Array.isArray((req.body || {}).ids) ? req.body.ids.map(Number) : null;
+  const key = `${req.user.company_id}:${prop.id}`; const cur = fixJobs.get(key); if (cur && cur.status === 'running') return res.json(cur);
+  const rows = (await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id)).filter((a) => !only || only.includes(a.id));
+  if (!rows.length) return res.status(400).json({ error: 'Зураг сонгогдоогүй' });
+  const job = { status: 'running', done: 0, total: rows.length, mode: 'declutter', msg: '', ok: 0 }; fixJobs.set(key, job); res.json(job);
+  for (const a of rows) {
+    let charged = false;
+    try {
+      await credits.spend(db, { cid: req.user.company_id, uid: req.user.id, n: 1, note: `Виртуал цэгцлэлт · зураг #${a.id}`, ref: `dec:${a.id}:${Date.now()}` }); charged = true;
+      const src = a.enh_file ? path.join(path.dirname(assetPath(a)), a.enh_file) : assetPath(a);
+      const pr = await media.probe(src).catch(() => null);
+      const out = a.filename.replace(/\.[a-z0-9]+$/i, '') + '-dec-' + Date.now().toString(36) + '.jpg';
+      const r = await declutter.run(src, path.join(path.dirname(assetPath(a)), out), { w: pr && pr.w, h: pr && pr.h });
+      if (a.dec_file) await fs.promises.unlink(path.join(path.dirname(assetPath(a)), a.dec_file)).catch(() => {});
+      await db.run('UPDATE listing_assets SET dec_file=?, dec_note=? WHERE id=?', out, r.note, a.id); job.ok++;
+    } catch (e) {
+      if (charged) await db.tx((t) => credits.add(t, { cid: req.user.company_id, uid: req.user.id, delta: 1, kind: 'refund', note: `Цэгцлэлт амжилтгүй · зураг #${a.id}` })).catch(() => {});
+      job.msg = e.status === 402 ? e.message : 'Зарим зураг цэгцлэгдсэнгүй: ' + String(e.message).slice(0, 160);
+      if (e.status === 402 || e.status === 503) { job.done = job.total; break; }
+    }
+    job.done++;
+  }
+  job.status = 'done';
+}));
+app.delete('/api/studio/asset/:id/declutter', wrap(async (req, res) => { // цэгцлэлтийг болиулах (эх/засвар руу буцна)
+  const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=?', req.params.id, req.user.company_id); if (!a) return res.status(404).json({ error: 'Олдсонгүй' });
+  if (a.dec_file) await fs.promises.unlink(path.join(path.dirname(assetPath(a)), a.dec_file)).catch(() => {});
+  await db.run('UPDATE listing_assets SET dec_file=NULL, dec_note=NULL WHERE id=?', a.id); res.json({ ok: true });
+}));
 app.post('/api/studio/:pid/analyze', paid('pid'), wrap(async (req, res) => {
   const prop = await ownProperty(req);
   if (!prop) return res.status(404).json({ error: 'Объект олдсонгүй' });
   const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo')='photo' ORDER BY id", req.user.company_id, prop.id);
-  const assets = rows.map(a => ({ ...a, path: assetUse(a), mime: a.enh_file ? 'image/jpeg' : a.mime })); // засвартай бол засварласан зургийг шинжилнэ
+  const assets = rows.map(a => ({ ...a, path: assetUse(a), mime: a.dec_file || a.enh_file ? 'image/jpeg' : a.mime })); // засвартай бол засварласан зургийг шинжилнэ
   const [loc, val] = await Promise.all([
     db.one('SELECT local_pois FROM tours WHERE company_id=? AND property_id=?', req.user.company_id, prop.id).then((t) => A.locationScore(prop.district, prop.lat, prop.lng, (t && t.local_pois) || [])), // цэгийн түвшний А8 + бодит зай + оршин суугчийн нэмсэн газар
     prop.deal_type === 'sale' ? A.valuation({ district: prop.district, rooms: prop.rooms, area: prop.area, isNew: !!prop.is_new, floor: prop.floor, totalFloors: prop.total_floors }) : null,
@@ -918,7 +956,7 @@ app.get('/tour-public/:token/asset/:id', wrap(async (req, res) => {
   const a = await db.one('SELECT * FROM listing_assets WHERE id=? AND company_id=? AND property_id=?', req.params.id, t.company_id, t.property_id);
   if (!a) return res.status(404).end();
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.type(a.enh_file ? 'image/jpeg' : a.mime || 'image/jpeg').sendFile(assetUse(a)); // засвартай бол засварласан зураг
+  res.type(a.dec_file || a.enh_file ? 'image/jpeg' : a.mime || 'image/jpeg').sendFile(assetUse(a)); // цэгцлэлт/засвартай бол тэр хувилбар
 }));
 
 app.get('/capture', (req, res) => res.sendFile(path.join(__dirname, 'public', 'capture.html'))); // утсаар алхалтын бичлэг (GPS-тэй)
