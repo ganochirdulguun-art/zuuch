@@ -970,4 +970,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3300;
-ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); media.boot(db); retention.schedule(db); credits.schedule(db); });
+ready.then(() => { app.listen(PORT, () => console.log(`«Зууч» сервер ажиллаж байна: http://localhost:${PORT}`)); if (process.env.ZUUCH_BACKUP !== '0') backup.schedule(db); priceIndex.schedule(db); dedupX.schedule(db); media.boot(db); retention.schedule(db); credits.schedule(db); setTimeout(() => declutter.check().catch(() => {}), 5000); });

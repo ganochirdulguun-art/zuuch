@@ -50,4 +50,19 @@ async function run(src, out, { w, h, fetchImpl = fetch } = {}) {
   return { note: 'хог, тоглоом, барилгын үлдэгдэл, хүн арилгав (AI)', model: MODEL };
 }
 
-module.exports = { run, enabled, aspect, MODEL, PROMPT };
+// Сервер асахад түлхүүрийг шалгана (загварын мэдээлэл авах — үнэгүй дуудлага). Түлхүүрийн утгыг хэзээ ч логт бичихгүй.
+let STATUS = { checked: false, ok: null, msg: '' };
+async function check(fetchImpl = fetch) {
+  if (process.env.ZUUCH_GEMINI_MOCK === '1') { STATUS = { checked: true, ok: true, msg: 'mock' }; return STATUS; }
+  if (!key()) { STATUS = { checked: true, ok: false, msg: 'GEMINI_API_KEY алга' }; return STATUS; }
+  try {
+    const r = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}`, { headers: { 'x-goog-api-key': key() }, signal: AbortSignal.timeout(20000) });
+    const j = await r.json().catch(() => ({}));
+    STATUS = r.ok ? { checked: true, ok: true, msg: `${MODEL} бэлэн` } : { checked: true, ok: false, msg: `HTTP ${r.status}: ${((j.error && (j.error.status + ' ' + j.error.message)) || '').slice(0, 200)}` };
+  } catch (e) { STATUS = { checked: true, ok: false, msg: 'холбогдсонгүй: ' + e.message.slice(0, 120) }; }
+  console.log(`[цэгцлэлт] Gemini түлхүүр: ${STATUS.ok ? 'ХҮЧИНТЭЙ' : 'АЛДААТАЙ'} — ${STATUS.msg}`);
+  return STATUS;
+}
+const status = () => STATUS;
+
+module.exports = { run, enabled, check, status, aspect, MODEL, PROMPT };
