@@ -553,7 +553,7 @@ app.post('/api/studio/:pid/analyze', paid('pid'), wrap(async (req, res) => {
 }));
 
 // ---- Хуудсууд ----
-// ---- Ш3д: Virtual POV Tour ----
+// ---- Ш3д: Virtual Tour (POV) ----
 const tourLib = require('./tour');
 const ROOM_TYPE_OF = { 'зочны': 'living', 'гал тогоо': 'kitchen', 'унтлагын': 'bedroom', 'угаалгын': 'bath', 'коридор': 'hall', 'тагт': 'balcony' };
 async function tourProp(req, res) {
@@ -850,7 +850,7 @@ app.post('/api/tour/:pid/analyze', auth, paid('pid'), wrap(async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY тохируулаагүй' });
   // Студийн зураг + бичлэгийн кадрууд (kind='frame', өрөөний шошготой) — өрөө тус бүрийн зөвлөмж гаргана
   const rows = await db.all("SELECT * FROM listing_assets WHERE company_id=? AND property_id=? AND COALESCE(kind,'photo') IN ('photo','frame') ORDER BY (COALESCE(kind,'photo')='frame'), CASE WHEN rank>0 THEN rank ELSE 9999 END, id LIMIT 20", req.user.company_id, prop.id);
-  if (!rows.length) return res.status(400).json({ error: 'Эхлээд Студид зураг эсвэл POV Tour-д бичлэг оруулна уу' });
+  if (!rows.length) return res.status(400).json({ error: 'Эхлээд Студид зураг эсвэл Virtual Tour (POV)-д бичлэг оруулна уу' });
   const Anthropic = require('@anthropic-ai/sdk'); const ai = new Anthropic();
   const content = [];
   for (let i = 0; i < rows.length; i++) {

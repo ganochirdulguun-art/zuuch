@@ -2,7 +2,7 @@
    Аяллыг дэлгэцийн зураг/бичлэгээр хуулбал «Смарт Зууч» брэнд, агентлагийн нэр, огноо, QR дагаж явна —
    өөр газар тавьсан бичлэг манай системийн сурталчилгаа болно. Вэбээр бүрэн хаах боломжгүй тул гол зорилго нь эх сурвалжийг ил гаргах. */
 (function () {
-  var BRAND = 'Смарт Зууч', TECH = 'Virtual POV Tour';
+  var BRAND = 'Смарт Зууч', TECH = 'Virtual Tour (POV)';
   var INTRO = location.origin + '/?ref=tour';
   var company = '';
   var d = new Date(); var DATE = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');

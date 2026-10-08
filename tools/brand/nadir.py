@@ -18,7 +18,7 @@ d.ellipse([22, 22, S - 23, S - 23], outline=(90, 176, 255, 255), width=10)
 logo = Image.open(os.path.join(ROOT, 'public', 'brand', 'icon-512.png')).convert('RGBA').resize((330, 330), Image.LANCZOS)
 disc.alpha_composite(logo, ((S - 330) // 2, 205))
 f1 = ImageFont.truetype(F + 'segoeuib.ttf', 112); f2 = ImageFont.truetype(F + 'segoeui.ttf', 56)
-for txt, fnt, y, col in [('Смарт Зууч', f1, 560, (255, 255, 255, 255)), ('Virtual POV Tour', f2, 705, (174, 205, 245, 255))]:
+for txt, fnt, y, col in [('Смарт Зууч', f1, 560, (255, 255, 255, 255)), ('Virtual Tour (POV)', f2, 705, (174, 205, 245, 255))]:
     w = d.textlength(txt, font=fnt); d.text(((S - w) / 2, y), txt, font=fnt, fill=col)
 disc.save(os.path.join(ROOT, 'public', 'brand', 'nadir-disc.png'), optimize=True)
 

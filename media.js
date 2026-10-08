@@ -138,7 +138,7 @@ function anonChild(job, onMsg, timeoutMs = 6 * 3600e3) {
 }
 async function makePoster(T, out, poster, dur, eq) { await run(T.ffmpeg, ['-y', '-hide_banner', '-ss', String(Math.min(1, dur / 3)), '-i', out, '-frames:v', '1', '-vf', eq ? 'scale=1024:512' : "scale='min(960,iw)':-2", '-q:v', '4', poster], { timeoutMs: 120000 }).catch(() => {}); }
 
-// Энгийн (360 биш) бичлэгт баруун дээд буланд брэнд тэмдэг (QR + «Смарт Зууч · Virtual POV Tour технологи») шигтгэнэ — татаж авсан файлд ч үлдэнэ
+// Энгийн (360 биш) бичлэгт баруун дээд буланд брэнд тэмдэг (QR + «Смарт Зууч · Virtual Tour (POV) технологи») шигтгэнэ — татаж авсан файлд ч үлдэнэ
 const BADGE = path.join(__dirname, 'public', 'brand', 'video-badge.png');
 // 360 (equirect): хөлийн доор (nadir) дугуй лого — доош харахад тэгш дугуй, саваа нуугдана (tools/brand/nadir.py)
 const NADIR = path.join(__dirname, 'public', 'brand', 'nadir-3840.png');

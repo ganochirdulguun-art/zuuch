@@ -1,4 +1,4 @@
-// «Зууч» — Virtual POV Tour үзэгч (three.js): серверийн планаар 3D орчин, бодит CC0 glTF тавилга (Poly Haven), PBR текстур, 360° панорам
+// «Зууч» — Virtual Tour (POV) үзэгч (three.js): серверийн планаар 3D орчин, бодит CC0 glTF тавилга (Poly Haven), PBR текстур, 360° панорам
 import * as THREE from 'three';
 import { GLTFLoader } from '/vendor/GLTFLoader.js';
 import { RoundedBoxGeometry } from '/vendor/RoundedBoxGeometry.js';
@@ -1334,7 +1334,7 @@ async function main() {
   const p = data.property || {};
   $('#title').textContent = `${p.district || ''}${p.khoroolol ? ', ' + p.khoroolol : ''} · ${p.rooms || rooms.length} өрөө · ${p.area || plan.totalArea} м²${p.floor ? ` · ${p.floor}/${p.total_floors || '—'} давхар` : ''}${data.company ? ' · ' + data.company : ''}`;
   window.dispatchEvent(new CustomEvent('tour:data', { detail: { company: data.company || '' } })); // брэнд давхаргад агентлагийн нэр
-  document.title = `POV Tour — ${p.district || 'Зууч'}`;
+  document.title = `Virtual Tour (POV) — ${p.district || 'Зууч'}`;
   // FPS: pixel ratio ≤1.5, статик сүүдэр (зөвхөн тавилга гарч ирэх үед шинэчилнэ), high-performance GPU
   renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); // canvas MSAA — bloom-гүй (түвшин 0) болон гадаах нислэгт renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   // near 0.05: 0.1 үед дэлгэцийн захад хана таслагдаж байсан

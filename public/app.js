@@ -133,7 +133,7 @@ async function properties() {
       <td class="num">${p.rooms}</td><td class="num">${p.area}</td><td class="num">${fmt(p.price)}</td>
       <td><span class="score loc-score" data-d="${esc(p.district)}" data-ll="${p.lat != null && p.lng != null ? p.lat + ',' + p.lng : ''}">…</span></td>
       <td>${badge(p.status)}</td><td>${esc(agentName(p.agent_id))}</td>
-      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="accessView(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})" title="Орчны алхалтын профайл (хотын өгөгдлийн сан)"><svg class="ic solo"><use href=#i-footprints></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap"><button class="small primary" onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button> <button class="small" onclick="tourView(${p.id})"><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual Tour</button> <button class="small" onclick="commuteView(${p.id})" title="Замын/түгжрэлийн профайл"><svg class="ic solo"><use href=#i-route></use></svg></button> <button class="small" onclick="accessView(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})" title="Орчны алхалтын профайл (хотын өгөгдлийн сан)"><svg class="ic solo"><use href=#i-footprints></use></svg></button> <button class="small" onclick='propForm(${JSON.stringify(p)})'>Засах</button></td></tr>`).join('')}</tbody>
   </table></div>`;
   // Байршлын оноог асинхроноор
   const cache = {};
@@ -164,7 +164,7 @@ window.propForm = function (p = {}) {
     <div class="field"><label>Үнэ (сая ₮)</label><input name="price" type="number" step="0.1" value="${p.price || ''}" required></div>
     <div class="field"><label>Төлөв</label><select name="status" onchange="this.nextElementSibling.style.display=this.value==='closed'?'':'none'">
       ${['active', 'contracted', 'closed'].map((s) => `<option value="${s}" ${p.status === s ? 'selected' : ''}>${STATUS_T[s][0]}</option>`).join('')}</select>
-      <small style="color:var(--muted);display:${p.status === 'closed' ? '' : 'none'}">Хаагдсанаас 30 хоногийн дараа POV аяллын бичлэг, 360 зураг, бодит 3D автоматаар устна (дахин идэвхжүүлбэл хугацаа тэглэгдэнэ).</small></div>
+      <small style="color:var(--muted);display:${p.status === 'closed' ? '' : 'none'}">Хаагдсанаас 30 хоногийн дараа Virtual Tour (POV)-ын бичлэг, 360 зураг, бодит 3D автоматаар устна (дахин идэвхжүүлбэл хугацаа тэглэгдэнэ).</small></div>
     <div class="field"><label>Хариуцах агент</label><select name="agent_id">${AGENT_OPTS(p.agent_id)}</select></div>
     <div class="field"><label>Эзэмшигчийн нэр</label><input name="owner_name" value="${esc(p.owner_name || '')}"></div>
     <div class="field"><label>Эзэмшигчийн утас</label><input name="owner_phone" value="${esc(p.owner_phone || '')}"></div>
@@ -621,7 +621,7 @@ async function market() {
     </table></div></div>`;
 }
 
-// ---------- Ш3д: Virtual POV Tour — план засварлагч ----------
+// ---------- Ш3д: Virtual Tour (POV) — план засварлагч ----------
 let TOUR = null; // { pid, plan, types, token, sel, drag }
 function toast(msg) {
   let el = $('#toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:opacity .3s'; document.body.appendChild(el); }
@@ -637,12 +637,12 @@ window.tourView = async function (pid, mode) {
   renderTour();
 };
 window.tourMode = (m) => { TOUR.mode = m; TOUR.tool = null; renderTour(); };
-// POV Tour цэс — объект бүрд 3 арга
+// Virtual Tour (POV) цэс — объект бүрд 3 арга
 async function tours() {
   const d = await api('/properties');
   const rows = (d.items || d || []).filter((p) => p.status !== 'archived');
   $('#main').innerHTML = `
-  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual POV Tour</h2><span class="demo-note">Объект бүрд 3 арга — аль нэгээр нь эхлээд бусдаар нь нарийвчилж болно</span></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual Tour (POV)</h2><span class="demo-note">Объект бүрд 3 арга — аль нэгээр нь эхлээд бусдаар нь нарийвчилж болно</span></div>
   <div class="tiles" style="margin-bottom:14px">
     <div class="tile" style="text-align:left"><div style="font-weight:700"><svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план</div><div class="k">Өрөөний тоо, талбайгаас систем ердийн зохион байгуулалт зурна — 10 секунд. Танилцуулах түвшин.</div></div>
     <div class="tile" style="text-align:left"><div style="font-weight:700"><svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI</div><div class="k">Өрөө бүрийн хэмжээс, цонх/хаалганы байрлалыг маягтаар; зураг/бичлэгээс AI тааз, шал, ханын өнгийг таамаглана; 360° панорам. Бодит түвшин.</div></div>
@@ -745,8 +745,8 @@ function renderTour() {
       ${tourRoomDetail(t)}`;
   }
   $('#main').innerHTML = `
-  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>POV Tour · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
-    <div style="display:flex;gap:8px"><button onclick="show('tours')">← POV Tour</button><button onclick="tourPlanCode()" title="Планыг код (JSON) хэлбэрээр хуулах эсвэл бэлэн планыг буулгах"><svg class=ic><use href=#i-file-text></use></svg>План код</button><button onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button></div></div>
+  <div class="page-head"><h2><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual Tour (POV) · ${esc(p.district)} ${esc(p.khoroolol || '')} · ${p.rooms}ө ${p.area}м²</h2>
+    <div style="display:flex;gap:8px"><button onclick="show('tours')">← Virtual Tour (POV)</button><button onclick="tourPlanCode()" title="Планыг код (JSON) хэлбэрээр хуулах эсвэл бэлэн планыг буулгах"><svg class=ic><use href=#i-file-text></use></svg>План код</button><button onclick="studioView(${p.id})"><svg class=ic><use href=#i-sparkles></use></svg>Студи</button></div></div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${tab('auto', '<svg class=ic><use href=#i-wand-sparkles></use></svg>Автомат план')}${tab('measure', '<svg class=ic><use href=#i-ruler></use></svg>Хэмжээс + AI + 360°')}${tab('build', '<svg class=ic><use href=#i-brick-wall></use></svg>Блок өрж бүтээх')}</div>
   ${body}
   ${shareBox}`;
@@ -1344,14 +1344,14 @@ async function owner() {
         : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}
         ${c.id !== ME.company_id ? `<button class="small" onclick="delCompany(${c.id},'${esc(c.name).replace(/'/g, '')}')">Устгах</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div></div>
-  <div class="card"><h3><svg class=ic><use href=#i-rotate-3d></use></svg>POV аяллууд (бүх компани)</h3>
+  <div class="card"><h3><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual Tour (POV) аяллууд (бүх компани)</h3>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">«Дахин бэлтгэх» — гадаах орчныг хотын өгөгдлийн сангийн хамгийн сүүлийн хувилбараар (дээврийн өнгө, мод, ойрын газар) шинэчилнэ; замын хугацааг дахин тооцохгүй (зардалгүй). «Импорт» — нэг JSON-оор объект + план + ойрын газрыг үүсгэж, гадаах орчныг бэлтгэнэ.</div>
     <div style="display:flex;gap:8px;margin-bottom:8px"><button class="small primary" onclick="ownerImport()"><svg class=ic><use href=#i-upload></use></svg>Импорт (JSON)</button><button class="small" onclick="ownerTours()">↻ Шинэчлэх</button></div>
     <div id="ot-list" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-archive></use></svg>Медиа хадгалалт ба хувийн мэдээлэл</h3><div id="st-box" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-route></use></svg>Хотын замын хугацаа (Google Routes)</h3><div id="cc-box" style="font-size:12.5px">…</div></div>
   <div class="card"><h3><svg class=ic><use href=#i-users></use></svg>Танилцуулгын эрх</h3>
-    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Зочин бүрт тусдаа жишээ компани (демо компанийн объект, харилцагч, гэрээ, бэлэн POV аяллын хуулбар) үүснэ — бие биедээ саад болохгүй. Хугацаа дуусахад нэвтрэлт хаагдана. Төлбөртэй функц (AI студи, гадна 3D, замын профайл, бодит медиа) зочин бүрт <span id="g-limit">2</span> объект дээр.</div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Зочин бүрт тусдаа жишээ компани (демо компанийн объект, харилцагч, гэрээ, бэлэн Virtual Tour (POV) аяллын хуулбар) үүснэ — бие биедээ саад болохгүй. Хугацаа дуусахад нэвтрэлт хаагдана. Төлбөртэй функц (AI студи, гадна 3D, замын профайл, бодит медиа) зочин бүрт <span id="g-limit">2</span> объект дээр.</div>
     <form id="g-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;font-size:13px">
       <label>Нэрийн угтвар<br><input id="g-prefix" value="guest" style="width:90px"></label>
       <label>Тоо<br><input id="g-count" type="number" min="1" max="20" value="5" style="width:60px"></label>

@@ -1,4 +1,4 @@
-# Бичлэгт шигтгэх брэнд тэмдэг: QR (системийн танилцуулга) + лого + «Смарт Зууч · Virtual POV Tour технологи».
+# Бичлэгт шигтгэх брэнд тэмдэг: QR (системийн танилцуулга) + лого + «Смарт Зууч · Virtual Tour (POV) технологи».
 # Ажиллуулах: python tools/brand/video_badge.py [URL]  → public/brand/video-badge.png (тунгалаг дэвсгэртэй)
 # Домэйн солигдвол URL-аа өгч дахин үүсгэнэ.
 import sys, os
@@ -17,7 +17,7 @@ qr = q.make_image(fill_color='#0B1220', back_color='white').convert('RGBA')
 QW = qr.size[0]
 logo = Image.open(os.path.join(ROOT, 'public', 'brand', 'icon-512.png')).convert('RGBA').resize((84, 84), Image.LANCZOS)
 
-lines = [('Смарт Зууч', bold, '#FFFFFF'), ('Virtual POV Tour технологи', reg, '#D7E3F7'), ('ЗӨВХӨН СМАРТ ЗУУЧ СИСТЕМД', sm, '#5AB0FF')]
+lines = [('Смарт Зууч', bold, '#FFFFFF'), ('Virtual Tour (POV) технологи', reg, '#D7E3F7'), ('ЗӨВХӨН СМАРТ ЗУУЧ СИСТЕМД', sm, '#5AB0FF')]
 tmp = ImageDraw.Draw(Image.new('RGBA', (10, 10)))
 tw = max(tmp.textlength(t, font=f) + (96 if i == 0 else 0) for i, (t, f, _) in enumerate(lines))
 W = int(PAD + Q + 28 + tw + PAD + 10)
