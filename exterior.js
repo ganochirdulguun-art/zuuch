@@ -6,7 +6,7 @@
 const commute = require('./commute');
 
 const ENDPOINTS = ['https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-const UA = 'ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot; smartzuuch.mn@gmail.com)';
+const UA = 'ZuuchBot/1.0 (+https://zuuch.202-131-1-136.sslip.io/bot; smartzuuch.mn@gmail.com)';
 const WEST4 = { id: 'west4', name: 'Баруун 4 зам', lat: 47.91528, lng: 106.8952 };
 const CENTER = { id: 'center', name: 'Хотын төв (Сүхбаатарын талбай)', lat: 47.9187, lng: 106.9176 };
 const WALK_MS = 1.25; // алхах хурд 4.5 км/ц

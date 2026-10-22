@@ -23,7 +23,7 @@ const CATS = {
 };
 const CONTACT = process.env.ZUUCH_BOT_CONTACT || 'smartzuuch.mn@gmail.com';
 // HTTP толгой = зөвхөн ASCII (кирилл бичвэл fetch ByteString алдаа өгнө)
-const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot; ${CONTACT}; read-only monitoring)`;
+const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch.202-131-1-136.sslip.io/bot; ${CONTACT}; read-only monitoring)`;
 const MIN_GAP_MS = Number(process.env.ZUUCH_UNEGUI_GAP_MS || 4000); // хүсэлт хоорондын доод зай
 const TIMEOUT_MS = 25000;
 const DISTRICTS = ['Сүхбаатар', 'Хан-Уул', 'Баянгол', 'Баянзүрх', 'Чингэлтэй', 'Сонгинохайрхан', 'Налайх', 'Багануур', 'Багахангай'];

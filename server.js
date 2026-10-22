@@ -452,7 +452,7 @@ app.get('/bot', (req, res) => {
 <ul><li>Нийтэд ил орон сууцны зарын <b>баримт</b> (үнэ, талбай, өрөө, дүүрэг, огноо) л уншиж, дүүргийн үнийн индекс, дундаж хугацаа зэрэг <b>нэгтгэсэн статистик</b> гаргана.</li>
 <li>Зарын <b>тайлбар, зураг, утасны дугаар хадгалахгүй</b>; зарыг дахин нийтлэхгүй, олон нийтэд түгээхгүй.</li>
 <li><code>robots.txt</code>-г мөрдөнө; хүсэлт хооронд ≥4 сек зайтай, цөөн хуудас (ойролцоогоор 10 минут тутам 5–15 хуудас); 429/5xx хариунд 10 мин зогсоно.</li></ul>
-<h3>User-Agent</h3><p><code>${collector.status ? 'ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot)' : ''}</code></p>
+<h3>User-Agent</h3><p><code>${collector.status ? 'ZuuchBot/1.0 (+https://zuuch.202-131-1-136.sslip.io/bot)' : ''}</code></p>
 <h3>Хасуулах / асуулт</h3><p>Эх сурвалжийн админ эсвэл зарын эзэн: <b>${contact}</b> — хүсэлт ирмэгц тухайн зар/эх сурвалжийг 24 цагийн дотор хасаж, дахин уншихыг хориглоно.</p>
 <p style="color:#64748b;font-size:13px">This is a low-rate, read-only monitoring crawler for aggregate real-estate market statistics in Mongolia. It respects robots.txt, sends ≤1 request / 4 s, stores facts only (no photos, descriptions or phone numbers). Contact ${contact} to opt out.</p>
 </body></html>`);

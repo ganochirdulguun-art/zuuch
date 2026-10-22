@@ -6,7 +6,7 @@ const zlib = require('node:zlib');
 
 const CONTACT = process.env.ZUUCH_BOT_CONTACT || 'smartzuuch.mn@gmail.com';
 // HTTP толгой = зөвхөн ASCII (кирилл бичвэл ByteString алдаа өгнө)
-const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch-production.up.railway.app/bot; ${CONTACT}; read-only monitoring)`;
+const UA = process.env.ZUUCH_BOT_UA || `ZuuchBot/1.0 (+https://zuuch.202-131-1-136.sslip.io/bot; ${CONTACT}; read-only monitoring)`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeFetcher({ base, allowed, gapMs = 5000, timeoutMs = 25000, accept = 'text/html' }) {
