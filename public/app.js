@@ -61,6 +61,7 @@ async function enterApp() {
   crChip(ME.credits);
   guestBanner();
   show('dashboard');
+  if (ME.must_change) pwForm(true);
 }
 // Танилцуулгын эрх: үлдсэн хоног, төлбөртэй функцийн хэрэглээ
 function guestBanner() {
@@ -1362,6 +1363,7 @@ async function owner() {
   if (d.error) { $('#main').innerHTML = `<div class="page-head"><h2><svg class=ic><use href=#i-crown></use></svg>Эзэн самбар</h2></div><p style="color:var(--accent-2)">${esc(d.error)}</p>`; return; }
   $('#main').innerHTML = `
   <div class="page-head"><h2><svg class=ic><use href=#i-crown></use></svg>Эзэн самбар</h2><span class="demo-note">Платформын нийт тойм — бүх компани</span></div>
+  <div id="own-rc"></div>
   <div class="tiles">
     <div class="tile"><div class="v">${d.totals.companies}</div><div class="k">Бүртгэлтэй компани</div></div>
     <div class="tile"><div class="v">${d.totals.users}</div><div class="k">Нийт хэрэглэгч</div></div>
@@ -1385,6 +1387,7 @@ async function owner() {
         <td style="white-space:nowrap">${c.status === 'active'
         ? `<button class="small" onclick="setCompany(${c.id},{status:'suspended'})">Түр хаах</button>`
         : `<button class="small primary" onclick="setCompany(${c.id},{status:'active'})">Идэвхжүүлэх</button>`}
+        <button class="small" onclick="ownerUsers(${c.id},'${esc(c.name).replace(/'/g, '')}')">Хэрэглэгчид</button>
         ${c.id !== ME.company_id ? `<button class="small" onclick="delCompany(${c.id},'${esc(c.name).replace(/'/g, '')}')">Устгах</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div></div>
   <div class="card"><h3><svg class=ic><use href=#i-rotate-3d></use></svg>Virtual Tour (POV) аяллууд (бүх компани)</h3>
@@ -1409,6 +1412,7 @@ async function owner() {
     <div id="bk-list" style="font-size:12.5px">…</div></div>
   <p style="color:var(--muted);font-size:12.5px">Та платформын эзэн тул бүх компанийн тоймыг харж, багц/төлөвийг удирдана. «Түр хаах» үед тухайн компанийн хэрэглэгчид нэвтэрч чадахгүй. Компани бүрийн дотоод өгөгдөл тус тусдаа тусгаарлагдсан хэвээр.</p>`;
   backupList(); ownerTours(); storageBox(); cityCommuteBox(); guestList();
+  api('/me/recovery-codes').then((st) => { const el = $('#own-rc'); if (el && st && !st.left) el.innerHTML = `<div class="card" style="border-color:var(--warn);display:flex;gap:12px;align-items:center;flex-wrap:wrap"><b>Сэргээх код үүсгээгүй байна.</b><span style="font-size:13px;color:var(--muted)">Эзний нууц үгээ мартвал нэвтрэх хуудаснаас өөрөө сэргээх цорын ганц арга.</span><button class="small primary" onclick="recoveryCodes()">Одоо үүсгэх</button></div>`; }).catch(() => {});
   $('#g-form').onsubmit = async (e) => {
     e.preventDefault(); $('#g-st').textContent = 'Үүсгэж байна…';
     const r = await api('/owner/guests', { method: 'POST', body: { prefix: $('#g-prefix').value, count: Number($('#g-count').value), days: Number($('#g-days').value), password: $('#g-pass').value } }).catch((x) => ({ error: x.message }));
@@ -1509,21 +1513,88 @@ window.delCompany = async function (id, name) {
 };
 
 // ---------- Нууц үг солих ----------
-window.pwForm = function () {
+window.pwForm = function (forced) {
   modal(`
-  <h3>Нууц үг солих</h3>
+  <h3>${forced ? 'Шинэ нууц үг тохируулна уу' : 'Нууц үг солих'}</h3>
+  ${forced ? '<p style="font-size:13px;color:var(--muted);margin:-6px 0 12px">Та түр нууц үгээр нэвтэрлээ. Үргэлжлүүлэхийн өмнө зөвхөн өөрөө мэдэх шинэ нууц үг тохируулна.</p>' : ''}
   <form id="f" class="form-grid">
-    <div class="field wide"><label>Одоогийн нууц үг</label><input name="current" type="password" autocomplete="current-password" required></div>
-    <div class="field wide"><label>Шинэ нууц үг (6+ тэмдэгт)</label><input name="next" type="password" autocomplete="new-password" required></div>
+    <div class="field wide"><label>${forced ? 'Түр нууц үг' : 'Одоогийн нууц үг'}</label><input name="current" type="password" autocomplete="current-password" required></div>
+    <div class="field wide"><label>Шинэ нууц үг (8+ тэмдэгт)</label><input name="next" type="password" autocomplete="new-password" minlength="8" required></div>
+    <div class="field wide"><label>Шинэ нууц үг дахин</label><input name="next2" type="password" autocomplete="new-password" minlength="8" required></div>
     <div class="err wide" id="pw-err"></div>
-    <div class="modal-actions wide"><button type="button" onclick="closeModal()">Болих</button><button class="primary">Солих</button></div>
+    <div class="modal-actions wide">${forced ? '<button type="button" onclick="logout()">Гарах</button>' : '<button type="button" onclick="recoveryCodes()" style="margin-right:auto">Сэргээх код</button><button type="button" onclick="closeModal()">Болих</button>'}<button class="primary">Хадгалах</button></div>
   </form>`);
+  if (forced) { const back = document.querySelector('.modal-back'); if (back) back.onclick = null; } // заавал — гадуур дарж хаахгүй
   $('#f').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await api('/me/password', { method: 'POST', body: Object.fromEntries(new FormData($('#f'))) });
+    e.preventDefault(); const fd = Object.fromEntries(new FormData($('#f')));
+    if (fd.next !== fd.next2) { $('#pw-err').textContent = 'Шинэ нууц үг таарахгүй байна'; return; }
+    const r = await api('/me/password', { method: 'POST', body: { current: fd.current, next: fd.next } });
     if (r.error) { $('#pw-err').textContent = r.error; return; }
-    closeModal(); alert('Нууц үг амжилттай солигдлоо');
+    ME.must_change = false; closeModal(); alert('Нууц үг амжилттай солигдлоо. Бусад төхөөрөмж дээрх нэвтрэлт гарлаа.');
+    if (forced && ME.is_owner) recoveryCodes();
   });
+};
+// Сэргээх код: нууц үгээ мартвал нэвтрэх хуудаснаас өөрөө шинэчлэхэд (нэг удаагийн 8 код)
+window.recoveryCodes = async function () {
+  const st = await api('/me/recovery-codes').catch(() => ({ left: 0 }));
+  modal(`<h3>Сэргээх код</h3>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 10px">Нэвтрэх нэр эсвэл нууц үгээ мартвал нэвтрэх хуудасны «Мартсан уу?» холбоосоор эдгээр кодын аль нэгийг оруулж шинэ нууц үг тохируулна. Код бүр <b>нэг удаа</b> ажиллана.</p>
+    <p style="font-size:13px;margin:0 0 12px">Одоо хүчинтэй код: <b>${st.left || 0}</b>${st.created_at ? ` · үүсгэсэн ${new Date(st.created_at).toLocaleDateString('sv-SE')}` : ''}</p>
+    <form id="rcf" class="form-grid"><div class="field wide"><label>Баталгаажуулахын тулд одоогийн нууц үгээ оруулна</label><input name="password" type="password" autocomplete="current-password" required></div>
+    <div class="err wide" id="rc-err"></div>
+    <div class="modal-actions wide"><button type="button" onclick="closeModal()">Хаах</button><button class="primary">${st.left ? 'Шинэ код үүсгэх (хуучныг цуцална)' : 'Код үүсгэх'}</button></div></form>`);
+  $('#rcf').addEventListener('submit', async (e) => {
+    e.preventDefault(); const r = await api('/me/recovery-codes', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
+    if (r.error) { $('#rc-err').textContent = r.error; return; }
+    const txt = `Зууч — сэргээх кодууд (${ME.name}, ${new Date().toLocaleDateString('sv-SE')})\n` + r.codes.join('\n');
+    modal(`<h3>Сэргээх кодоо хадгална уу</h3>
+      <p style="font-size:13px;line-height:1.6;margin:0 0 10px"><b>Эдгээр кодыг дахин харуулахгүй.</b> Хэвлэх, нууц үгийн менежерт хадгалах эсвэл аюулгүй газар бичиж авна. Хэнд ч бүү өг.</p>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px;font:600 16px/1.6 ui-monospace,Consolas,monospace;background:var(--surface-2);padding:12px 16px;border-radius:8px">${r.codes.map((c) => `<span>${c}</span>`).join('')}</div>
+      <div class="modal-actions"><button type="button" id="rc-copy">Хуулах</button><button class="primary" onclick="closeModal()">Хадгалсан</button></div>`);
+    $('#rc-copy').onclick = () => { navigator.clipboard.writeText(txt).then(() => { $('#rc-copy').textContent = '✓ Хуулав'; }).catch(() => {}); };
+  });
+};
+// Нэвтрэх хуудаснаас: мартсан бол
+window.recoverForm = function () {
+  modal(`<h3>Нэвтрэх эрх сэргээх</h3>
+    <div style="font-size:13px;line-height:1.65;margin-bottom:12px">
+      <b>Агент:</b> өөрийн компанийн захиралд хандана — тэр «Баг» хэсгээс түр нууц үг гаргаж өгнө.<br>
+      <b>Захирал:</b> Зуучийн платформын эзэнд хандана (smartzuuch.mn@gmail.com).<br>
+      <b>Сэргээх кодтой бол:</b> доор оруулаад шинэ нууц үгээ шууд тохируулна. Таны нэвтрэх нэр мөн харагдана.</div>
+    <form id="rvf" class="form-grid">
+      <div class="field wide"><label>Сэргээх код</label><input name="code" placeholder="XXXXX-XXXXX" autocomplete="one-time-code" required style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.06em"></div>
+      <div class="field wide"><label>Шинэ нууц үг (8+ тэмдэгт)</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div class="field wide"><label>Шинэ нууц үг дахин</label><input name="password2" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div class="err wide" id="rv-err"></div>
+      <div class="modal-actions wide"><button type="button" onclick="closeModal()">Болих</button><button class="primary">Шинэчлэх</button></div></form>`);
+  $('#rvf').addEventListener('submit', async (e) => {
+    e.preventDefault(); const fd = Object.fromEntries(new FormData(e.target));
+    if (fd.password !== fd.password2) { $('#rv-err').textContent = 'Шинэ нууц үг таарахгүй байна'; return; }
+    const r = await api('/recover', { method: 'POST', body: { code: fd.code, password: fd.password } });
+    if (r.error) { $('#rv-err').textContent = r.error; return; }
+    closeModal(); $('#login-user').value = r.username; $('#login-pass').value = ''; $('#login-pass').focus();
+    $('#login-err').innerHTML = `<span style="color:var(--ok)">✓ Нууц үг шинэчлэгдлээ. Таны нэвтрэх нэр: <b>${esc(r.username)}</b>. Үлдсэн сэргээх код: ${r.left}.</span>`;
+  });
+};
+// Түр нууц үгийг нэг удаа харуулах
+function showTemp(r) {
+  modal(`<h3>Түр нууц үг</h3>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 10px">Нэвтрэх нэр: <b>${esc(r.username)}</b>. Энэ түр нууц үгийг ажилтанд биечлэн эсвэл утсаар дамжуулна. Нэвтэрмэгц өөрийн шинэ нууц үгээ тохируулах шаардлагатай болно. Өмнөх бүх нэвтрэлт гарсан.</p>
+    <div style="font:700 22px/1.4 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-align:center;background:var(--surface-2);padding:14px;border-radius:8px">${esc(r.temp)}</div>
+    <div class="modal-actions"><button type="button" id="tp-copy">Хуулах</button><button class="primary" onclick="closeModal()">Болсон</button></div>`);
+  $('#tp-copy').onclick = () => navigator.clipboard.writeText(r.temp).then(() => { $('#tp-copy').textContent = '✓ Хуулав'; }).catch(() => {});
+}
+window.resetUserPw = async function (id, name, owner) {
+  if (!confirm(`«${name}»-ийн нууц үгийг шинэчилж түр нууц үг гаргах уу? Тухайн хүн бүх төхөөрөмжөөс гарна.`)) return;
+  const r = await api(owner ? `/owner/users/${id}/reset-password` : `/users/${id}/reset-password`, { method: 'POST' });
+  if (r.error) return alert(r.error); showTemp(r);
+};
+window.ownerUsers = async function (cid, cname) {
+  const rows = await api(`/owner/company/${cid}/users`); if (rows.error) return alert(rows.error);
+  modal(`<h3>Хэрэглэгчид · ${esc(cname)}</h3><div class="tablebox"><table><thead><tr><th>Нэр</th><th>Нэвтрэх нэр</th><th>Роль</th><th></th></tr></thead><tbody>
+    ${rows.map((u) => `<tr><td>${esc(u.name)}${u.is_owner ? ' <span class="badge ok">эзэн</span>' : ''}${u.must_change ? ' <span class="badge warn">түр нууц үгтэй</span>' : ''}</td><td><code>${esc(u.username)}</code></td><td>${ROLE_T[u.role] || u.role}</td>
+      <td>${u.id === ME.id ? '<span style="color:var(--muted);font-size:12px">та</span>' : `<button class="small" onclick="resetUserPw(${u.id},'${esc(u.name).replace(/'/g, '')}',true)">Нууц үг шинэчлэх</button>`}</td></tr>`).join('')}</tbody></table></div>
+    <div class="modal-actions"><button onclick="closeModal()">Хаах</button></div>`);
 };
 
 // ---------- Баг (зөвхөн захирал) ----------
@@ -1536,7 +1607,7 @@ async function team() {
     <thead><tr><th>#</th><th>Нэр</th><th>Нэвтрэх нэр</th><th>Утас</th><th>Роль</th><th></th></tr></thead>
     <tbody>${rows.map((u) => `<tr><td>${u.id}</td><td><b>${esc(u.name)}</b></td><td>${esc(u.username)}</td>
       <td>${esc(u.phone || '')}</td><td>${ROLE_T[u.role] || u.role}</td>
-      <td>${u.id != ME.id ? `<button class="small" onclick="delUser(${u.id})">Устгах</button>` : '<span style="color:var(--muted);font-size:12px">та</span>'}</td></tr>`).join('')}</tbody>
+      <td style="white-space:nowrap">${u.id != ME.id ? `<button class="small" onclick="resetUserPw(${u.id},'${esc(u.name).replace(/'/g, '')}')">Нууц үг шинэчлэх</button> <button class="small" onclick="delUser(${u.id})">Устгах</button>` : '<span style="color:var(--muted);font-size:12px">та</span>'}</td></tr>`).join('')}</tbody>
   </table></div>
   <p style="color:var(--muted);font-size:12.5px">Ажилтан бүр өөрийн нэвтрэх нэр, нууц үгээр орж, зөвхөн энэ компанийн өгөгдлийг харна. Захирал бүх зүйлийг, агент өөрт хамаарахыг удирдана.</p>`;
 }

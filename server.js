@@ -75,7 +75,7 @@ app.post('/api/login', wrap(async (req, res) => {
   }
   const token = await newSession(user);
   const company = await db.one('SELECT name FROM companies WHERE id=?', user.company_id);
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, guest: await guestMe(user.company_id) } });
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, company: company?.name || '', company_id: user.company_id, is_owner: user.is_owner ? 1 : 0, must_change: !!user.must_change, guest: await guestMe(user.company_id) } });
 }));
 
 app.post('/api/register', wrap(async (req, res) => {
@@ -109,21 +109,65 @@ const paid = (param) => async (req, res, next) => {
     const r = await guests.allowPaid(db, req.user.company_id, pid); if (!r.ok) return res.status(r.status).json({ error: r.error }); next();
   } catch (e) { next(e); }
 };
-const OPEN = new Set(['/login', '/register']);
+const OPEN = new Set(['/login', '/register', '/recover']);
 app.use('/api', (req, res, next) => (OPEN.has(req.path) ? next() : auth(req, res, next)));
 
 app.post('/api/logout', (req, res) => { sessions.delete(req.token); db.run('DELETE FROM sessions WHERE token=?', req.token).catch(() => {}); res.json({ ok: true }); });
 app.get('/api/me', wrap(async (req, res) => {
   const company = await db.one('SELECT name FROM companies WHERE id=?', req.user.company_id);
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0, guest: await guestMe(req.user.company_id), credits: await credits.balance(db, req.user.company_id, req.user.id) });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, company: company?.name || '', company_id: req.user.company_id, is_owner: req.user.is_owner ? 1 : 0, guest: await guestMe(req.user.company_id), credits: await credits.balance(db, req.user.company_id, req.user.id), must_change: !!(await db.one('SELECT must_change FROM users WHERE id=?', req.user.id) || {}).must_change, recovery: await recovery.codeStatus(db, req.user.id) });
 }));
 app.post('/api/me/password', wrap(async (req, res) => {
   const { current, next: nx } = req.body || {};
   const u = await db.one('SELECT * FROM users WHERE id=?', req.user.id);
   if (!u || !verify(String(current || ''), u.pass_hash)) return res.status(401).json({ error: 'Одоогийн нууц үг буруу' });
-  if (String(nx || '').length < 6) return res.status(400).json({ error: 'Шинэ нууц үг 6+ тэмдэгт байх ёстой' });
-  await db.run('UPDATE users SET pass_hash=? WHERE id=?', hash(String(nx)), req.user.id);
+  if (String(nx || '').length < 8) return res.status(400).json({ error: 'Шинэ нууц үг 8+ тэмдэгт байх ёстой' });
+  if (String(nx) === String(current)) return res.status(400).json({ error: 'Шинэ нууц үг хуучнаасаа өөр байх ёстой' });
+  await db.run('UPDATE users SET pass_hash=?, must_change=FALSE WHERE id=?', hash(String(nx)), req.user.id);
+  await db.run('DELETE FROM sessions WHERE user_id=? AND token<>?', req.user.id, req.token).catch(() => {}); // бусад төхөөрөмжөөс гаргана
+  for (const [tok, s] of sessions) if (s.id === req.user.id && tok !== req.token) sessions.delete(tok);
   res.json({ ok: true });
+}));
+
+// ---- Нэвтрэх эрх сэргээх ----
+const recovery = require('./recovery');
+const dropSessions = (uid) => { for (const [tok, s] of sessions) if (s.id === uid) sessions.delete(tok); };
+// Сэргээх кодоор шинэ нууц үг (нэвтрээгүй хэрэглэгч) — IP-ээр хязгаарлана
+app.post('/api/recover', wrap(async (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (rateLimited(ip)) return res.status(429).json({ error: 'Хэт олон оролдлого — 15 минутын дараа дахин оролдоно уу' });
+  const { code, password } = req.body || {};
+  if (String(password || '').length < 8) return res.status(400).json({ error: 'Шинэ нууц үг 8+ тэмдэгт байх ёстой' });
+  const r = await recovery.redeem(db, hash, code, String(password));
+  if (!r) { noteFail(ip); return res.status(400).json({ error: 'Сэргээх код буруу эсвэл өмнө нь ашиглагдсан байна' }); }
+  const u = await db.one('SELECT id FROM users WHERE username=?', r.username); if (u) dropSessions(u.id);
+  console.log(`[сэргээлт] «${r.username}» сэргээх кодоор нууц үгээ шинэчлэв (үлдсэн код ${r.left})`);
+  res.json({ ok: true, username: r.username, left: r.left });
+}));
+app.get('/api/me/recovery-codes', wrap(async (req, res) => res.json(await recovery.codeStatus(db, req.user.id))));
+app.post('/api/me/recovery-codes', wrap(async (req, res) => { // одоогийн нууц үгээр баталгаажуулна
+  const u = await db.one('SELECT pass_hash FROM users WHERE id=?', req.user.id);
+  if (!u || !verify(String((req.body || {}).password || ''), u.pass_hash)) return res.status(401).json({ error: 'Нууц үг буруу' });
+  res.json({ codes: await recovery.newCodes(db, req.user.id) });
+}));
+// Захирал: өөрийн компанийн ажилтанд түр нууц үг (эзний бүртгэлд хүрэхгүй)
+app.post('/api/users/:id/reset-password', zahiralOnly, wrap(async (req, res) => {
+  const t = await db.one('SELECT id, username, is_owner FROM users WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
+  if (!t) return res.status(404).json({ error: 'Ажилтан олдсонгүй' });
+  if (t.id === req.user.id) return res.status(400).json({ error: 'Өөрийн нууц үгийг «Нууц үг» товчоор солино' });
+  if (t.is_owner && !req.user.is_owner) return res.status(403).json({ error: 'Платформын эзний нууц үгийг шинэчлэх эрхгүй' });
+  const temp = recovery.tempPassword(); await recovery.setPassword(db, hash, t.id, temp, true); dropSessions(t.id);
+  console.log(`[сэргээлт] ${req.user.name} → «${t.username}»-д түр нууц үг гаргав`);
+  res.json({ username: t.username, temp });
+}));
+// Эзэн: аль ч компанийн хэрэглэгчид түр нууц үг
+app.get('/api/owner/company/:id/users', ownerOnly, wrap(async (req, res) => res.json(await db.all('SELECT id, username, name, role, is_owner, must_change, created_at FROM users WHERE company_id=? ORDER BY role DESC, name', req.params.id))));
+app.post('/api/owner/users/:id/reset-password', ownerOnly, wrap(async (req, res) => {
+  const t = await db.one('SELECT id, username FROM users WHERE id=?', req.params.id); if (!t) return res.status(404).json({ error: 'Хэрэглэгч олдсонгүй' });
+  if (t.id === req.user.id) return res.status(400).json({ error: 'Өөрийн нууц үгийг «Нууц үг» товчоор солино' });
+  const temp = recovery.tempPassword(); await recovery.setPassword(db, hash, t.id, temp, true); dropSessions(t.id);
+  console.log(`[сэргээлт] эзэн → «${t.username}»-д түр нууц үг гаргав`);
+  res.json({ username: t.username, temp });
 }));
 
 app.get('/api/meta', wrap(async (req, res) => {

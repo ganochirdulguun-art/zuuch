@@ -453,6 +453,10 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS credit_ledger_co ON credit_ledger(company_id, user_id);
+-- Нэвтрэх эрх сэргээх (recovery.js): түр нууц үгээр орсон бол заавал солино; нэг удаагийн сэргээх код (хэш)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change BOOLEAN DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS recovery_codes (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, code_hash TEXT NOT NULL, used_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS recovery_codes_hash ON recovery_codes(code_hash);
 -- Комплаенс (aml/*): МУТСТ хууль, Монголбанкны А-26/А-171, СЗХ №648/№235/№22. Бүртгэлийг 5 жил хадгална (МУТСТХ 8.1)
 CREATE TABLE IF NOT EXISTS aml_profiles (
   id SERIAL PRIMARY KEY, company_id INTEGER NOT NULL, client_id INTEGER, kind TEXT NOT NULL DEFAULT 'individual',
