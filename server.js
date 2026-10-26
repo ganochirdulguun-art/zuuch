@@ -29,7 +29,8 @@ app.use((req, res, next) => {
   next();
 });
 // Нүүр/апп хуудас: туршилтын эрхийн мөр (.dev-only) зөвхөн локал хөгжүүлэлтэд — production-д эх кодонд ч очихгүй
-const isLocalReq = (req) => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(req.hostname || '');
+// Reverse proxy (VPS дээрх Caddy/nginx) ард Host нь «localhost» болж ирдэг тул hostname-д найдахгүй — зөвхөн ZUUCH_DEV=1 үед
+const isLocalReq = () => process.env.ZUUCH_DEV === '1';
 const PAGES = {}; const DEV_ONLY = /<span class="[^"]*dev-only[^"]*">[\s\S]*?<\/span>/g;
 const sendPage = (name) => (req, res) => { const html = PAGES[name] || (PAGES[name] = fs.readFileSync(path.join(__dirname, 'public', name), 'utf8')); res.type('html').setHeader('Cache-Control', 'no-cache'); res.send(isLocalReq(req) ? html : html.replace(DEV_ONLY, '')); };
 app.get(['/', '/landing.html'], sendPage('landing.html'));
